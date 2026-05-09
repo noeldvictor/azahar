@@ -109,7 +109,7 @@ class SetupFragment : Fragment() {
         pages.apply {
             add(
                 SetupPage(
-                    R.drawable.ic_citra_full,
+                    R.drawable.ic_launcher_cheat_foreground,
                     R.string.welcome,
                     R.string.welcome_description,
                     0,

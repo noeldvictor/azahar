@@ -37,6 +37,7 @@ class Game(
     val fileType: String = "",
     val isCompressed: Boolean = false,
     val filename: String,
+    val hasCheats: Boolean = false,
 ) : Parcelable {
     val keyAddedToLibraryTime get() = "${filename}_AddedToLibraryTime"
     val keyLastPlayedTime get() = "${filename}_LastPlayed"
@@ -80,6 +81,7 @@ class Game(
         result = 31 * result + titleId.hashCode()
         result = 31 * result + mediaType.hashCode()
         result = 31 * result + company.hashCode()
+        result = 31 * result + hasCheats.hashCode()
         return result
     }
 

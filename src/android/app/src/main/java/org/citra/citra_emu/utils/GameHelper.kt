@@ -16,6 +16,7 @@ import org.citra.citra_emu.model.CheapDocument
 import org.citra.citra_emu.model.Game
 import org.citra.citra_emu.model.GameInfo
 import java.io.IOException
+import java.util.Locale
 
 object GameHelper {
     const val KEY_GAME_PATH = "game_path"
@@ -68,6 +69,19 @@ object GameHelper {
         }
     }
 
+    private fun hasCheatFile(titleId: Long): Boolean {
+        if (titleId == 0L) {
+            return false
+        }
+
+        val filename = String.format(Locale.ROOT, "%016X.txt", titleId)
+        return try {
+            CitraApplication.documentsTree.getFileSize("/cheats/$filename") > 0L
+        } catch (ignored: Exception) {
+            false
+        }
+    }
+
     fun getGame(uri: Uri, isInstalled: Boolean, addedToLibrary: Boolean, mediaType: Game.MediaType): Game {
         val filePath = uri.toString()
         var nativePath: String? = null
@@ -89,6 +103,7 @@ object GameHelper {
         }
 
         val isEncrypted = gameInfo?.isEncrypted() == true
+        val titleId = gameInfo?.getTitleID() ?: 0
 
         val newGame = Game(
             valid,
@@ -100,7 +115,7 @@ object GameHelper {
             } else {
                 nativePath!!
             },
-            gameInfo?.getTitleID() ?: 0,
+            titleId,
             mediaType,
             gameInfo?.getCompany() ?: "",
             if (isEncrypted) { CitraApplication.appContext.getString(R.string.unsupported_encrypted) } else { gameInfo?.getRegions() ?: "" },
@@ -115,7 +130,8 @@ object GameHelper {
                 CitraApplication.documentsTree.getFilename(filePath)
             } else {
                 FileUtil.getFilename(Uri.parse(filePath))
-            }
+            },
+            hasCheats = hasCheatFile(titleId)
         )
 
         if (addedToLibrary) {

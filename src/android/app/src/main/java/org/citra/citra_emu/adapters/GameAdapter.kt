@@ -212,6 +212,11 @@ class GameAdapter(
             binding.textGameTitle.text = game.title
             binding.textCompany.text = game.company
             binding.textGameRegion.text = game.regions
+            binding.textCheatsBadge.visibility = if (game.hasCheats) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
             binding.imageCartridge.visibility = if (preferences.getString("insertedCartridge", "") != game.path) {
                 View.GONE
             } else {

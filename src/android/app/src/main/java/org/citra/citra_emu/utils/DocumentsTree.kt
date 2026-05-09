@@ -367,6 +367,7 @@ class DocumentsTree {
         const val DELIMITER = "/"
         val kotlinDirectoryAccessWhitelist = arrayOf(
             "/config/",
+            "/cheats/",
             "/log/",
             "/gpu_drivers/",
         )
