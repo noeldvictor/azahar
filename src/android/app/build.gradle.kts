@@ -141,6 +141,7 @@ android {
         register("relWithDebInfoLite") {
             initWith(getByName("relWithDebInfo"))
             signingConfig = signingConfigs.getByName("debug")
+            versionNameSuffix = "-thor"
             isDebuggable = false
             installation {
                 enableBaselineProfile = false // Disabled by default when isDebuggable is true
