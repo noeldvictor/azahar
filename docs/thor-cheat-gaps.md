@@ -11,7 +11,7 @@ The scan found 113 games with parsed title IDs. Before this update, 33 entries h
 
 | Title ID | Game | Source | Notes |
 | --- | --- | --- | --- |
-| `0004000000053700` | E.X. Troopers (Japan / English patch) | https://rutube.ru/video/083ddaea2c07a2ec7d2edee11c3f3cde/ | Disabled by default; includes 30 FPS reset for the English patch. |
+| `0004000000053700` | E.X. Troopers (Japan / English patch) | https://rutube.ru/video/083ddaea2c07a2ec7d2edee11c3f3cde/ | Disabled by default; includes a Thor low-end 30 FPS preset, 60 FPS option, 30 FPS reset, AA disable, and speed helper for the English patch. |
 | `00040000000BA800` | Pokemon Mystery Dungeon: Gates to Infinity | https://projectpokemon.org/home/forums/topic/57553-pok%C3%A9mon-mystery-dungeon-gates-to-infinity-us-text-speed-modifier/ | Disabled by default. |
 | `00040000001D7100` | Persona Q2: New Cinema Labyrinth | https://kriegisrei.github.io/pq2stuff/ | Disabled by default. |
 
