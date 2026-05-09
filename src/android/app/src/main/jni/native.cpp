@@ -101,6 +101,29 @@ std::mutex paused_mutex;
 std::mutex running_mutex;
 std::condition_variable running_cv;
 
+constexpr u64 EX_TROOPERS_TITLE_ID = 0x0004000000053700;
+
+void ApplyAndroidGameProfile(u64 program_id) {
+    if (program_id != EX_TROOPERS_TITLE_ID) {
+        return;
+    }
+
+    Settings::values.use_cpu_jit = true;
+    Settings::values.use_hw_shader = true;
+    Settings::values.use_shader_jit = true;
+    Settings::values.use_disk_shader_cache = true;
+    Settings::values.shaders_accurate_mul = false;
+    Settings::values.custom_textures = false;
+    Settings::values.preload_textures = false;
+    Settings::values.async_custom_loading = true;
+    Settings::values.frame_limit = 100.0;
+
+    const u32 resolution_factor = Settings::values.resolution_factor.GetValue();
+    if (resolution_factor == 0 || resolution_factor > 2) {
+        Settings::values.resolution_factor = 2;
+    }
+}
+
 std::string inserted_cartridge;
 
 } // Anonymous namespace
@@ -238,6 +261,7 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
         app_loader->ReadProgramId(program_id);
         system.RegisterAppLoaderEarly(app_loader);
     }
+    ApplyAndroidGameProfile(program_id);
     system.ApplySettings();
     Settings::LogSettings();
 
@@ -920,6 +944,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_reloadSettings([[maybe_unused]] JNI
     if (system.IsPoweredOn()) {
         u64 program_id{};
         system.GetAppLoader().ReadProgramId(program_id);
+        ApplyAndroidGameProfile(program_id);
     }
 
     system.ApplySettings();

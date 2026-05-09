@@ -211,5 +211,14 @@ HackManager hack_manager = {
                      0x0004000000089D00, // KOR
                  },
          }},
+        {HackType::SKIP_TEXTURE_COPY_FALLBACK,
+         HackEntry{
+             .mode = HackAllowMode::FORCE,
+             .affected_title_ids =
+                 {
+                     // E.X. Troopers
+                     0x0004000000053700, // JPN / English patched
+                 },
+         }},
     }};
 }

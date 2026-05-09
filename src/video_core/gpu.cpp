@@ -397,6 +397,10 @@ void GPU::ApplyPerProgramSettings(u64 program_ID) {
         }
     }
     impl->rasterizer->SetAccurateMul(use_accurate_mul);
+
+    Settings::values.skip_texture_copy_fallback =
+        Common::Hacks::hack_manager.OverrideBooleanSetting(
+            Common::Hacks::HackType::SKIP_TEXTURE_COPY_FALLBACK, program_ID, false);
 }
 
 void GPU::SubmitCmdList(u32 index) {

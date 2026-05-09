@@ -168,6 +168,7 @@ void LogSettings() {
                 values.toggle_unique_data_console_type.GetValue());
     log_setting("Debugging_BreakOnUnmappedMemoryAccess",
                 values.break_on_unmapped_memory_access.GetValue());
+    log_setting("Compatibility_SkipTextureCopyFallback", values.skip_texture_copy_fallback);
 }
 
 bool IsConfiguringGlobal() {
