@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * from the Citra APK to the external file system.
  */
 object DirectoryInitialization {
+    private const val BUNDLED_CHEATS_DIR = "cheats"
     private const val SYS_DIR_VERSION = "sysDirectoryVersion"
 
     @Volatile
@@ -47,6 +48,7 @@ object DirectoryInitialization {
                     NativeLibrary.createLogFile()
                     NativeLibrary.logUserDirectory(userPath.toString())
                     NativeLibrary.createConfigFile()
+                    installBundledCheats()
                     GpuDriverHelper.initializeDriverParameters()
                     DirectoryInitializationState.CITRA_DIRECTORIES_INITIALIZED
                 } else {
@@ -98,6 +100,63 @@ object DirectoryInitialization {
             return true
         }
         return false
+    }
+
+    private fun installBundledCheats() {
+        val cheatFiles = try {
+            context.assets.list(BUNDLED_CHEATS_DIR) ?: return
+        } catch (e: IOException) {
+            Log.error(
+                "[DirectoryInitialization] Failed to list bundled cheats: " +
+                        e.message
+            )
+            return
+        }
+
+        if (cheatFiles.isEmpty()) {
+            return
+        }
+
+        if (CitraApplication.documentsTree.folderUriHelper("/cheats/", true) == null) {
+            Log.warning("[DirectoryInitialization] Failed to create bundled cheats directory")
+            return
+        }
+
+        for (filename in cheatFiles) {
+            if (!filename.endsWith(".txt", ignoreCase = true)) {
+                continue
+            }
+
+            val destinationPath = "/cheats/$filename"
+            try {
+                if (CitraApplication.documentsTree.getFileSize(destinationPath) > 0L) {
+                    continue
+                }
+
+                if (!CitraApplication.documentsTree.createFile("/cheats/", filename)) {
+                    Log.warning("[DirectoryInitialization] Failed to create bundled cheat $filename")
+                    continue
+                }
+
+                val destinationUri = CitraApplication.documentsTree.getUri(destinationPath)
+                context.assets.open("$BUNDLED_CHEATS_DIR/$filename").use { input ->
+                    context.contentResolver.openOutputStream(destinationUri, "wt").use { output ->
+                        if (output == null) {
+                            Log.warning(
+                                "[DirectoryInitialization] Failed to open bundled cheat $filename"
+                            )
+                        } else {
+                            copyFile(input, output)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.error(
+                    "[DirectoryInitialization] Failed to install bundled cheat $filename: " +
+                            e.message
+                )
+            }
+        }
     }
 
     private fun copyAsset(asset: String, output: File, overwrite: Boolean, context: Context) {
