@@ -6,6 +6,7 @@
 #include <memory>
 #include <ranges>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
 #include <INIReader.h>
 #include <boost/hana/string.hpp>
@@ -101,6 +102,15 @@ void Config::ReadSetting(const std::string& group, Settings::Setting<Type, range
         setting = static_cast<Type>(android_config->GetInteger(
             group, setting.GetLabel(), static_cast<long>(setting.GetDefault())));
     }
+}
+
+static bool IsAndroidConfigOmittedKey(std::string_view key) {
+    for (const auto* omitted_key : DefaultINI::android_config_omitted_keys) {
+        if (key == std::string_view(omitted_key)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void Config::ReadValues() {
@@ -340,8 +350,7 @@ void Config::Reload() {
          ++key) {
         const auto key_declaration_string = std::string(*key) + " =";
         // FIXME: This code looks so ass when formatted by clang-format -OS
-        if (std::ranges::find(DefaultINI::android_config_omitted_keys, *key) ==
-                std::end(DefaultINI::android_config_omitted_keys) &&
+        if (!IsAndroidConfigOmittedKey(*key) &&
             std::string(DefaultINI::android_config_default_file_content)
                     .find(key_declaration_string) == std::string::npos) {
             ASSERT_MSG(false,
