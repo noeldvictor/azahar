@@ -70,7 +70,14 @@ class Game(
             return false
         }
 
-        return hashCode() == other.hashCode()
+        return title == other.title &&
+                description == other.description &&
+                regions == other.regions &&
+                path == other.path &&
+                titleId == other.titleId &&
+                mediaType == other.mediaType &&
+                company == other.company &&
+                hasCheats == other.hasCheats
     }
 
     override fun hashCode(): Int {

@@ -114,7 +114,9 @@ class GameAdapter(
         lastClickTime = SystemClock.elapsedRealtime()
 
         val holder = view.tag as GameViewHolder
-        gameExists(holder)
+        if (!gameExists(holder)) {
+            return
+        }
 
         val preferences =
             PreferenceManager.getDefaultSharedPreferences(CitraApplication.appContext)
@@ -137,7 +139,9 @@ class GameAdapter(
     override fun onLongClick(view: View): Boolean {
         val context = view.context
         val holder = view.tag as GameViewHolder
-        gameExists(holder)
+        if (!gameExists(holder)) {
+            return true
+        }
 
         if (!holder.game.valid) {
             MaterialAlertDialogBuilder(context)

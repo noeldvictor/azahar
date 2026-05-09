@@ -25,6 +25,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 object DirectoryInitialization {
     private const val BUNDLED_CHEATS_DIR = "cheats"
     private const val SYS_DIR_VERSION = "sysDirectoryVersion"
+    private val REPLACEABLE_BUNDLED_CHEAT_SIZES = mapOf(
+        "0004000000086300.txt" to 5076L,
+        "000400000008C300.txt" to 67L,
+    )
 
     @Volatile
     private var directoryState: DirectoryInitializationState? = null
@@ -129,7 +133,9 @@ object DirectoryInitialization {
 
             val destinationPath = "/cheats/$filename"
             try {
-                if (CitraApplication.documentsTree.getFileSize(destinationPath) > 0L) {
+                val existingSize = CitraApplication.documentsTree.getFileSize(destinationPath)
+                val shouldReplace = REPLACEABLE_BUNDLED_CHEAT_SIZES[filename] == existingSize
+                if (existingSize > 0L && !shouldReplace) {
                     continue
                 }
 
