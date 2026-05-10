@@ -11,7 +11,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Adreno custom driver loading is already wired through `libadrenotools` and `GpuDriverHelper`.
 - E.X. Troopers (`0004000000053700`) currently has a hardcoded Android launch profile and matching manifest.
 - Thor dual-display mode is fixed to 3DS top screen on the primary panel and 3DS bottom screen on the secondary panel. The old hidden virtual secondary display fallback is removed, so secondary rendering only starts when Android exposes a real second display.
-- The Thor GPU Driver Manager now has a one-tap Turnip path. It queries K11MCH1 AdrenoToolsDrivers releases, chooses the newest generic Turnip ZIP, validates driver metadata, stores the ZIP under `gpu_drivers`, installs it immediately, and still keeps manual ZIP and system-driver fallback paths.
+- The Thor GPU Driver Manager now has a guided picker. It queries K11MCH1 AdrenoToolsDrivers releases, presents the newest generic Turnip ZIP as the recommended first pick, also lists Qualcomm and Turnip variant troubleshooting choices when available, validates driver metadata, stores the ZIP under `gpu_drivers`, installs immediately, and still keeps manual ZIP and system-driver fallback paths.
 
 ## High-Value Optimization Places
 

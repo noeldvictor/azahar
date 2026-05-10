@@ -40,6 +40,13 @@ object GpuDriverHelper {
         val metadata: GpuDriverMetadata
     )
 
+    data class RecommendedDriverOption(
+        val title: String,
+        val note: String,
+        val assetName: String,
+        val downloadUrl: String
+    )
+
     private data class RemoteDriverAsset(
         val name: String,
         val downloadUrl: String
@@ -126,8 +133,66 @@ object GpuDriverHelper {
     }
 
     fun downloadRecommendedTurnipDriver(): DriverPackage? {
-        val asset = fetchRecommendedTurnipAsset()
+        val asset = fetchRecommendedDriverAsset()
 
+        return downloadDriverAssetPackage(asset)
+    }
+
+    fun getRecommendedDriverOptions(): List<RecommendedDriverOption> {
+        val assets = fetchReleaseAssets()
+        val options = mutableListOf<RecommendedDriverOption>()
+
+        val recommendedTurnip = assets.firstOrNull { isRecommendedTurnipAsset(it.name) }
+            ?: RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
+        options.add(
+            RecommendedDriverOption(
+                title = "${driverDisplayName(recommendedTurnip.name)} - Recommended",
+                note = "Best first try for Thor Base/Pro/Max and Adreno 740. Use this unless a game has new graphics bugs or crashes.",
+                assetName = recommendedTurnip.name,
+                downloadUrl = recommendedTurnip.downloadUrl
+            )
+        )
+
+        assets.firstOrNull { isQualcommDriverAsset(it.name) }?.let {
+            options.add(
+                RecommendedDriverOption(
+                    title = driverDisplayName(it.name),
+                    note = "Qualcomm user-mode package. Try this when Turnip breaks a specific game or you want a stock-like fallback.",
+                    assetName = it.name,
+                    downloadUrl = it.downloadUrl
+                )
+            )
+        }
+
+        assets.firstOrNull { isTurnipVariantAsset(it.name, "sysmem") }?.let {
+            options.add(
+                RecommendedDriverOption(
+                    title = driverDisplayName(it.name),
+                    note = "Turnip alternate memory path. Try per-game if recommended Turnip has rendering glitches.",
+                    assetName = it.name,
+                    downloadUrl = it.downloadUrl
+                )
+            )
+        }
+
+        assets.firstOrNull { isTurnipVariantAsset(it.name, "gmem") }?.let {
+            options.add(
+                RecommendedDriverOption(
+                    title = driverDisplayName(it.name),
+                    note = "Turnip GMEM variant. Experimental on Thor; keep it as a troubleshooting option, not the default.",
+                    assetName = it.name,
+                    downloadUrl = it.downloadUrl
+                )
+            )
+        }
+
+        return options.distinctBy { it.assetName }
+    }
+
+    fun downloadDriverOption(option: RecommendedDriverOption): DriverPackage? =
+        downloadDriverAssetPackage(RemoteDriverAsset(option.assetName, option.downloadUrl))
+
+    private fun downloadDriverAssetPackage(asset: RemoteDriverAsset): DriverPackage? {
         val existingDriver = driverStoragePath.findFile(asset.name)
         if (existingDriver != null) {
             val metadata = getSupportedMetadata(existingDriver)
@@ -238,7 +303,12 @@ object GpuDriverHelper {
         return GpuDriverMetadata()
     }
 
-    private fun fetchRecommendedTurnipAsset(): RemoteDriverAsset {
+    private fun fetchRecommendedDriverAsset(): RemoteDriverAsset {
+        return fetchReleaseAssets().firstOrNull { isRecommendedTurnipAsset(it.name) }
+            ?: RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
+    }
+
+    private fun fetchReleaseAssets(): List<RemoteDriverAsset> {
         try {
             val connection = (URL(DRIVER_RELEASES_URL).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 15000
@@ -249,32 +319,30 @@ object GpuDriverHelper {
 
             connection.inputStream.use { input ->
                 val releases = JSONArray(FileUtil.getStringFromInputStream(input))
+                val assets = mutableListOf<RemoteDriverAsset>()
                 for (releaseIndex in 0 until releases.length()) {
                     val release = releases.getJSONObject(releaseIndex)
                     if (release.optBoolean("draft", false)) {
                         continue
                     }
 
-                    val assets = release.optJSONArray("assets") ?: continue
-                    for (assetIndex in 0 until assets.length()) {
-                        val asset = assets.getJSONObject(assetIndex)
+                    val releaseAssets = release.optJSONArray("assets") ?: continue
+                    for (assetIndex in 0 until releaseAssets.length()) {
+                        val asset = releaseAssets.getJSONObject(assetIndex)
                         val name = asset.optString("name")
-                        if (!isRecommendedTurnipAsset(name)) {
-                            continue
-                        }
-
                         val downloadUrl = asset.optString("browser_download_url")
                         if (downloadUrl.isNotBlank()) {
-                            return RemoteDriverAsset(name, downloadUrl)
+                            assets.add(RemoteDriverAsset(name, downloadUrl))
                         }
                     }
                 }
+                return assets
             }
         } catch (e: Exception) {
-            Log.warning("[GpuDriverHelper] Failed to fetch Turnip release list: ${e.message}")
+            Log.warning("[GpuDriverHelper] Failed to fetch driver release list: ${e.message}")
         }
 
-        return RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
+        return emptyList()
     }
 
     private fun isRecommendedTurnipAsset(name: String): Boolean {
@@ -286,6 +354,28 @@ object GpuDriverHelper {
             !normalized.contains("sysmem") &&
             !normalized.contains("magisk") &&
             !normalized.contains("winlator")
+    }
+
+    private fun isTurnipVariantAsset(name: String, variant: String): Boolean {
+        val normalized = name.lowercase()
+        return normalized.startsWith("turnip_v") &&
+            normalized.endsWith(".zip") &&
+            normalized.contains(variant) &&
+            !normalized.contains("a8xx") &&
+            !normalized.contains("magisk") &&
+            !normalized.contains("winlator")
+    }
+
+    private fun isQualcommDriverAsset(name: String): Boolean {
+        val normalized = name.lowercase()
+        return normalized.startsWith("qualcomm_") &&
+            normalized.endsWith("_adpkg.zip")
+    }
+
+    private fun driverDisplayName(name: String): String {
+        return name.removeSuffix(".zip")
+            .removeSuffix("_adpkg")
+            .replace('_', ' ')
     }
 
     private fun downloadDriverAsset(asset: RemoteDriverAsset): DocumentFile? {

@@ -18,9 +18,12 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.transition.MaterialSharedAxis
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.citra.citra_emu.R
 import org.citra.citra_emu.adapters.DriverAdapter
 import org.citra.citra_emu.databinding.FragmentDriverManagerBinding
@@ -69,8 +72,8 @@ class DriverManagerFragment : Fragment() {
             binding.root.findNavController().popBackStack()
         }
 
-        binding.buttonInstallTurnip.setOnClickListener {
-            installRecommendedTurnipDriver()
+        binding.buttonInstallGuide.setOnClickListener {
+            showRecommendedDriverGuide()
         }
 
         binding.buttonInstall.setOnClickListener {
@@ -135,11 +138,11 @@ class DriverManagerFragment : Fragment() {
 
             val fabSpacing = resources.getDimensionPixelSize(R.dimen.spacing_fab)
             val mlpTurnipFab =
-                binding.buttonInstallTurnip.layoutParams as ViewGroup.MarginLayoutParams
+                binding.buttonInstallGuide.layoutParams as ViewGroup.MarginLayoutParams
             mlpTurnipFab.leftMargin = leftInsets + fabSpacing
             mlpTurnipFab.rightMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
             mlpTurnipFab.bottomMargin = barInsets.bottom + fabSpacing
-            binding.buttonInstallTurnip.layoutParams = mlpTurnipFab
+            binding.buttonInstallGuide.layoutParams = mlpTurnipFab
 
             val mlpFab =
                 binding.buttonInstall.layoutParams as ViewGroup.MarginLayoutParams
@@ -156,13 +159,57 @@ class DriverManagerFragment : Fragment() {
             windowInsets
         }
 
-    private fun installRecommendedTurnipDriver() {
+    private fun showRecommendedDriverGuide() {
+        binding.buttonInstallGuide.isEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            val options = withContext(Dispatchers.IO) {
+                GpuDriverHelper.getRecommendedDriverOptions()
+            }
+            if (_binding == null) {
+                return@launch
+            }
+            binding.buttonInstallGuide.isEnabled = true
+
+            if (options.isEmpty()) {
+                IndeterminateProgressDialogFragment.newInstance(
+                    requireActivity(),
+                    R.string.installing_driver,
+                    false
+                ) {
+                    val driverPackage = GpuDriverHelper.downloadRecommendedTurnipDriver()
+                        ?: return@newInstance getString(R.string.turnip_driver_install_error)
+                    return@newInstance installDriverPackage(driverPackage)
+                }.show(childFragmentManager, IndeterminateProgressDialogFragment.TAG)
+                return@launch
+            }
+
+            showRecommendedDriverDialog(options)
+        }
+    }
+
+    private fun showRecommendedDriverDialog(
+        options: List<GpuDriverHelper.RecommendedDriverOption>
+    ) {
+        val labels = options.map {
+            "${it.title}\n${it.note}\n${it.assetName}"
+        }.toTypedArray()
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.recommended_gpu_driver_title)
+            .setItems(labels) { _, which ->
+                installDriverOption(options[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun installDriverOption(option: GpuDriverHelper.RecommendedDriverOption) {
         IndeterminateProgressDialogFragment.newInstance(
             requireActivity(),
-            R.string.installing_turnip_driver,
+            R.string.installing_driver,
             false
         ) {
-            val driverPackage = GpuDriverHelper.downloadRecommendedTurnipDriver()
+            val driverPackage = GpuDriverHelper.downloadDriverOption(option)
                 ?: return@newInstance getString(R.string.turnip_driver_install_error)
 
             return@newInstance installDriverPackage(driverPackage)

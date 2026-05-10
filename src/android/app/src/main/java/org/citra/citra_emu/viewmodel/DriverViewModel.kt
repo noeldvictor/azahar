@@ -81,10 +81,12 @@ class DriverViewModel : ViewModel() {
     }
 
     fun addDriver(driverData: Pair<Uri, GpuDriverMetadata>) {
-        val driverIndex = _driverList.value.indexOfFirst { it == driverData }
+        val drivers = _driverList.value.toMutableList()
+        val driverIndex = drivers.indexOfFirst { it == driverData }
         if (driverIndex == -1) {
-            setSelectedDriverIndex(_driverList.value.size)
-            _driverList.value.add(driverData)
+            setSelectedDriverIndex(drivers.size)
+            drivers.add(driverData)
+            _driverList.value = drivers
             _selectedDriverMetadata.value = driverData.second.name
                 ?: CitraApplication.appContext.getString(R.string.system_gpu_driver)
         } else {
@@ -93,7 +95,9 @@ class DriverViewModel : ViewModel() {
     }
 
     fun removeDriver(driverData: Pair<Uri, GpuDriverMetadata>) {
-        _driverList.value.remove(driverData)
+        val drivers = _driverList.value.toMutableList()
+        drivers.remove(driverData)
+        _driverList.value = drivers
     }
 
     fun onCloseDriverManager() {

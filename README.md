@@ -58,7 +58,7 @@ This fork has moved away from stock Azahar in visible ways:
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
-- The Thor GPU Driver Manager has a one-tap Turnip installer that fetches a compatible K11MCH1 AdrenoTools Turnip ZIP, validates it, installs it immediately, and keeps manual ZIP install plus system-driver fallback.
+- The Thor GPU Driver Manager has a guided driver picker with notes: recommended generic Turnip first, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
 - Thor game profile manifests live under `src/android/app/src/main/assets/game_profiles/`.
 - E.X. Troopers has a Thor-specific compatibility profile and native title hack notes for smoother testing.
 - Thor Base/Pro/Max optimization notes are tracked in `docs/thor-optimization-notes.md`.
