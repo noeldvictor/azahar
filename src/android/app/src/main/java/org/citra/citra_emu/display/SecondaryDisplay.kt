@@ -4,85 +4,67 @@
 
 package org.citra.citra_emu.display
 
+import android.app.Activity
 import android.app.Presentation
 import android.content.Context
 import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
 import android.os.Bundle
 import android.view.Display
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
-import org.citra.citra_emu.features.settings.model.IntSetting
 import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.features.settings.model.IntSetting
+import org.citra.citra_emu.features.settings.model.BooleanSetting
+import org.citra.citra_emu.features.settings.model.Settings
+import org.citra.citra_emu.features.settings.utils.SettingsFile
+import org.citra.citra_emu.utils.EmulationMenuSettings
 
-class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
+class SecondaryDisplay(val context: Context, private val settings: Settings) :
+    DisplayManager.DisplayListener {
     private var pres: SecondaryDisplayPresentation? = null
     private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-    private val vd: VirtualDisplay
 
     init {
-        vd = displayManager.createVirtualDisplay(
-            "HiddenDisplay",
-            1920,
-            1080,
-            320,
-            null,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
-        )
         displayManager.registerDisplayListener(this, null)
     }
 
     fun updateSurface() {
-        NativeLibrary.secondarySurfaceChanged(pres!!.getSurfaceHolder().surface)
+        val surface = pres?.getSurfaceHolder()?.surface ?: return
+        NativeLibrary.secondarySurfaceChanged(surface)
     }
 
     fun destroySurface() {
         NativeLibrary.secondarySurfaceDestroyed()
     }
 
-    private fun getExternalDisplay(context: Context): Display? {
-        val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val currentDisplayId = context.display.displayId
-        val displays = dm.displays
-        val presDisplays = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-        val extDisplays = displays.filter {
-            val isPresentable = presDisplays.any { pd -> pd.displayId == it.displayId }
-            val isNotDefaultOrPresentable = it.displayId != Display.DEFAULT_DISPLAY || isPresentable
-            isNotDefaultOrPresentable &&
-                    it.displayId != currentDisplayId &&
-                    it.name != "HiddenDisplay" &&
-                    it.state != Display.STATE_OFF &&
-                    it.isValid
-        }
-        // if there is a display called Built-In Display or Built-In Screen, prioritize the OTHER screen
-        val selected = extDisplays.firstOrNull { ! it.name.contains("Built",true) }
-            ?: extDisplays.firstOrNull()
-        return selected
-    }
-
     fun updateDisplay() {
         // return early if the parent context is dead or dying
-        if (context is android.app.Activity && (context.isFinishing || context.isDestroyed)) {
+        if (context is Activity && (context.isFinishing || context.isDestroyed)) {
             return
         }
 
-        // decide if we are going to the external display or the internal one
-        var display = getExternalDisplay(context)
-        if (display == null ||
-            IntSetting.SECONDARY_DISPLAY_LAYOUT.int == SecondaryDisplayLayout.NONE.int) {
-            display = vd.display
+        val display = getExternalDisplay(context)
+        if (display == null) {
+            releasePresentation()
+            return
         }
+        val settingsChanged = applyThorDualDisplaySettings()
 
         // if our presentation is already on the right display, ignore
-        if (pres?.display == display) return
+        if (pres?.display == display) {
+            if (settingsChanged) {
+                refreshNativeDisplayLayout()
+            }
+            return
+        }
 
         // otherwise, make a new presentation
         releasePresentation()
 
         try {
-            pres = SecondaryDisplayPresentation(context, display!!, this)
+            pres = SecondaryDisplayPresentation(context, display, this)
             pres?.show()
         }
         // catch BadTokenException and InvalidDisplayException,
@@ -92,6 +74,10 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
             pres = null
         } catch (_: WindowManager.InvalidDisplayException) {
             pres = null
+        }
+
+        if (settingsChanged) {
+            refreshNativeDisplayLayout()
         }
     }
 
@@ -104,7 +90,48 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
 
     fun releaseVD() {
         displayManager.unregisterDisplayListener(this)
-        vd.release()
+    }
+
+    private fun applyThorDualDisplaySettings(): Boolean {
+        var changed = false
+
+        if (IntSetting.SCREEN_LAYOUT.int != ScreenLayout.SINGLE_SCREEN.int) {
+            IntSetting.SCREEN_LAYOUT.int = ScreenLayout.SINGLE_SCREEN.int
+            settings.saveSetting(IntSetting.SCREEN_LAYOUT, SettingsFile.FILE_NAME_CONFIG)
+            changed = true
+        }
+
+        if (IntSetting.SECONDARY_DISPLAY_LAYOUT.int != SecondaryDisplayLayout.BOTTOM_SCREEN.int) {
+            IntSetting.SECONDARY_DISPLAY_LAYOUT.int = SecondaryDisplayLayout.BOTTOM_SCREEN.int
+            settings.saveSetting(IntSetting.SECONDARY_DISPLAY_LAYOUT, SettingsFile.FILE_NAME_CONFIG)
+            changed = true
+        }
+
+        if (BooleanSetting.SWAP_SCREEN.boolean) {
+            BooleanSetting.SWAP_SCREEN.boolean = false
+            settings.saveSetting(BooleanSetting.SWAP_SCREEN, SettingsFile.FILE_NAME_CONFIG)
+            changed = true
+        }
+
+        if (EmulationMenuSettings.swapScreens) {
+            EmulationMenuSettings.swapScreens = false
+            changed = true
+        }
+
+        return changed
+    }
+
+    private fun refreshNativeDisplayLayout() {
+        if (!NativeLibrary.isRunning()) {
+            return
+        }
+
+        NativeLibrary.reloadSettings()
+        NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode)
+        NativeLibrary.swapScreens(
+            false,
+            (context as? Activity)?.windowManager?.defaultDisplay?.rotation ?: 0
+        )
     }
 
     override fun onDisplayAdded(displayId: Int) {
@@ -116,6 +143,33 @@ class SecondaryDisplay(val context: Context) : DisplayManager.DisplayListener {
     }
     override fun onDisplayChanged(displayId: Int) {
         updateDisplay()
+    }
+
+    companion object {
+        fun hasExternalDisplay(context: Context): Boolean {
+            return getExternalDisplay(context) != null
+        }
+
+        private fun getExternalDisplay(context: Context): Display? {
+            val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+            val currentDisplayId = context.display.displayId
+            val displays = dm.displays
+            val presDisplays = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+            val extDisplays = displays.filter {
+                val isPresentable = presDisplays.any { pd -> pd.displayId == it.displayId }
+                val isNotDefaultOrPresentable =
+                    it.displayId != Display.DEFAULT_DISPLAY || isPresentable
+                isNotDefaultOrPresentable &&
+                    it.displayId != currentDisplayId &&
+                    it.name != "HiddenDisplay" &&
+                    it.state != Display.STATE_OFF &&
+                    it.isValid
+            }
+
+            // If one display name looks built-in, use the other panel as the 3DS bottom screen.
+            return extDisplays.firstOrNull { !it.name.contains("Built", true) }
+                ?: extDisplays.firstOrNull()
+        }
     }
 }
 class SecondaryDisplayPresentation(

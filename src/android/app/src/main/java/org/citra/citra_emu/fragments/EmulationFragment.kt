@@ -67,6 +67,7 @@ import org.citra.citra_emu.databinding.FragmentEmulationBinding
 import org.citra.citra_emu.display.PortraitScreenLayout
 import org.citra.citra_emu.display.ScreenAdjustmentUtil
 import org.citra.citra_emu.display.ScreenLayout
+import org.citra.citra_emu.display.SecondaryDisplay
 import org.citra.citra_emu.features.settings.model.BooleanSetting
 import org.citra.citra_emu.features.settings.model.IntSetting
 import org.citra.citra_emu.features.settings.model.Settings
@@ -195,12 +196,17 @@ class EmulationFragment : Fragment(), SurfaceHolder.Callback, Choreographer.Fram
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentEmulationBinding.inflate(inflater)
+        val fixedThorDualDisplay = SecondaryDisplay.hasExternalDisplay(requireContext())
         binding.inGameMenu.menu.findItem(R.id.menu_landscape_screen_layout).isVisible =
-            CitraApplication.appContext.resources.configuration.orientation !=
+            !fixedThorDualDisplay &&
+                CitraApplication.appContext.resources.configuration.orientation !=
                     Configuration.ORIENTATION_PORTRAIT
         binding.inGameMenu.menu.findItem(R.id.menu_portrait_screen_layout).isVisible =
-            CitraApplication.appContext.resources.configuration.orientation ==
+            !fixedThorDualDisplay &&
+                CitraApplication.appContext.resources.configuration.orientation ==
                     Configuration.ORIENTATION_PORTRAIT
+        binding.inGameMenu.menu.findItem(R.id.menu_swap_screens).isVisible =
+            !fixedThorDualDisplay
         return binding.root
     }
 

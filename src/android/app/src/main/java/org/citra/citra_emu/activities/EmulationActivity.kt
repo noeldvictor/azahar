@@ -102,7 +102,7 @@ class EmulationActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
-        secondaryDisplay = SecondaryDisplay(this)
+        secondaryDisplay = SecondaryDisplay(this, settingsViewModel.settings)
         secondaryDisplay.updateDisplay()
 
         binding = ActivityEmulationBinding.inflate(layoutInflater)

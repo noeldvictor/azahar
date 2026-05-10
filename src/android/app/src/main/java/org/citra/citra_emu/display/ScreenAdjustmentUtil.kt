@@ -23,6 +23,11 @@ class ScreenAdjustmentUtil(
     private val settings: Settings,
 ) {
     fun swapScreen() {
+        if (hasFixedThorDualDisplayLayout()) {
+            keepThorDualDisplayLayout()
+            return
+        }
+
         val isEnabled = !EmulationMenuSettings.swapScreens
         EmulationMenuSettings.swapScreens = isEnabled
         NativeLibrary.swapScreens(
@@ -34,6 +39,10 @@ class ScreenAdjustmentUtil(
     }
 
     fun cycleLayouts() {
+        if (hasFixedThorDualDisplayLayout()) {
+            keepThorDualDisplayLayout()
+            return
+        }
 
         val landscapeLayoutsToCycle = IntListSetting.LAYOUTS_TO_CYCLE.list;
         val landscapeValues =
@@ -65,6 +74,11 @@ class ScreenAdjustmentUtil(
     }
 
     fun changeScreenOrientation(layoutOption: Int) {
+        if (hasFixedThorDualDisplayLayout()) {
+            keepThorDualDisplayLayout()
+            return
+        }
+
         IntSetting.SCREEN_LAYOUT.int = layoutOption
         settings.saveSetting(IntSetting.SCREEN_LAYOUT, SettingsFile.FILE_NAME_CONFIG)
         NativeLibrary.reloadSettings()
@@ -85,5 +99,41 @@ class ScreenAdjustmentUtil(
         NativeLibrary.reloadSettings()
         NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode)
 
+    }
+
+    private fun hasFixedThorDualDisplayLayout(): Boolean {
+        return SecondaryDisplay.hasExternalDisplay(context) &&
+            IntSetting.SECONDARY_DISPLAY_LAYOUT.int == SecondaryDisplayLayout.BOTTOM_SCREEN.int
+    }
+
+    private fun keepThorDualDisplayLayout() {
+        var changed = false
+
+        if (IntSetting.SCREEN_LAYOUT.int != ScreenLayout.SINGLE_SCREEN.int) {
+            IntSetting.SCREEN_LAYOUT.int = ScreenLayout.SINGLE_SCREEN.int
+            settings.saveSetting(IntSetting.SCREEN_LAYOUT, SettingsFile.FILE_NAME_CONFIG)
+            changed = true
+        }
+
+        if (BooleanSetting.SWAP_SCREEN.boolean) {
+            BooleanSetting.SWAP_SCREEN.boolean = false
+            settings.saveSetting(BooleanSetting.SWAP_SCREEN, SettingsFile.FILE_NAME_CONFIG)
+            changed = true
+        }
+
+        if (EmulationMenuSettings.swapScreens) {
+            EmulationMenuSettings.swapScreens = false
+            changed = true
+        }
+
+        if (changed) {
+            NativeLibrary.reloadSettings()
+            NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode)
+        }
+
+        NativeLibrary.swapScreens(
+            false,
+            windowManager.defaultDisplay.rotation
+        )
     }
 }

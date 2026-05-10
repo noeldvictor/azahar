@@ -57,6 +57,7 @@ This fork has moved away from stock Azahar in visible ways:
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
+- Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - Thor game profile manifests live under `src/android/app/src/main/assets/game_profiles/`.
 - E.X. Troopers has a Thor-specific compatibility profile and native title hack notes for smoother testing.
 - Thor Base/Pro/Max optimization notes are tracked in `docs/thor-optimization-notes.md`.
