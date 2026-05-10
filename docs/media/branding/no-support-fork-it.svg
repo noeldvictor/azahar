@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 176" role="img" aria-labelledby="title desc">
+  <title id="title">No support fork message</title>
+  <desc id="desc">A large warning banner saying no support, fork it and do stuff yourself.</desc>
+  <rect x="10" y="10" width="1100" height="156" rx="34" fill="#ffae19"/>
+  <rect x="10" y="10" width="1100" height="156" rx="34" fill="none" stroke="#09111f" stroke-width="10"/>
+  <text x="560" y="78" text-anchor="middle" fill="#09111f" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="46" font-weight="900">NO SUPPORT. DO NOT OPEN ISSUES.</text>
+  <text x="560" y="128" text-anchor="middle" fill="#09111f" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="800">fork it and do stuff yourself</text>
+</svg>

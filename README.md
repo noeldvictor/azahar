@@ -5,9 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="#get-the-apk">
-    <img src="docs/media/branding/download-thor-apk-button.svg" alt="Get the Thor APK">
-  </a>
+  <img src="docs/media/branding/no-support-fork-it.svg" alt="No support. Fork it and do stuff yourself.">
 </p>
 
 This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar) for the AYN Thor. It is tuned around my own handheld setup, bundled cheat workflow, and local testing. It is not upstream Azahar, not an official release channel, and not trying to be a general-purpose support project.
@@ -17,16 +15,6 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 > [!CAUTION]
 > Personal-use experiment. No guarantee of stability, compatibility, correctness, performance, support, or future updates. No games, keys, BIOS, firmware, or copyrighted game content are included. Use your own legally dumped content.
-
-## Get The APK
-
-The simple path is:
-
-1. Open the [GitHub Releases page](https://github.com/noeldvictor/azahar-thor-experiment/releases).
-2. Download `app-vanilla-relWithDebInfoLite.apk`.
-3. Install that APK on the AYN Thor.
-
-If the Releases page is empty, no public APK has been uploaded yet. Build it locally with the command in [Build Locally](#build-locally).
 
 ## What This Is
 
@@ -46,7 +34,7 @@ If the Releases page is empty, no public APK has been uploaded yet. Build it loc
 
 ## Support And Issues
 
-Do not open issues expecting support for this experiment. If something breaks, fork it, patch it, and own the result. If the AI/vibe-coded nature of the fork is a problem, look elsewhere.
+Do not open issues expecting support for this experiment. Fork it and do stuff yourself. If something breaks, patch it and own the result. If the AI/vibe-coded nature of the fork is a problem, look elsewhere.
 
 The upstream Azahar project has its own rules, standards, and support expectations. Do not send Thor-experiment problems to upstream.
 

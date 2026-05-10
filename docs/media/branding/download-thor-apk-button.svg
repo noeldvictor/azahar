@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 176" role="img" aria-labelledby="title desc">
-  <title id="title">Get the Thor APK</title>
-  <desc id="desc">A large button that points readers to the APK download and install instructions.</desc>
-  <rect x="10" y="10" width="1100" height="156" rx="34" fill="#00ebcd"/>
-  <rect x="10" y="10" width="1100" height="156" rx="34" fill="none" stroke="#09111f" stroke-width="10"/>
-  <path d="M80 54h68v28h-18v34h18v28H80Zm210 0h-68v28h18v34h-18v28h68Z" fill="#09111f"/>
-  <text x="560" y="76" text-anchor="middle" fill="#09111f" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="46" font-weight="900">GET THE THOR APK</text>
-  <text x="560" y="126" text-anchor="middle" fill="#09111f" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="600">start here: releases, install notes, or local build fallback</text>
-</svg>
