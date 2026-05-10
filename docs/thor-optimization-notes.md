@@ -13,11 +13,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 
 ## High-Value Optimization Places
 
-1. Secondary display render cost
+1. Hidden secondary surface render cost
 
-   `EmulationActivity` always creates `SecondaryDisplay`, and `SecondaryDisplay` falls back to a hidden 1920x1080 virtual display when the configured secondary layout is `None` or no real external display is selected. The Vulkan and OpenGL renderers render the secondary window whenever it exists. On Thor, that can waste GPU work when the bottom screen is not actively used.
+   Do not confuse the 3DS bottom screen with the Android secondary display surface. The 3DS bottom screen is normally needed, especially on Thor dual-screen layouts.
 
-   Candidate fix: do not create or render the secondary surface while `secondary_display_layout = None`; create it only for actual Thor dual-screen modes. This is the first place to test.
+   `EmulationActivity` always creates `SecondaryDisplay`, and `SecondaryDisplay` falls back to a hidden 1920x1080 virtual display when the configured secondary layout is `None` or no real external display is selected. With `secondary_display_layout = None`, `AndroidSecondaryLayout()` falls back to a top-screen-only layout, so the renderer can spend GPU time drawing a duplicate hidden top screen. The Vulkan and OpenGL renderers render the secondary window whenever it exists.
+
+   Candidate fix: keep rendering the bottom screen when a real Thor dual-screen layout is active, but do not create or render the hidden secondary surface while `secondary_display_layout = None`. If a secondary layout is selected but no real second display is available, make that failure visible instead of silently rendering offscreen.
 
 2. Data-driven Thor game profiles
 
