@@ -1,7 +1,13 @@
 # Azahar Thor Experiment
 
 <p align="center">
-  <img src="docs/media/branding/azahar-thor-experiment-banner.svg" alt="Azahar Thor Experiment banner">
+  <img src="docs/media/branding/azahar-thor-experiment-banner.png" alt="Azahar Thor Experiment banner">
+</p>
+
+<p align="center">
+  <a href="#get-the-apk">
+    <img src="docs/media/branding/download-thor-apk-button.svg" alt="Get the Thor APK">
+  </a>
 </p>
 
 This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar) for the AYN Thor. It is tuned around my own handheld setup, bundled cheat workflow, and local testing. It is not upstream Azahar, not an official release channel, and not trying to be a general-purpose support project.
@@ -11,6 +17,16 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 > [!CAUTION]
 > Personal-use experiment. No guarantee of stability, compatibility, correctness, performance, support, or future updates. No games, keys, BIOS, firmware, or copyrighted game content are included. Use your own legally dumped content.
+
+## Get The APK
+
+The simple path is:
+
+1. Open the [GitHub Releases page](https://github.com/noeldvictor/azahar-thor-experiment/releases).
+2. Download `app-vanilla-relWithDebInfoLite.apk`.
+3. Install that APK on the AYN Thor.
+
+If the Releases page is empty, no public APK has been uploaded yet. Build it locally with the command in [Build Locally](#build-locally).
 
 ## What This Is
 
@@ -51,15 +67,13 @@ This fork has moved away from stock Azahar in visible ways:
 - E.X. Troopers has a Thor-specific compatibility profile and native title hack notes for smoother testing.
 - Cheat gap tracking is documented in `docs/thor-cheat-gaps.md`.
 
-## Thor Screenshots
+## Thor Screenshot
 
-These screenshots show the Thor-side workflow and OSD reference environment. They do not imply games are bundled with this repository.
+This is a live AYN Thor screenshot of this Azahar Android fork showing the game library and visible bundled-cheat labels. It does not imply games are bundled with this repository.
 
-| Star Fox running | OSD overlay | OSD menu |
-| --- | --- | --- |
-| ![Star Fox running on Thor](docs/media/screenshots/starfox-running.png) | ![Thor OSD overlay](docs/media/screenshots/starfox-osd.png) | ![Thor OSD menu](docs/media/screenshots/starfox-osd-menu.png) |
+![Azahar Android library on Thor showing cheat labels](docs/media/screenshots/azahar-library-cheats.png)
 
-## Android Build
+## Build Locally
 
 This fork is currently aimed at Android/AYN Thor APK builds:
 
