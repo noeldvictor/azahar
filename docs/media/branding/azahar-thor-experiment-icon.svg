@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Azahar Thor Experiment icon</title>
+  <desc id="desc">A geometric Azahar Thor Experiment mark with an A, a lightning bolt, and cheat brackets.</desc>
+  <rect width="512" height="512" rx="96" fill="#09111f"/>
+  <path d="M256 40 440 140v232L256 472 72 372V140Z" fill="#25e0a5"/>
+  <path d="M256 82 402 162v188L256 430 110 350V162Z" fill="#111827"/>
+  <path d="M158 330 226 118h60l68 212h-54l-12-46h-64l-12 46Zm80-91h36l-18-70Z" fill="#f7f0d8"/>
+  <path d="m318 114-60 132h58L204 402l42-120h-52Z" fill="#25e0a5"/>
+  <path d="M140 174h42v28h-16v36h16v28h-42Zm232 0h-42v28h16v36h-16v28h42Z" fill="#f7f0d8"/>
+</svg>

@@ -1,6 +1,8 @@
 # Agent Notes
 
 - Work directly on `master` for this repository unless the user explicitly asks for a branch.
+- The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
+- Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
 - Android work lives under `src/android`; keep cheat-build branding and UI changes scoped there when possible.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
+  <title id="title">Azahar Thor Experiment banner</title>
+  <desc id="desc">A banner for the Azahar Thor Experiment personal Android fork.</desc>
+  <rect width="1600" height="520" rx="0" fill="#09111f"/>
+  <path d="M0 404h1600v116H0Z" fill="#111827"/>
+  <path d="M1130 0h470v520H980Z" fill="#132033"/>
+  <path d="M1220 88 1430 202v236l-210-114Z" fill="#25e0a5" opacity=".14"/>
+  <path d="M236 74 414 170v220l-178 96L58 390V170Z" fill="#25e0a5"/>
+  <path d="M236 116 376 192v176l-140 76-140-76V192Z" fill="#111827"/>
+  <path d="M144 346 210 142h58l66 204h-52l-12-44h-62l-12 44Zm78-88h34l-17-67Z" fill="#f7f0d8"/>
+  <path d="m298 142-58 128h56L188 420l40-116h-50Z" fill="#25e0a5"/>
+  <path d="M120 196h42v26h-16v36h16v26h-42Zm232 0h-42v26h16v36h-16v26h42Z" fill="#f7f0d8"/>
+  <text x="492" y="210" fill="#f7f0d8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="72" font-weight="800">Azahar Thor Experiment</text>
+  <text x="496" y="284" fill="#25e0a5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Cheat Advanced Android fork for AYN Thor</text>
+  <text x="496" y="350" fill="#d5deea" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28">Personal-use, AI-assisted, no-support experiment</text>
+  <text x="1114" y="455" fill="#d5deea" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24">Fork it. Patch it. Own it.</text>
+</svg>
