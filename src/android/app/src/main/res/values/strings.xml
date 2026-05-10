@@ -51,6 +51,8 @@
     <string name="install_driver_guide">Guide</string>
     <string name="install_recommended_turnip">Turnip</string>
     <string name="recommended_gpu_driver_title">Pick a GPU driver</string>
+    <string name="download_and_install_driver">Download and install this driver</string>
+    <string name="driver_asset_label">File: %s</string>
     <string name="installing_turnip_driver">Installing Turnip driver...</string>
     <string name="turnip_driver_install_error">Couldn\'t install Turnip. Try the ZIP button instead.</string>
 

@@ -31,6 +31,7 @@ object GpuDriverHelper {
     private const val FALLBACK_TURNIP_DRIVER_NAME = "Turnip_v26.0.0_R8.zip"
     private const val FALLBACK_TURNIP_DRIVER_URL =
         "https://github.com/K11MCH1/AdrenoToolsDrivers/releases/download/v26.0.0-rc08/Turnip_v26.0.0_R8.zip"
+    private const val MAX_NORMAL_TURNIP_OPTIONS = 8
     private var fileRedirectionPath: String? = null
     var driverInstallationPath: String? = null
     private var hookLibPath: String? = null
@@ -141,8 +142,11 @@ object GpuDriverHelper {
     fun getRecommendedDriverOptions(): List<RecommendedDriverOption> {
         val assets = fetchReleaseAssets()
         val options = mutableListOf<RecommendedDriverOption>()
+        val normalTurnipAssets = assets
+            .filter { isRecommendedTurnipAsset(it.name) }
+            .distinctBy { it.name }
 
-        val recommendedTurnip = assets.firstOrNull { isRecommendedTurnipAsset(it.name) }
+        val recommendedTurnip = normalTurnipAssets.firstOrNull()
             ?: RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
         options.add(
             RecommendedDriverOption(
@@ -153,16 +157,19 @@ object GpuDriverHelper {
             )
         )
 
-        assets.firstOrNull { isQualcommDriverAsset(it.name) }?.let {
-            options.add(
-                RecommendedDriverOption(
-                    title = driverDisplayName(it.name),
-                    note = "Qualcomm user-mode package. Try this when Turnip breaks a specific game or you want a stock-like fallback.",
-                    assetName = it.name,
-                    downloadUrl = it.downloadUrl
+        normalTurnipAssets
+            .drop(1)
+            .take(MAX_NORMAL_TURNIP_OPTIONS - 1)
+            .forEach {
+                options.add(
+                    RecommendedDriverOption(
+                        title = driverDisplayName(it.name),
+                        note = "Older Turnip build. Try this for one stubborn game if the recommended driver crashes, black screens, or regresses graphics.",
+                        assetName = it.name,
+                        downloadUrl = it.downloadUrl
+                    )
                 )
-            )
-        }
+            }
 
         assets.firstOrNull { isTurnipVariantAsset(it.name, "sysmem") }?.let {
             options.add(
@@ -180,6 +187,17 @@ object GpuDriverHelper {
                 RecommendedDriverOption(
                     title = driverDisplayName(it.name),
                     note = "Turnip GMEM variant. Experimental on Thor; keep it as a troubleshooting option, not the default.",
+                    assetName = it.name,
+                    downloadUrl = it.downloadUrl
+                )
+            )
+        }
+
+        assets.firstOrNull { isQualcommDriverAsset(it.name) }?.let {
+            options.add(
+                RecommendedDriverOption(
+                    title = driverDisplayName(it.name),
+                    note = "Qualcomm user-mode package. Try this when Turnip breaks a specific game or you want a stock-like fallback.",
                     assetName = it.name,
                     downloadUrl = it.downloadUrl
                 )

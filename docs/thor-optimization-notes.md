@@ -11,7 +11,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Adreno custom driver loading is already wired through `libadrenotools` and `GpuDriverHelper`.
 - E.X. Troopers (`0004000000053700`) currently has a hardcoded Android launch profile and matching manifest.
 - Thor dual-display mode is fixed to 3DS top screen on the primary panel and 3DS bottom screen on the secondary panel. The old hidden virtual secondary display fallback is removed, so secondary rendering only starts when Android exposes a real second display.
-- The Thor GPU Driver Manager now has a guided picker. It queries K11MCH1 AdrenoToolsDrivers releases, presents the newest generic Turnip ZIP as the recommended first pick, also lists Qualcomm and Turnip variant troubleshooting choices when available, validates driver metadata, stores the ZIP under `gpu_drivers`, installs immediately, and still keeps manual ZIP and system-driver fallback paths.
+- The Thor GPU Driver Manager now has a guided picker. It queries K11MCH1 AdrenoToolsDrivers releases, presents the newest generic Turnip ZIP as the recommended first pick, lists recent generic Turnip rollback builds with visible download buttons, also lists Qualcomm and Turnip variant troubleshooting choices when available, validates driver metadata, stores the ZIP under `gpu_drivers`, installs immediately, and still keeps manual ZIP and system-driver fallback paths.
 
 ## High-Value Optimization Places
 
@@ -23,7 +23,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 
 2. Adreno 740 Vulkan driver testing
 
-   The fork can now fetch and install a generic Turnip driver, but this is not the same as a fully tested Thor driver matrix. Keep tracking which Turnip or Qualcomm package works best for 3DS workloads on Thor Base/Pro/Max, and avoid silently forcing a driver without user action.
+   The fork can now fetch and install recent generic Turnip builds, Turnip variants, and a Qualcomm fallback, but this is not the same as a fully tested Thor driver matrix. Keep tracking which package works best for 3DS workloads on Thor Base/Pro/Max, and avoid silently forcing a driver without user action.
 
 3. Shader stutter testing
 

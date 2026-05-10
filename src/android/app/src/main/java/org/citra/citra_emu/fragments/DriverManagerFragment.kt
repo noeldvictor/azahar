@@ -5,10 +5,14 @@
 package org.citra.citra_emu.fragments
 
 import android.os.Bundle
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
@@ -18,7 +22,10 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textview.MaterialTextView
 import com.google.android.material.transition.MaterialSharedAxis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -190,17 +197,128 @@ class DriverManagerFragment : Fragment() {
     private fun showRecommendedDriverDialog(
         options: List<GpuDriverHelper.RecommendedDriverOption>
     ) {
-        val labels = options.map {
-            "${it.title}\n${it.note}\n${it.assetName}"
-        }.toTypedArray()
+        val context = requireContext()
+        val spacingSmall = resources.getDimensionPixelSize(R.dimen.spacing_small)
+        val spacingMed = resources.getDimensionPixelSize(R.dimen.spacing_med)
+        val spacingLarge = resources.getDimensionPixelSize(R.dimen.spacing_large)
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(spacingLarge, spacingMed, spacingLarge, spacingSmall)
+        }
+        val scrollView = ScrollView(context).apply {
+            addView(
+                content,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
 
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.recommended_gpu_driver_title)
-            .setItems(labels) { _, which ->
-                installDriverOption(options[which])
+        lateinit var dialog: AlertDialog
+        options.forEach { option ->
+            val card = createDriverOptionCard(option) {
+                dialog.dismiss()
+                installDriverOption(option)
             }
+            content.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = spacingMed
+                }
+            )
+        }
+
+        dialog = MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.recommended_gpu_driver_title)
+            .setView(scrollView)
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+        dialog.show()
+    }
+
+    private fun createDriverOptionCard(
+        option: GpuDriverHelper.RecommendedDriverOption,
+        onInstall: () -> Unit
+    ): MaterialCardView {
+        val context = requireContext()
+        val spacingSmall = resources.getDimensionPixelSize(R.dimen.spacing_small)
+        val spacingMed = resources.getDimensionPixelSize(R.dimen.spacing_med)
+        val spacingLarge = resources.getDimensionPixelSize(R.dimen.spacing_large)
+        val card = MaterialCardView(
+            context,
+            null,
+            com.google.android.material.R.attr.materialCardViewOutlinedStyle
+        ).apply {
+            isClickable = true
+            isFocusable = true
+            radius = spacingMed.toFloat()
+            setOnClickListener { onInstall() }
+        }
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(spacingLarge, spacingLarge, spacingLarge, spacingLarge)
+        }
+        val title = MaterialTextView(context).apply {
+            text = option.title
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+        }
+        val note = MaterialTextView(context).apply {
+            text = option.note
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+        }
+        val asset = MaterialTextView(context).apply {
+            text = getString(R.string.driver_asset_label, option.assetName)
+            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+        }
+        val installButton = MaterialButton(context).apply {
+            text = getString(R.string.download_and_install_driver)
+            icon = resources.getDrawable(R.drawable.ic_install_driver, context.theme)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
+            gravity = Gravity.CENTER
+            isAllCaps = false
+            setOnClickListener { onInstall() }
+        }
+
+        content.addView(
+            title,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        content.addView(
+            note,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = spacingSmall
+            }
+        )
+        content.addView(
+            asset,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = spacingSmall
+            }
+        )
+        content.addView(
+            installButton,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = spacingMed
+            }
+        )
+        card.addView(content)
+        return card
     }
 
     private fun installDriverOption(option: GpuDriverHelper.RecommendedDriverOption) {
