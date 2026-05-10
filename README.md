@@ -18,11 +18,17 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 ## What This Is
 
-- Android-focused Azahar fork for AYN Thor testing.
+- Android-focused Azahar fork for AYN Thor Base/Pro/Max testing.
 - Branded as `Azahar (Cheat Advanced)` on Android.
 - Built around release-optimized Thor APKs, not desktop packages.
 - Includes a source-controlled bundled cheat set and game profile notes for my own setup.
 - Uses screenshots from the Thor workflow to document the target experience.
+
+## Target Hardware
+
+Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, LPDDR5X, and UFS4 storage. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
+
+See [Thor optimization notes](docs/thor-optimization-notes.md) for current performance hooks and candidate code paths.
 
 ## What This Is Not
 
@@ -53,6 +59,7 @@ This fork has moved away from stock Azahar in visible ways:
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor game profile manifests live under `src/android/app/src/main/assets/game_profiles/`.
 - E.X. Troopers has a Thor-specific compatibility profile and native title hack notes for smoother testing.
+- Thor Base/Pro/Max optimization notes are tracked in `docs/thor-optimization-notes.md`.
 - Cheat gap tracking is documented in `docs/thor-cheat-gaps.md`.
 
 ## Thor Screenshot

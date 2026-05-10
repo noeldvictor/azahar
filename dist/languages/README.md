@@ -1,1 +1,3 @@
-This directory stores translation patches (TS files) for citra Qt frontend. This directory is linked with [citra project on transifex](https://www.transifex.com/citra/citra), so you can update the translation by executing `tx pull -a`. If you want to contribute to the translation, please go the transifex link and submit your translation there. This directory on the main repo will be synchronized with transifex periodically. Do not directly open PRs on github to modify the translation.
+This directory stores inherited translation patches (TS files) for the Qt frontend. The Azahar Thor Experiment fork is Android-focused and does not maintain desktop translations as an active fork workflow.
+
+Upstream translation notes may still reference historical Citra/Azahar Transifex processes. Do not open translation PRs against this Thor experiment fork unless the user explicitly asks for that work.

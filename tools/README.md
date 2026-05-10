@@ -4,19 +4,22 @@ This directory contains several scripts which are intended to both document and 
 
 The scripts in this directory assume that your current working directory is the Azahar root directory and the script is being called via `./tools/xxx.sh`.
 
-## Pre-release checklist
+## Thor Fork Note
 
-- [ ] Update compatibility list
-- [ ] Update translations if either of the following apply:
-    - This is a major release (e.g. 2125.x --> 2126.0)
-    - This is a minor release, but the release branch hasn't yet diverged from master
+This README is mostly inherited from upstream Azahar. It is not the release flow for Azahar Thor Experiment.
 
-## Post-release checklist
+For this fork, Android/Thor builds use:
 
-- [ ] Publish to Google Play Store
-- [ ] Publish files to the official Internet Archive account (incl. changelog as .md file)
-- [ ] Publish to Flathub
-- [ ] Force-push tagged commit to retroarch-live branch
+```powershell
+cd src/android
+.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite
+```
+
+Do not treat the Google Play, Flathub, Internet Archive, or RetroArch checklist below as active work for this personal Thor fork unless the user explicitly asks.
+
+## Upstream Release Checklist
+
+The upstream release checklist was removed from this fork-facing README because it is obsolete for Azahar Thor Experiment. This fork does not publish Google Play, Flathub, Internet Archive, compatibility-list, translation, or RetroArch releases.
 
 ### Note:
 

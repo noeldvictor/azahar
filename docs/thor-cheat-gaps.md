@@ -2,10 +2,14 @@
 
 Generated on 2026-05-09 from Thor device `c3ca0370`.
 
+This is a historical cheat-gap snapshot, not a live compatibility database. Re-scan the Thor library before using it as a current missing-cheat list.
+
 ROM scan source: `/storage/2664-21DE/Roms/n3ds/zcci`
 Cheat scan source: `/storage/emulated/0/Azaharuser/cheats`
 
 The scan found 113 games with parsed title IDs. Before this update, 33 entries had no matching cheat text file. This pass adds 3 exact-title cheat files, leaving 29 valid parsed games without Azahar-ready text cheats. One entry parsed as `0004000000000000`, which is not a real title ID and should be treated as a bad/unknown ROM header for cheat matching.
+
+Performance work for Thor Base/Pro/Max belongs in `docs/thor-optimization-notes.md`.
 
 ## Added In This Pass
 
