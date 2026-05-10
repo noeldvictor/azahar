@@ -11,6 +11,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Adreno custom driver loading is already wired through `libadrenotools` and `GpuDriverHelper`.
 - E.X. Troopers (`0004000000053700`) currently has a hardcoded Android launch profile and matching manifest.
 - Thor dual-display mode is fixed to 3DS top screen on the primary panel and 3DS bottom screen on the secondary panel. The old hidden virtual secondary display fallback is removed, so secondary rendering only starts when Android exposes a real second display.
+- The Thor GPU Driver Manager now has a one-tap Turnip path. It queries K11MCH1 AdrenoToolsDrivers releases, chooses the newest generic Turnip ZIP, validates driver metadata, stores the ZIP under `gpu_drivers`, installs it immediately, and still keeps manual ZIP and system-driver fallback paths.
 
 ## High-Value Optimization Places
 
@@ -20,9 +21,9 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 
    Useful profile knobs: resolution cap, custom texture disable/preload disable, shader settings, frame limit, GPU timing simulation, render-thread delay, and title-specific compatibility hacks.
 
-2. Adreno 740 Vulkan driver flow
+2. Adreno 740 Vulkan driver testing
 
-   Custom GPU driver support exists, but the fork does not yet guide or enforce a known-good Adreno 740 driver path. Keep this conservative: expose current driver metadata clearly, document tested driver/firmware combos, and avoid silently swapping drivers.
+   The fork can now fetch and install a generic Turnip driver, but this is not the same as a fully tested Thor driver matrix. Keep tracking which Turnip or Qualcomm package works best for 3DS workloads on Thor Base/Pro/Max, and avoid silently forcing a driver without user action.
 
 3. Shader stutter testing
 

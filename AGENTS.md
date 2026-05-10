@@ -11,6 +11,7 @@
 - Use `:app:assembleVanillaDebug` only when an actual debuggable APK is needed.
 - Before pushing Android changes, verify at least `:app:compileVanillaDebugKotlin`; prefer a full `:app:assembleVanillaRelWithDebInfoLite` when native code, packaging, or Thor installs are involved.
 - Do not commit generated Gradle, CMake, or APK output.
+- Thor GPU driver UX should stay simple: keep the one-tap Turnip installer, manual ZIP fallback, and system-driver fallback working. The recommended Turnip path fetches K11MCH1 AdrenoToolsDrivers release assets at runtime and must validate `meta.json` before installing.
 - E.X. Troopers (`0004000000053700`) has a custom Thor compatibility profile: Android launch caps resolution to 2x, forces JIT/HW shader/shader cache basics, disables custom texture loading, and the core hack list enables the texture-copy fallback skip for that title. Keep its recommended cheat preset at 30 FPS unless on-device testing proves 60 FPS is stable.
 - Keep Android/Thor profile manifests under `src/android/app/src/main/assets/game_profiles/` in sync with any hardcoded game-specific profile logic.
 - Keep first-party Markdown current when behavior changes: `README.md`, `AGENTS.md`, `AI-POLICY.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/*.md`, `tools/README.md`, and Android asset READMEs. Leave vendored dependency Markdown and license files alone unless a dependency itself changes.

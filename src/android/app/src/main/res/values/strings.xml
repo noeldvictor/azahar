@@ -20,9 +20,9 @@
     <string name="install_game_content_description">Install applications, updates or DLC</string>
     <string name="share_log">Share Log</string>
     <string name="share_log_description">Share Azahar\'s log file to debug issues</string>
-    <string name="gpu_driver_manager">GPU Driver Manager</string>
+    <string name="gpu_driver_manager">Thor GPU Driver Manager</string>
     <string name="install_gpu_driver">Install GPU driver</string>
-    <string name="install_gpu_driver_description">Install alternative drivers for potentially better performance or accuracy</string>
+    <string name="install_gpu_driver_description">Install Turnip or custom GPU drivers for Thor</string>
     <string name="driver_already_installed">Driver already installed</string>
     <string name="custom_driver_not_supported">Custom drivers not supported</string>
     <string name="custom_driver_not_supported_description">Custom driver loading isn\'t currently supported for this device.\nCheck this option again in the future to see if support was added!</string>
@@ -47,6 +47,10 @@
     <string name="select_gpu_driver_error">Invalid driver selected, using system default!</string>
     <string name="system_gpu_driver">System GPU driver</string>
     <string name="installing_driver">Installing driver…</string>
+    <string name="install_gpu_driver_zip">ZIP</string>
+    <string name="install_recommended_turnip">Turnip</string>
+    <string name="installing_turnip_driver">Installing Turnip driver...</string>
+    <string name="turnip_driver_install_error">Couldn\'t install Turnip. Try the ZIP button instead.</string>
 
     <!-- About screen strings -->
     <string name="copied_to_clipboard">Copied to clipboard</string>

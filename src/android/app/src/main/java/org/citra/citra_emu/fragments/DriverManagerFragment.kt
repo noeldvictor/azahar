@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 import org.citra.citra_emu.R
 import org.citra.citra_emu.adapters.DriverAdapter
 import org.citra.citra_emu.databinding.FragmentDriverManagerBinding
-import org.citra.citra_emu.utils.FileUtil.asDocumentFile
 import org.citra.citra_emu.utils.FileUtil.inputStream
 import org.citra.citra_emu.utils.GpuDriverHelper
 import org.citra.citra_emu.viewmodel.HomeViewModel
@@ -68,6 +67,10 @@ class DriverManagerFragment : Fragment() {
 
         binding.toolbarDrivers.setNavigationOnClickListener {
             binding.root.findNavController().popBackStack()
+        }
+
+        binding.buttonInstallTurnip.setOnClickListener {
+            installRecommendedTurnipDriver()
         }
 
         binding.buttonInstall.setOnClickListener {
@@ -131,9 +134,16 @@ class DriverManagerFragment : Fragment() {
             binding.listDrivers.layoutParams = mlplistDrivers
 
             val fabSpacing = resources.getDimensionPixelSize(R.dimen.spacing_fab)
+            val mlpTurnipFab =
+                binding.buttonInstallTurnip.layoutParams as ViewGroup.MarginLayoutParams
+            mlpTurnipFab.leftMargin = leftInsets + fabSpacing
+            mlpTurnipFab.rightMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
+            mlpTurnipFab.bottomMargin = barInsets.bottom + fabSpacing
+            binding.buttonInstallTurnip.layoutParams = mlpTurnipFab
+
             val mlpFab =
                 binding.buttonInstall.layoutParams as ViewGroup.MarginLayoutParams
-            mlpFab.leftMargin = leftInsets + fabSpacing
+            mlpFab.leftMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
             mlpFab.rightMargin = rightInsets + fabSpacing
             mlpFab.bottomMargin = barInsets.bottom + fabSpacing
             binding.buttonInstall.layoutParams = mlpFab
@@ -145,6 +155,45 @@ class DriverManagerFragment : Fragment() {
 
             windowInsets
         }
+
+    private fun installRecommendedTurnipDriver() {
+        IndeterminateProgressDialogFragment.newInstance(
+            requireActivity(),
+            R.string.installing_turnip_driver,
+            false
+        ) {
+            val driverPackage = GpuDriverHelper.downloadRecommendedTurnipDriver()
+                ?: return@newInstance getString(R.string.turnip_driver_install_error)
+
+            return@newInstance installDriverPackage(driverPackage)
+        }.show(childFragmentManager, IndeterminateProgressDialogFragment.TAG)
+    }
+
+    private fun installDriverPackage(driverPackage: GpuDriverHelper.DriverPackage): Any {
+        val driverInList = driverViewModel.driverList.value.firstOrNull {
+            it.second == driverPackage.metadata
+        }
+        val driverUri = if (driverInList != null) {
+            val driverIndex = driverViewModel.driverList.value.indexOf(driverInList)
+            driverViewModel.setSelectedDriverIndex(driverIndex)
+            driverInList.first
+        } else {
+            val driverData = Pair(driverPackage.file.uri, driverPackage.metadata)
+            driverViewModel.addDriver(driverData)
+            driverPackage.file.uri
+        }
+
+        if (!GpuDriverHelper.installCustomDriverPartial(driverUri)) {
+            return getString(R.string.select_gpu_driver_error)
+        }
+
+        driverViewModel.setDriverReady()
+        driverViewModel.setNewDriverInstalled(true)
+        val installedDriverName = GpuDriverHelper.customDriverData.name
+            ?: driverPackage.metadata.name
+            ?: getString(R.string.system_gpu_driver)
+        return getString(R.string.select_gpu_driver_install_success, installedDriverName)
+    }
 
     private val getDriver =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { result ->
@@ -171,12 +220,16 @@ class DriverManagerFragment : Fragment() {
                     driverViewModel.driverList.value.firstOrNull { it.second == driverData }
                 if (driverInList != null) {
                     driverFile.delete()
-                    return@newInstance getString(R.string.driver_already_installed)
+                    val driverIndex = driverViewModel.driverList.value.indexOf(driverInList)
+                    driverViewModel.setSelectedDriverIndex(driverIndex)
+                    return@newInstance installDriverPackage(
+                        GpuDriverHelper.DriverPackage(driverFile, driverData)
+                    )
                 } else {
-                    driverViewModel.addDriver(Pair(driverFile.uri, driverData))
-                    driverViewModel.setNewDriverInstalled(true)
+                    return@newInstance installDriverPackage(
+                        GpuDriverHelper.DriverPackage(driverFile, driverData)
+                    )
                 }
-                return@newInstance Any()
             }.show(childFragmentManager, IndeterminateProgressDialogFragment.TAG)
         }
 }

@@ -142,7 +142,7 @@ class DriverViewModel : ViewModel() {
         }
     }
 
-    private fun setDriverReady() {
+    fun setDriverReady() {
         _isDriverReady.value = true
         _selectedDriverMetadata.value = GpuDriverHelper.customDriverData.name
             ?: CitraApplication.appContext.getString(R.string.system_gpu_driver)

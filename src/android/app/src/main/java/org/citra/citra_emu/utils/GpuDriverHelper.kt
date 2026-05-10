@@ -11,20 +11,39 @@ import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.utils.FileUtil.asDocumentFile
 import org.citra.citra_emu.utils.FileUtil.inputStream
+import org.citra.citra_emu.utils.FileUtil.outputStream
+import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.lang.IllegalStateException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
 object GpuDriverHelper {
     private const val META_JSON_FILENAME = "meta.json"
+    private const val DRIVER_RELEASES_URL =
+        "https://api.github.com/repos/K11MCH1/AdrenoToolsDrivers/releases?per_page=30"
+    private const val FALLBACK_TURNIP_DRIVER_NAME = "Turnip_v26.0.0_R8.zip"
+    private const val FALLBACK_TURNIP_DRIVER_URL =
+        "https://github.com/K11MCH1/AdrenoToolsDrivers/releases/download/v26.0.0-rc08/Turnip_v26.0.0_R8.zip"
     private var fileRedirectionPath: String? = null
     var driverInstallationPath: String? = null
     private var hookLibPath: String? = null
+
+    data class DriverPackage(
+        val file: DocumentFile,
+        val metadata: GpuDriverMetadata
+    )
+
+    private data class RemoteDriverAsset(
+        val name: String,
+        val downloadUrl: String
+    )
 
     val driverStoragePath: DocumentFile
         get() {
@@ -99,18 +118,32 @@ object GpuDriverHelper {
         val copiedFile =
             FileUtil.copyToExternalStorage(driverUri, driverStoragePath) ?: return null
 
-        // Validate driver
-        val metadata = getMetadataFromZip(copiedFile.inputStream())
-        if (metadata.name == null) {
-            copiedFile.delete()
-            return null
-        }
-
-        if (metadata.minApi > Build.VERSION.SDK_INT) {
+        if (getSupportedMetadata(copiedFile) == null) {
             copiedFile.delete()
             return null
         }
         return copiedFile
+    }
+
+    fun downloadRecommendedTurnipDriver(): DriverPackage? {
+        val asset = fetchRecommendedTurnipAsset()
+
+        val existingDriver = driverStoragePath.findFile(asset.name)
+        if (existingDriver != null) {
+            val metadata = getSupportedMetadata(existingDriver)
+            if (metadata != null) {
+                return DriverPackage(existingDriver, metadata)
+            }
+            existingDriver.delete()
+        }
+
+        val downloadedDriver = downloadDriverAsset(asset) ?: return null
+        val metadata = getSupportedMetadata(downloadedDriver)
+        if (metadata == null) {
+            downloadedDriver.delete()
+            return null
+        }
+        return DriverPackage(downloadedDriver, metadata)
     }
 
     /**
@@ -128,14 +161,7 @@ object GpuDriverHelper {
         val copiedFile =
             FileUtil.copyToExternalStorage(driverUri, driverStoragePath) ?: return false
 
-        // Validate driver
-        val metadata = getMetadataFromZip(copiedFile.inputStream())
-        if (metadata.name == null) {
-            copiedFile.delete()
-            return false
-        }
-
-        if (metadata.minApi > Build.VERSION.SDK_INT) {
+        if (getSupportedMetadata(copiedFile) == null) {
             copiedFile.delete()
             return false
         }
@@ -168,7 +194,7 @@ object GpuDriverHelper {
 
         // Validate driver
         val metadata = getMetadataFromZip(driver.inputStream())
-        if (metadata.name == null) {
+        if (!isSupportedMetadata(metadata)) {
             driver.asDocumentFile()?.delete()
             return false
         }
@@ -210,6 +236,94 @@ object GpuDriverHelper {
         } catch (_: ZipException) {
         }
         return GpuDriverMetadata()
+    }
+
+    private fun fetchRecommendedTurnipAsset(): RemoteDriverAsset {
+        try {
+            val connection = (URL(DRIVER_RELEASES_URL).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 30000
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("User-Agent", "AzaharThorExperiment")
+            }
+
+            connection.inputStream.use { input ->
+                val releases = JSONArray(FileUtil.getStringFromInputStream(input))
+                for (releaseIndex in 0 until releases.length()) {
+                    val release = releases.getJSONObject(releaseIndex)
+                    if (release.optBoolean("draft", false)) {
+                        continue
+                    }
+
+                    val assets = release.optJSONArray("assets") ?: continue
+                    for (assetIndex in 0 until assets.length()) {
+                        val asset = assets.getJSONObject(assetIndex)
+                        val name = asset.optString("name")
+                        if (!isRecommendedTurnipAsset(name)) {
+                            continue
+                        }
+
+                        val downloadUrl = asset.optString("browser_download_url")
+                        if (downloadUrl.isNotBlank()) {
+                            return RemoteDriverAsset(name, downloadUrl)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.warning("[GpuDriverHelper] Failed to fetch Turnip release list: ${e.message}")
+        }
+
+        return RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
+    }
+
+    private fun isRecommendedTurnipAsset(name: String): Boolean {
+        val normalized = name.lowercase()
+        return normalized.startsWith("turnip_v") &&
+            normalized.endsWith(".zip") &&
+            !normalized.contains("a8xx") &&
+            !normalized.contains("gmem") &&
+            !normalized.contains("sysmem") &&
+            !normalized.contains("magisk") &&
+            !normalized.contains("winlator")
+    }
+
+    private fun downloadDriverAsset(asset: RemoteDriverAsset): DocumentFile? {
+        val destinationFile =
+            driverStoragePath.createFile("application/zip", asset.name) ?: return null
+
+        try {
+            val connection = (URL(asset.downloadUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15000
+                readTimeout = 120000
+                setRequestProperty("User-Agent", "AzaharThorExperiment")
+            }
+
+            connection.inputStream.use { input ->
+                destinationFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return destinationFile
+        } catch (e: Exception) {
+            Log.error("[GpuDriverHelper] Failed to download Turnip driver: ${e.message}")
+            destinationFile.delete()
+            return null
+        }
+    }
+
+    private fun getSupportedMetadata(driverFile: DocumentFile): GpuDriverMetadata? {
+        val metadata = getMetadataFromZip(driverFile.inputStream())
+        if (!isSupportedMetadata(metadata)) {
+            return null
+        }
+        return metadata
+    }
+
+    private fun isSupportedMetadata(metadata: GpuDriverMetadata): Boolean {
+        return metadata.name != null &&
+            metadata.libraryName != null &&
+            metadata.minApi <= Build.VERSION.SDK_INT
     }
 
     external fun supportsCustomDriverLoading(): Boolean
