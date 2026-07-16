@@ -1,4 +1,4 @@
-// Copyright 2023 Citra Emulator Project
+// Copyright Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
@@ -22,11 +22,13 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import com.google.android.material.R as MaterialR
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textview.MaterialTextView
 import com.google.android.material.transition.MaterialSharedAxis
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -36,9 +38,8 @@ import org.citra.citra_emu.adapters.DriverAdapter
 import org.citra.citra_emu.databinding.FragmentDriverManagerBinding
 import org.citra.citra_emu.utils.FileUtil.inputStream
 import org.citra.citra_emu.utils.GpuDriverHelper
-import org.citra.citra_emu.viewmodel.HomeViewModel
 import org.citra.citra_emu.viewmodel.DriverViewModel
-import java.io.IOException
+import org.citra.citra_emu.viewmodel.HomeViewModel
 
 class DriverManagerFragment : Fragment() {
     private var _binding: FragmentDriverManagerBinding? = null
@@ -123,48 +124,47 @@ class DriverManagerFragment : Fragment() {
         driverViewModel.onCloseDriverManager()
     }
 
-    private fun setInsets() =
-        ViewCompat.setOnApplyWindowInsetsListener(
-            binding.root
-        ) { _: View, windowInsets: WindowInsetsCompat ->
-            val barInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val cutoutInsets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
+    private fun setInsets() = ViewCompat.setOnApplyWindowInsetsListener(
+        binding.root
+    ) { _: View, windowInsets: WindowInsetsCompat ->
+        val barInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+        val cutoutInsets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
 
-            val leftInsets = barInsets.left + cutoutInsets.left
-            val rightInsets = barInsets.right + cutoutInsets.right
+        val leftInsets = barInsets.left + cutoutInsets.left
+        val rightInsets = barInsets.right + cutoutInsets.right
 
-            val mlpAppBar = binding.toolbarDrivers.layoutParams as ViewGroup.MarginLayoutParams
-            mlpAppBar.leftMargin = leftInsets
-            mlpAppBar.rightMargin = rightInsets
-            binding.toolbarDrivers.layoutParams = mlpAppBar
+        val mlpAppBar = binding.toolbarDrivers.layoutParams as ViewGroup.MarginLayoutParams
+        mlpAppBar.leftMargin = leftInsets
+        mlpAppBar.rightMargin = rightInsets
+        binding.toolbarDrivers.layoutParams = mlpAppBar
 
-            val mlplistDrivers = binding.listDrivers.layoutParams as ViewGroup.MarginLayoutParams
-            mlplistDrivers.leftMargin = leftInsets
-            mlplistDrivers.rightMargin = rightInsets
-            binding.listDrivers.layoutParams = mlplistDrivers
+        val mlplistDrivers = binding.listDrivers.layoutParams as ViewGroup.MarginLayoutParams
+        mlplistDrivers.leftMargin = leftInsets
+        mlplistDrivers.rightMargin = rightInsets
+        binding.listDrivers.layoutParams = mlplistDrivers
 
-            val fabSpacing = resources.getDimensionPixelSize(R.dimen.spacing_fab)
-            val mlpTurnipFab =
-                binding.buttonInstallGuide.layoutParams as ViewGroup.MarginLayoutParams
-            mlpTurnipFab.leftMargin = leftInsets + fabSpacing
-            mlpTurnipFab.rightMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
-            mlpTurnipFab.bottomMargin = barInsets.bottom + fabSpacing
-            binding.buttonInstallGuide.layoutParams = mlpTurnipFab
+        val fabSpacing = resources.getDimensionPixelSize(R.dimen.spacing_fab)
+        val mlpTurnipFab =
+            binding.buttonInstallGuide.layoutParams as ViewGroup.MarginLayoutParams
+        mlpTurnipFab.leftMargin = leftInsets + fabSpacing
+        mlpTurnipFab.rightMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
+        mlpTurnipFab.bottomMargin = barInsets.bottom + fabSpacing
+        binding.buttonInstallGuide.layoutParams = mlpTurnipFab
 
-            val mlpFab =
-                binding.buttonInstall.layoutParams as ViewGroup.MarginLayoutParams
-            mlpFab.leftMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
-            mlpFab.rightMargin = rightInsets + fabSpacing
-            mlpFab.bottomMargin = barInsets.bottom + fabSpacing
-            binding.buttonInstall.layoutParams = mlpFab
+        val mlpFab =
+            binding.buttonInstall.layoutParams as ViewGroup.MarginLayoutParams
+        mlpFab.leftMargin = resources.getDimensionPixelSize(R.dimen.spacing_med)
+        mlpFab.rightMargin = rightInsets + fabSpacing
+        mlpFab.bottomMargin = barInsets.bottom + fabSpacing
+        binding.buttonInstall.layoutParams = mlpFab
 
-            binding.listDrivers.updatePadding(
-                bottom = barInsets.bottom +
-                        resources.getDimensionPixelSize(R.dimen.spacing_bottom_list_fab)
-            )
+        binding.listDrivers.updatePadding(
+            bottom = barInsets.bottom +
+                resources.getDimensionPixelSize(R.dimen.spacing_bottom_list_fab)
+        )
 
-            windowInsets
-        }
+        windowInsets
+    }
 
     private fun showRecommendedDriverGuide() {
         binding.buttonInstallGuide.isEnabled = false
@@ -251,7 +251,7 @@ class DriverManagerFragment : Fragment() {
         val card = MaterialCardView(
             context,
             null,
-            com.google.android.material.R.attr.materialCardViewOutlinedStyle
+            MaterialR.attr.materialCardViewOutlinedStyle
         ).apply {
             isClickable = true
             isFocusable = true
@@ -264,15 +264,15 @@ class DriverManagerFragment : Fragment() {
         }
         val title = MaterialTextView(context).apply {
             text = option.title
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
+            setTextAppearance(MaterialR.style.TextAppearance_Material3_TitleMedium)
         }
         val note = MaterialTextView(context).apply {
             text = option.note
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            setTextAppearance(MaterialR.style.TextAppearance_Material3_BodyMedium)
         }
         val asset = MaterialTextView(context).apply {
             text = getString(R.string.driver_asset_label, option.assetName)
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+            setTextAppearance(MaterialR.style.TextAppearance_Material3_BodySmall)
         }
         val installButton = MaterialButton(context).apply {
             text = getString(R.string.download_and_install_driver)

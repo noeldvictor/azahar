@@ -762,8 +762,13 @@ void System::Reset() {
 
 void System::ApplySettings() {
 #ifdef ENABLE_GDBSTUB
-    GDBStub::SetServerPort(Settings::values.gdbstub_port.GetValue());
-    GDBStub::ToggleServer(Settings::values.use_gdbstub.GetValue());
+    if (override_gdb_port != -1) {
+        GDBStub::SetServerPort(override_gdb_port);
+        GDBStub::ToggleServer(true);
+    } else {
+        GDBStub::SetServerPort(Settings::values.gdbstub_port.GetValue());
+        GDBStub::ToggleServer(Settings::values.use_gdbstub.GetValue());
+    }
 #endif
 
     if (gpu) {
@@ -831,6 +836,19 @@ void System::EjectCartridge() {
 
 bool System::IsInitialSetup() {
     return app_loader && app_loader->DoingInitialSetup();
+}
+
+void System::DebugUnscheduleAllThreadsFromFrontend(bool unschedule) {
+    if (!is_powered_on)
+        return;
+
+    for (auto proc : kernel->GetProcessList()) {
+        if (unschedule) {
+            proc->SetUnscheduleMode(Kernel::UnscheduleMode::FRONTEND);
+        } else {
+            proc->ClearUnscheduleMode(Kernel::UnscheduleMode::FRONTEND);
+        }
+    }
 }
 
 template <class Archive>

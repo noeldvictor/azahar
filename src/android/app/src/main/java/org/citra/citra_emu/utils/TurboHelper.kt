@@ -10,9 +10,7 @@ import org.citra.citra_emu.features.settings.model.IntSetting
 object TurboHelper {
     private var turboSpeedEnabled = false
 
-    fun isTurboSpeedEnabled(): Boolean {
-        return turboSpeedEnabled
-    }
+    fun isTurboSpeedEnabled(): Boolean = turboSpeedEnabled
 
     fun reloadTurbo(@Suppress("UNUSED_PARAMETER") showToast: Boolean) {
         if (turboSpeedEnabled) {

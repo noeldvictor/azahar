@@ -1,4 +1,4 @@
-// Copyright 2023 Citra Emulator Project
+// Copyright Citra Emulator Project / Azahar Emulator Project
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
@@ -7,12 +7,6 @@ package org.citra.citra_emu.utils
 import android.net.Uri
 import android.os.Build
 import androidx.documentfile.provider.DocumentFile
-import org.citra.citra_emu.CitraApplication
-import org.citra.citra_emu.NativeLibrary
-import org.citra.citra_emu.utils.FileUtil.asDocumentFile
-import org.citra.citra_emu.utils.FileUtil.inputStream
-import org.citra.citra_emu.utils.FileUtil.outputStream
-import org.json.JSONArray
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
@@ -23,6 +17,12 @@ import java.net.URL
 import java.util.zip.ZipEntry
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
+import org.citra.citra_emu.CitraApplication
+import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.utils.FileUtil.asDocumentFile
+import org.citra.citra_emu.utils.FileUtil.inputStream
+import org.citra.citra_emu.utils.FileUtil.outputStream
+import org.json.JSONArray
 
 object GpuDriverHelper {
     private const val META_JSON_FILENAME = "meta.json"
@@ -36,10 +36,7 @@ object GpuDriverHelper {
     var driverInstallationPath: String? = null
     private var hookLibPath: String? = null
 
-    data class DriverPackage(
-        val file: DocumentFile,
-        val metadata: GpuDriverMetadata
-    )
+    data class DriverPackage(val file: DocumentFile, val metadata: GpuDriverMetadata)
 
     data class RecommendedDriverOption(
         val title: String,
@@ -48,10 +45,7 @@ object GpuDriverHelper {
         val downloadUrl: String
     )
 
-    private data class RemoteDriverAsset(
-        val name: String,
-        val downloadUrl: String
-    )
+    private data class RemoteDriverAsset(val name: String, val downloadUrl: String)
 
     val driverStoragePath: DocumentFile
         get() {
@@ -151,7 +145,8 @@ object GpuDriverHelper {
         options.add(
             RecommendedDriverOption(
                 title = "${driverDisplayName(recommendedTurnip.name)} - Recommended",
-                note = "Best first try for Thor Base/Pro/Max and Adreno 740. Use this unless a game has new graphics bugs or crashes.",
+                note = "Best first try for Thor Base/Pro/Max and Adreno 740. " +
+                    "Use this unless a game has new graphics bugs or crashes.",
                 assetName = recommendedTurnip.name,
                 downloadUrl = recommendedTurnip.downloadUrl
             )
@@ -164,7 +159,8 @@ object GpuDriverHelper {
                 options.add(
                     RecommendedDriverOption(
                         title = driverDisplayName(it.name),
-                        note = "Older Turnip build. Try this for one stubborn game if the recommended driver crashes, black screens, or regresses graphics.",
+                        note = "Older Turnip build. Try this for one stubborn game if the " +
+                            "recommended driver crashes, black screens, or regresses graphics.",
                         assetName = it.name,
                         downloadUrl = it.downloadUrl
                     )
@@ -175,7 +171,8 @@ object GpuDriverHelper {
             options.add(
                 RecommendedDriverOption(
                     title = driverDisplayName(it.name),
-                    note = "Turnip alternate memory path. Try per-game if recommended Turnip has rendering glitches.",
+                    note = "Turnip alternate memory path. Try per-game if recommended Turnip " +
+                        "has rendering glitches.",
                     assetName = it.name,
                     downloadUrl = it.downloadUrl
                 )
@@ -186,7 +183,8 @@ object GpuDriverHelper {
             options.add(
                 RecommendedDriverOption(
                     title = driverDisplayName(it.name),
-                    note = "Turnip GMEM variant. Experimental on Thor; keep it as a troubleshooting option, not the default.",
+                    note = "Turnip GMEM variant. Experimental on Thor; keep it as a " +
+                        "troubleshooting option, not the default.",
                     assetName = it.name,
                     downloadUrl = it.downloadUrl
                 )
@@ -197,7 +195,8 @@ object GpuDriverHelper {
             options.add(
                 RecommendedDriverOption(
                     title = driverDisplayName(it.name),
-                    note = "Qualcomm user-mode package. Try this when Turnip breaks a specific game or you want a stock-like fallback.",
+                    note = "Qualcomm user-mode package. Try this when Turnip breaks a " +
+                        "specific game or you want a stock-like fallback.",
                     assetName = it.name,
                     downloadUrl = it.downloadUrl
                 )
@@ -321,14 +320,19 @@ object GpuDriverHelper {
         return GpuDriverMetadata()
     }
 
-    private fun fetchRecommendedDriverAsset(): RemoteDriverAsset {
-        return fetchReleaseAssets().firstOrNull { isRecommendedTurnipAsset(it.name) }
+    private fun fetchRecommendedDriverAsset(): RemoteDriverAsset =
+        fetchReleaseAssets().firstOrNull {
+            isRecommendedTurnipAsset(it.name)
+        }
             ?: RemoteDriverAsset(FALLBACK_TURNIP_DRIVER_NAME, FALLBACK_TURNIP_DRIVER_URL)
-    }
 
     private fun fetchReleaseAssets(): List<RemoteDriverAsset> {
         try {
-            val connection = (URL(DRIVER_RELEASES_URL).openConnection() as HttpURLConnection).apply {
+            val connection = (
+                URL(
+                    DRIVER_RELEASES_URL
+                ).openConnection() as HttpURLConnection
+                ).apply {
                 connectTimeout = 15000
                 readTimeout = 30000
                 setRequestProperty("Accept", "application/vnd.github+json")
@@ -390,11 +394,9 @@ object GpuDriverHelper {
             normalized.endsWith("_adpkg.zip")
     }
 
-    private fun driverDisplayName(name: String): String {
-        return name.removeSuffix(".zip")
-            .removeSuffix("_adpkg")
-            .replace('_', ' ')
-    }
+    private fun driverDisplayName(name: String): String = name.removeSuffix(".zip")
+        .removeSuffix("_adpkg")
+        .replace('_', ' ')
 
     private fun downloadDriverAsset(asset: RemoteDriverAsset): DocumentFile? {
         val destinationFile =
@@ -428,11 +430,9 @@ object GpuDriverHelper {
         return metadata
     }
 
-    private fun isSupportedMetadata(metadata: GpuDriverMetadata): Boolean {
-        return metadata.name != null &&
-            metadata.libraryName != null &&
-            metadata.minApi <= Build.VERSION.SDK_INT
-    }
+    private fun isSupportedMetadata(metadata: GpuDriverMetadata): Boolean = metadata.name != null &&
+        metadata.libraryName != null &&
+        metadata.minApi <= Build.VERSION.SDK_INT
 
     external fun supportsCustomDriverLoading(): Boolean
 
