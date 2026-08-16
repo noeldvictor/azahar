@@ -552,6 +552,9 @@ struct Values {
     SwitchableSetting<bool> use_integer_scaling{false, Keys::use_integer_scaling};
     SwitchableSetting<double, true> frame_limit{100, 0, 1000, Keys::frame_limit};
     SwitchableSetting<double, true> turbo_limit{200, 0, 1000, Keys::turbo_limit};
+#ifdef ANDROID
+    SwitchableSetting<bool> eco_turbo{true, Keys::eco_turbo};
+#endif
     SwitchableSetting<TextureFilter> texture_filter{TextureFilter::NoFilter, Keys::texture_filter};
     SwitchableSetting<TextureSampling> texture_sampling{TextureSampling::GameControlled,
                                                         Keys::texture_sampling};

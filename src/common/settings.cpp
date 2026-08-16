@@ -103,6 +103,9 @@ void LogSettings() {
     log_setting("Renderer_UseResolutionFactor", values.resolution_factor.GetValue());
     log_setting("Renderer_UseIntegerScaling", values.use_integer_scaling.GetValue());
     log_setting("Renderer_FrameLimit", values.frame_limit.GetValue());
+#ifdef ANDROID
+    log_setting("Renderer_EcoTurbo", values.eco_turbo.GetValue());
+#endif
     log_setting("Renderer_VSyncNew", values.use_vsync.GetValue());
     log_setting("Renderer_SkipDuplicateFrames", values.use_skip_duplicate_frames.GetValue());
     log_setting("Renderer_PostProcessingShader", values.pp_shader_name.GetValue());

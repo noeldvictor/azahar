@@ -1122,6 +1122,7 @@ void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
 void RendererVulkan::SwapBuffers() {
     system.perf_stats->StartSwap();
     screenRendered = false;
+    const bool should_present = ShouldPresentFrame();
 #ifndef ANDROID
     if (Settings::values.layout_option.GetValue() == Settings::LayoutOption::SeparateWindows) {
         ASSERT(secondary_window);
@@ -1140,10 +1141,14 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
-    PrepareRendertarget();
-    RenderScreenshot();
+    if (should_present || IsScreenshotPending()) {
+        PrepareRendertarget();
+        RenderScreenshot();
+    }
     isSecondaryWindow = false;
-    RenderToWindow(main_present_window, layout, false);
+    if (should_present) {
+        RenderToWindow(main_present_window, layout, false);
+    }
 #ifndef ANDROID
     if (Settings::values.layout_option.GetValue() == Settings::LayoutOption::SeparateWindows) {
         ASSERT(secondary_window);
@@ -1153,7 +1158,9 @@ void RendererVulkan::SwapBuffers() {
                 *secondary_window, instance, scheduler, IsLowRefreshRate());
         }
         isSecondaryWindow = true;
-        RenderToWindow(*secondary_present_window_ptr, secondary_layout, false);
+        if (should_present) {
+            RenderToWindow(*secondary_present_window_ptr, secondary_layout, false);
+        }
         secondary_window->PollEvents();
     }
 #endif
@@ -1166,7 +1173,9 @@ void RendererVulkan::SwapBuffers() {
                 *secondary_window, instance, scheduler, IsLowRefreshRate());
         }
         isSecondaryWindow = true;
-        RenderToWindow(*secondary_present_window_ptr, secondary_layout, false);
+        if (should_present) {
+            RenderToWindow(*secondary_present_window_ptr, secondary_layout, false);
+        }
         secondary_window->PollEvents();
     }
 #endif

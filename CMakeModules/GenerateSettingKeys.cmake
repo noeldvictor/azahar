@@ -271,6 +271,7 @@ if (ANDROID)
         "performance_overlay_show_battery_temp"
         "performance_overlay_background"
         "use_frame_limit" # FIXME: DUPLICATE KEY (shared equivalent: frame_limit)
+        "eco_turbo"
         "android_hide_images"
         "screen_orientation"
         "performance_overlay_position"

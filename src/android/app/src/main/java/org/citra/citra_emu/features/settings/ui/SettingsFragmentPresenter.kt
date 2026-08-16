@@ -280,6 +280,15 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
             )
             add(
                 SwitchSetting(
+                    BooleanSetting.ECO_TURBO,
+                    R.string.eco_turbo,
+                    R.string.eco_turbo_description,
+                    BooleanSetting.ECO_TURBO.key,
+                    BooleanSetting.ECO_TURBO.defaultValue
+                )
+            )
+            add(
+                SwitchSetting(
                     BooleanSetting.CHECK_FOR_UPDATES,
                     R.string.check_for_updates,
                     R.string.check_for_updates_description,

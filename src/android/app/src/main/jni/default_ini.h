@@ -160,6 +160,11 @@ static const char* android_config_default_file_content = (BOOST_HANA_STRING(R"(
 # 1 - 9999: Speed limit as a percentage of target game speed. 100 (default)
 )") DECLARE_KEY(turbo_limit) BOOST_HANA_STRING(R"(
 
+# Caps host layout, composition, and presentation to the normal 3DS refresh rate during turbo.
+# Emulation continues at the selected turbo speed, but fast-forward animation is less smooth.
+# 0: Off, 1 (default): On
+)") DECLARE_KEY(eco_turbo) BOOST_HANA_STRING(R"(
+
 # The clear color for the renderer. What shows up on the sides of the bottom screen.
 # Must be in range of 0.0-1.0. Defaults to 0.0 for all.
 )") DECLARE_KEY(bg_red) BOOST_HANA_STRING(R"(

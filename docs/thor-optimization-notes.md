@@ -120,6 +120,40 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   with Vulkan, Turnip Adreno 740, and Anime4K; the launch log had no fatal signal,
   exception, or native abort.
 
+## 2026-08-16 Android Eco Turbo
+
+- Android fast-forward previously allowed every emulated VBlank to prepare and submit a host
+  presentation. On the Thor's 120 Hz primary panel, high turbo limits can therefore run layout,
+  composition, and presentation work well above the normal 3DS refresh rate even though the user
+  is primarily asking the game to advance faster.
+- The new General setting **Eco Turbo** defaults on. Whenever the active frame limit is above 100%,
+  it caps only host presentation/composition to 60 FPS. Guest CPU execution, PICA work, audio,
+  timing, and the requested turbo limit continue unchanged. Both Vulkan and OpenGL skip the
+  surplus host frames; screenshots and video dumping still prepare their required framebuffers.
+- The limiter uses elapsed wall time and a one-frame token budget rather than dividing by the
+  requested turbo percentage. This matters when a heavy scene requests 400% but achieves less than
+  100%: frames at or below 60 FPS are still all presented. Returning to normal speed or disabling
+  Eco Turbo resets the budget immediately.
+- The final release APK was tested on 7TH DRAGON III CODE: VFD (`000400000018F800`) at 3x,
+  Vulkan, Turnip Mesa 25.99.99, Anime4K, duplicate-frame skipping enabled, and a temporary 400%
+  frame limit. The title screen sustained 120 game FPS and 399-403% speed in the overlay with Eco
+  both off and on.
+- In the reversed-order final-code 20-second A/B, Eco off measured 32.45% KGSL GPU busy and 444
+  process CPU ticks. Eco on measured 26.81% GPU busy and 409 ticks: **17.37% less GPU active time**
+  and **7.9% less process CPU time** while emulation speed was retained. Both runs held the same
+  615 MHz GPU frequency and 24.0 C battery temperature.
+- This is not a 17.37% battery-watt claim. The device reported USB power and active charging during
+  the run, so battery-current telemetry could not isolate emulator power. A long, unplugged,
+  fixed-brightness/fan/performance-mode A/B is still required for watts and thermal slope.
+- Benefit depends on workload. At 200% this title submits 60 game frames per second, so the existing
+  duplicate-frame setting already removes surplus presentation and Eco Turbo has little extra work
+  to skip. The win is larger when a title/turbo combination produces more than 60 unique frames per
+  second. Disabling Eco Turbo remains available for maximum fast-forward smoothness on 120 Hz.
+- `:app:assembleVanillaRelWithDebInfoLite` passed, producing a 28,957,711-byte APK with SHA-256
+  `67CE6DB9E4D153899B84C54249C76E8FB009D2840FE3D4BEB849C9CD8338FF53`.
+  It installed on the Thor, restored the user's original config after testing, and booted the same
+  game at the original 100% limit with Eco Turbo defaulting on and no fatal exception or signal.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

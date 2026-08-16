@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/frontend/emu_window.h"
@@ -49,6 +50,32 @@ void RendererBase::EndFrame() {
 
     system.frame_limiter.DoFrameLimiting(system.CoreTiming().GetGlobalTimeUs());
     system.perf_stats->BeginSystemFrame();
+}
+
+bool RendererBase::ShouldPresentFrame() {
+#ifdef ANDROID
+    constexpr double normal_speed = 100.0;
+    constexpr double normal_refresh_rate = 60.0;
+    const auto now = std::chrono::steady_clock::now();
+    const double frame_limit = Settings::GetFrameLimit();
+    if (!Settings::values.eco_turbo.GetValue() || frame_limit <= normal_speed) {
+        eco_turbo_budget_update = now;
+        eco_turbo_present_budget = 1.0;
+        return true;
+    }
+
+    const std::chrono::duration<double> elapsed = now - eco_turbo_budget_update;
+    eco_turbo_budget_update = now;
+    // Refill from real elapsed time so a scene producing at most 60 frames per second never loses
+    // a frame, even when its requested turbo limit is much higher than its achieved speed.
+    eco_turbo_present_budget =
+        std::min(1.0, eco_turbo_present_budget + elapsed.count() * normal_refresh_rate);
+    if (eco_turbo_present_budget < 1.0) {
+        return false;
+    }
+    eco_turbo_present_budget -= 1.0;
+#endif
+    return true;
 }
 
 bool RendererBase::IsScreenshotPending() const {

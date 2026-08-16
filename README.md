@@ -53,6 +53,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Bundled Android cheats live under `src/android/app/src/main/assets/cheats/`.
 - Android game list marks titles with available bundled cheats more clearly.
 - Turbo speed toast spam is suppressed.
+- Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS above 100% speed
+  while emulation continues at the selected turbo limit. It can be disabled under General for
+  smoother fast-forward on the Thor's 120 Hz panel.
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.

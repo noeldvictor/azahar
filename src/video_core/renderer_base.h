@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include "common/common_types.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "video_core/rasterizer_interface.h"
@@ -105,6 +106,10 @@ public:
                            const Layout::FramebufferLayout& layout);
 
 protected:
+    /// Limit Android turbo presentation to the normal 3DS refresh rate while keeping emulation at
+    /// the requested speed. This skips only host layout, composition, and presentation passes.
+    bool ShouldPresentFrame();
+
     Core::System& system;
     RendererSettings settings;
     Frontend::EmuWindow& render_window;    /// Reference to the render window handle.
@@ -113,6 +118,11 @@ protected:
 protected:
     f32 current_fps = 0.0f; /// Current framerate, should be set by the renderer
     s32 current_frame = 0;  /// Current frame, should be set by the renderer
+#ifdef ANDROID
+    std::chrono::steady_clock::time_point eco_turbo_budget_update =
+        std::chrono::steady_clock::now();
+    double eco_turbo_present_budget = 1.0;
+#endif
 };
 
 } // namespace VideoCore

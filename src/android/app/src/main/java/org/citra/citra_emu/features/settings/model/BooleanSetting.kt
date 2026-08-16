@@ -103,6 +103,7 @@ enum class BooleanSetting(
         true
     ),
     USE_FRAME_LIMIT(SettingKeys.use_frame_limit(), Settings.SECTION_RENDERER, true),
+    ECO_TURBO(SettingKeys.eco_turbo(), Settings.SECTION_RENDERER, true),
     DEBUG_RENDERER(SettingKeys.renderer_debug(), Settings.SECTION_DEBUG, false),
     DISABLE_RIGHT_EYE_RENDER(
         SettingKeys.disable_right_eye_render(),

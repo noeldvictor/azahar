@@ -90,6 +90,7 @@ RendererOpenGL::~RendererOpenGL() = default;
 
 void RendererOpenGL::SwapBuffers() {
     system.perf_stats->StartSwap();
+    const bool should_present = ShouldPresentFrame();
     // Maintain the rasterizer's state as a priority
     OpenGLState prev_state = OpenGLState::GetCurState();
     state.Apply();
@@ -110,15 +111,19 @@ void RendererOpenGL::SwapBuffers() {
 
     render_window.SetupFramebuffer();
 
-    PrepareRendertarget();
-    RenderScreenshot();
+    if (should_present || IsScreenshotPending() || frame_dumper.IsDumping()) {
+        PrepareRendertarget();
+        RenderScreenshot();
+    }
     isSecondaryWindow = false;
 #ifdef HAVE_LIBRETRO
     DrawScreens(render_window.GetFramebufferLayout(), false);
     render_window.SwapBuffers();
 #else
     const auto& main_layout = render_window.GetFramebufferLayout();
-    RenderToMailbox(main_layout, render_window.mailbox, false);
+    if (should_present) {
+        RenderToMailbox(main_layout, render_window.mailbox, false);
+    }
 
 #ifdef ANDROID
     // On Android, if secondary_window is defined at all,
@@ -126,7 +131,9 @@ void RendererOpenGL::SwapBuffers() {
     if (secondary_window) {
         const auto& secondary_layout = secondary_window->GetFramebufferLayout();
         isSecondaryWindow = true;
-        RenderToMailbox(secondary_layout, secondary_window->mailbox, false);
+        if (should_present) {
+            RenderToMailbox(secondary_layout, secondary_window->mailbox, false);
+        }
         secondary_window->PollEvents();
     }
 #else
