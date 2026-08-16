@@ -187,6 +187,32 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   result. A future allowed matched A/B should use ETC-heavy texture-streaming scenes and record
   texture upload time, frametimes, battery power, temperature, and visual correctness.
 
+## 2026-08-16 AArch64 I4/A4 Tile Expansion
+
+- I4 and A4 uploads previously expanded every 8x8 Morton tile through the scalar per-pixel path.
+  A full tile issued 64 byte loads and 192 scalar stores: 256 memory instructions before surrounding
+  loop and address work.
+- The AArch64 path now processes two rows together. `UZP` recovers the two Morton rows, `SLI`
+  replicates each four-bit intensity or alpha value to eight bits, and the existing ZIP/STP RGBA
+  store sequence writes both rows. This preserves the required low-nibble-first pixel order and
+  deliberately avoids interleaved `ST4` stores on the Thor's X3/A710/A510 core mix.
+- A full tile now uses eight word loads and eight paired vector stores: 16 memory instructions,
+  93.75% fewer than the old 256. ARM64 ThinLTO code also shrank the I4 wrapper from 616 to 376 bytes
+  (39.0%) and the A4 wrapper from 584 to 364 bytes (37.7%). Generated code contains the intended
+  `UZP`, `USHR`, `SLI`, `ZIP`, and `STP` instructions and no `ST4`.
+- An independent model checked 10,000 arbitrary 32-byte tiles against scalar Morton/nibble
+  expansion with exact results. A permanent focused Catch2 test covers both formats and padded
+  output stride; the ARM64 test executable compiled and linked but was not run because the current
+  restriction forbids using the Thor.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` both passed. The APK is 28,963,431 bytes with SHA-256
+  `3B942483933BC86B845DCB15706A1ED011C47433BC6F6BDBF99A634F2E83F586`. Only the active
+  `arm64-v8a` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or Thor execution
+  was performed.
+- This proves a major reduction in I4/A4 conversion work, not a whole-game FPS or wattage result.
+  A future allowed matched A/B should target I4/A4-heavy texture uploads and compare upload time,
+  frametimes, battery power, temperature, and visual correctness.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.

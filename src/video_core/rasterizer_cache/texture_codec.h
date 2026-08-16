@@ -377,6 +377,41 @@ inline void StoreRGBA8RowsA64(u8* first_row, u8* second_row, uint8x16_t red,
     vst1q_u8(second_row + 16, vreinterpretq_u8_u16(second.val[1]));
 }
 
+inline uint8x8_t Expand4BitPixelsA64(uint8x8_t packed) {
+    uint8x8_t low = vand_u8(packed, vdup_n_u8(0x0F));
+    uint8x8_t high = vshr_n_u8(packed, 4);
+    low = vsli_n_u8(low, low, 4);
+    high = vsli_n_u8(high, high, 4);
+    return vzip_u8(low, high).val[0];
+}
+
+template <PixelFormat format>
+inline void MortonCopyTile4To32A64(u32 stride, const u8* tile_buffer, u8* linear_buffer) {
+    static_assert(format == PixelFormat::I4 || format == PixelFormat::A4);
+    const uint8x16_t zero = vdupq_n_u8(0);
+    const uint8x16_t opaque = vdupq_n_u8(0xFF);
+
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) / 2;
+        const u32 left = MakeInt<u32>(tile_buffer + tile_offset);
+        const u32 right = MakeInt<u32>(tile_buffer + tile_offset + 8);
+        const uint8x8_t packed = vreinterpret_u8_u64(
+            vcreate_u64(static_cast<u64>(left) | (static_cast<u64>(right) << 32)));
+        const uint8x8x2_t packed_rows = vuzp_u8(packed, packed);
+        const uint8x16_t pixels =
+            vcombine_u8(Expand4BitPixelsA64(packed_rows.val[0]),
+                        Expand4BitPixelsA64(packed_rows.val[1]));
+        u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
+        u8* const second_row = first_row - stride * sizeof(u32);
+
+        if constexpr (format == PixelFormat::I4) {
+            StoreRGBA8RowsA64(first_row, second_row, pixels, pixels, pixels, opaque);
+        } else {
+            StoreRGBA8RowsA64(first_row, second_row, zero, zero, zero, pixels);
+        }
+    }
+}
+
 template <bool morton_to_linear, bool converted>
 inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
     constexpr u32 encoded_bytes_per_pixel = 3;
@@ -552,6 +587,10 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
     } else if constexpr (morton_to_linear && !converted &&
                          (format == PixelFormat::IA8 || format == PixelFormat::RG8)) {
         MortonCopyTile16To32A64<format>(stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    } else if constexpr (morton_to_linear && !converted &&
+                         (format == PixelFormat::I4 || format == PixelFormat::A4)) {
+        MortonCopyTile4To32A64<format>(stride, tile_buffer.data(), linear_buffer.data());
         return;
     } else if constexpr (format == PixelFormat::RGBA8) {
         constexpr Pixel32TransformA64 transform = converted ? Pixel32TransformA64::ReverseBytes

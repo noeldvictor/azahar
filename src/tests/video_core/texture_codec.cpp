@@ -100,6 +100,44 @@ void CheckExpandedTexture() {
     REQUIRE(decoded == expected);
 }
 
+template <VideoCore::PixelFormat format>
+void CheckExpanded4BitTexture() {
+    static_assert(format == VideoCore::PixelFormat::I4 ||
+                  format == VideoCore::PixelFormat::A4);
+    std::array<u8, 8 * 8 / 2> tiled{};
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        tiled[i] = static_cast<u8>((i * 59 + 13) & 0xFF);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 morton = VideoCore::MortonInterleave(x, y);
+            const u8 packed = tiled[morton / 2];
+            const u8 nibble = (morton & 1) != 0 ? packed >> 4 : packed & 0x0F;
+            const u8 value = static_cast<u8>((nibble << 4) | nibble);
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            if constexpr (format == VideoCore::PixelFormat::I4) {
+                expected[dest] = value;
+                expected[dest + 1] = value;
+                expected[dest + 2] = value;
+                expected[dest + 3] = 0xFF;
+            } else {
+                expected[dest] = 0;
+                expected[dest + 1] = 0;
+                expected[dest + 2] = 0;
+                expected[dest + 3] = value;
+            }
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, format, false>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+}
+
 void CheckConvertedRGB8() {
     std::array<u8, 8 * 8 * 3> tiled{};
     for (std::size_t i = 0; i < tiled.size(); ++i) {
@@ -255,6 +293,12 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("IA4 expansion") {
         CheckExpandedTexture<VideoCore::PixelFormat::IA4>();
+    }
+    SECTION("I4 expansion") {
+        CheckExpanded4BitTexture<VideoCore::PixelFormat::I4>();
+    }
+    SECTION("A4 expansion") {
+        CheckExpanded4BitTexture<VideoCore::PixelFormat::A4>();
     }
     SECTION("ETC1 block decode") {
         CheckETC1<VideoCore::PixelFormat::ETC1>();
