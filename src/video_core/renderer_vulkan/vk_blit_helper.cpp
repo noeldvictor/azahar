@@ -221,12 +221,119 @@ constexpr vk::PipelineShaderStageCreateInfo MakeStages(vk::ShaderModule compute_
     };
 }
 
+vk::RenderPass CreateFilterRenderPass(vk::Device device, vk::Format format) {
+    const vk::AttachmentDescription attachment = {
+        .format = format,
+        .samples = vk::SampleCountFlagBits::e1,
+        .loadOp = vk::AttachmentLoadOp::eDontCare,
+        .storeOp = vk::AttachmentStoreOp::eStore,
+        .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
+        .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
+        .initialLayout = vk::ImageLayout::eGeneral,
+        .finalLayout = vk::ImageLayout::eGeneral,
+    };
+    const vk::AttachmentReference color_attachment = {
+        .attachment = 0,
+        .layout = vk::ImageLayout::eGeneral,
+    };
+    const vk::SubpassDescription subpass = {
+        .pipelineBindPoint = vk::PipelineBindPoint::eGraphics,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+    };
+    const vk::RenderPassCreateInfo renderpass_info = {
+        .attachmentCount = 1,
+        .pAttachments = &attachment,
+        .subpassCount = 1,
+        .pSubpasses = &subpass,
+    };
+    return device.createRenderPass(renderpass_info);
+}
+
 } // Anonymous namespace
+
+struct Anime4KResourceKey {
+    u32 width;
+    u32 height;
+    vk::Format source_format;
+
+    bool operator==(const Anime4KResourceKey&) const noexcept = default;
+};
+
+struct Anime4KResourceKeyHash {
+    std::size_t operator()(const Anime4KResourceKey& key) const noexcept {
+        return Common::HashCombine(Common::HashCombine(key.width, key.height),
+                                   static_cast<u32>(key.source_format));
+    }
+};
+
+struct Anime4KResourceSet {
+    Anime4KResourceSet(const Instance& instance, vk::RenderPass xy_renderpass,
+                       vk::RenderPass luma_renderpass, const Anime4KResourceKey& key)
+        : device{instance.GetDevice()}, source{instance}, xy{instance}, luma{instance} {
+        constexpr auto color_aspect = vk::ImageAspectFlagBits::eColor;
+        constexpr auto source_usage =
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
+        constexpr auto intermediate_usage =
+            vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eColorAttachment;
+
+        source.Create(key.width, key.height, 1, VideoCore::TextureType::Texture2D,
+                      key.source_format, source_usage, {}, color_aspect, false,
+                      "Anime4K source copy");
+        xy.Create(key.width * 2, key.height * 2, 1, VideoCore::TextureType::Texture2D,
+                  vk::Format::eR16G16Sfloat, intermediate_usage, {}, color_aspect, false,
+                  "Anime4K XY gradient");
+        luma.Create(key.width * 2, key.height * 2, 1, VideoCore::TextureType::Texture2D,
+                    vk::Format::eR16Sfloat, intermediate_usage, {}, color_aspect, false,
+                    "Anime4K luma gradient");
+
+        const auto create_framebuffer = [this](Handle& handle, vk::RenderPass renderpass) {
+            const vk::ImageView image_view = handle.image_views[ViewType::Sample];
+            const vk::FramebufferCreateInfo framebuffer_info = {
+                .renderPass = renderpass,
+                .attachmentCount = 1,
+                .pAttachments = &image_view,
+                .width = handle.width,
+                .height = handle.height,
+                .layers = 1,
+            };
+            handle.framebuffer = device.createFramebuffer(framebuffer_info);
+        };
+        create_framebuffer(xy, xy_renderpass);
+        create_framebuffer(luma, luma_renderpass);
+    }
+
+    ~Anime4KResourceSet() {
+        // Handle::Destroy destroys image views before its framebuffer, so detach and destroy the
+        // framebuffers here while their attachment views are still alive.
+        if (xy.framebuffer) {
+            device.destroyFramebuffer(xy.framebuffer);
+            xy.framebuffer = VK_NULL_HANDLE;
+        }
+        if (luma.framebuffer) {
+            device.destroyFramebuffer(luma.framebuffer);
+            luma.framebuffer = VK_NULL_HANDLE;
+        }
+    }
+
+    vk::Device device;
+    Handle source;
+    Handle xy;
+    Handle luma;
+};
+
+struct Anime4KResources {
+    std::unordered_map<Anime4KResourceKey, std::unique_ptr<Anime4KResourceSet>,
+                       Anime4KResourceKeyHash>
+        sets;
+};
 
 BlitHelper::BlitHelper(const Instance& instance_, Scheduler& scheduler_,
                        RenderManager& renderpass_cache_, DescriptorUpdateQueue& update_queue_)
     : instance{instance_}, scheduler{scheduler_}, renderpass_cache{renderpass_cache_},
       update_queue{update_queue_}, device{instance.GetDevice()},
+      anime4k_xy_renderpass{CreateFilterRenderPass(device, vk::Format::eR16G16Sfloat)},
+      anime4k_luma_renderpass{CreateFilterRenderPass(device, vk::Format::eR16Sfloat)},
       compute_provider{instance, scheduler.GetMasterSemaphore(), COMPUTE_BINDINGS},
       compute_buffer_provider{instance, scheduler.GetMasterSemaphore(), COMPUTE_BUFFER_BINDINGS},
       two_textures_provider{instance, scheduler.GetMasterSemaphore(), TWO_TEXTURES_BINDINGS, 16},
@@ -258,13 +365,18 @@ BlitHelper::BlitHelper(const Instance& instance_, Scheduler& scheduler_,
       xbrz_frag{
           Compile(HostShaders::XBRZ_FREESCALE_FRAG, vk::ShaderStageFlagBits::eFragment, device)},
       mmpx_frag{Compile(HostShaders::MMPX_FRAG, vk::ShaderStageFlagBits::eFragment, device)},
+      x_gradient_frag{
+          Compile(HostShaders::X_GRADIENT_FRAG, vk::ShaderStageFlagBits::eFragment, device)},
+      y_gradient_frag{
+          Compile(HostShaders::Y_GRADIENT_FRAG, vk::ShaderStageFlagBits::eFragment, device)},
       refine_frag{Compile(HostShaders::REFINE_FRAG, vk::ShaderStageFlagBits::eFragment, device)},
       d24s8_to_rgba8_pipeline{MakeComputePipeline(d24s8_to_rgba8_comp, compute_pipeline_layout)},
       depth_to_buffer_pipeline{
           MakeComputePipeline(depth_to_buffer_comp, compute_buffer_pipeline_layout)},
       depth_blit_pipeline{VK_NULL_HANDLE},
       linear_sampler{device.createSampler(SAMPLER_CREATE_INFO<vk::Filter::eLinear>)},
-      nearest_sampler{device.createSampler(SAMPLER_CREATE_INFO<vk::Filter::eNearest>)} {
+      nearest_sampler{device.createSampler(SAMPLER_CREATE_INFO<vk::Filter::eNearest>)},
+      anime4k_resources{std::make_unique<Anime4KResources>()} {
 
     if (instance.IsShaderStencilExportSupported()) {
         blit_depth_stencil_frag = Compile(HostShaders::VULKAN_BLIT_DEPTH_STENCIL_FRAG,
@@ -303,6 +415,7 @@ BlitHelper::~BlitHelper() {
         device.destroyPipeline(pipeline);
     }
     filter_pipeline_cache.clear();
+    anime4k_resources.reset();
     device.destroyPipelineLayout(compute_pipeline_layout);
     device.destroyPipelineLayout(compute_buffer_pipeline_layout);
     device.destroyPipelineLayout(two_textures_pipeline_layout);
@@ -319,12 +432,16 @@ BlitHelper::~BlitHelper() {
     device.destroyShaderModule(scale_force_frag);
     device.destroyShaderModule(xbrz_frag);
     device.destroyShaderModule(mmpx_frag);
+    device.destroyShaderModule(x_gradient_frag);
+    device.destroyShaderModule(y_gradient_frag);
     device.destroyShaderModule(refine_frag);
     device.destroyPipeline(depth_to_buffer_pipeline);
     device.destroyPipeline(d24s8_to_rgba8_pipeline);
     device.destroyPipeline(depth_blit_pipeline);
     device.destroySampler(linear_sampler);
     device.destroySampler(nearest_sampler);
+    device.destroyRenderPass(anime4k_xy_renderpass);
+    device.destroyRenderPass(anime4k_luma_renderpass);
 }
 
 void BindBlitState(vk::CommandBuffer cmdbuf, vk::PipelineLayout layout,
@@ -663,9 +780,249 @@ bool BlitHelper::Filter(Surface& surface, const VideoCore::TextureBlit& blit) {
 }
 
 void BlitHelper::FilterAnime4K(Surface& surface, const VideoCore::TextureBlit& blit) {
-    auto pipeline =
-        MakeFilterPipeline(refine_frag, three_textures_pipeline_layout, surface.pixel_format);
-    FilterPassThreeTextures(surface, pipeline, three_textures_pipeline_layout, blit);
+    constexpr u32 internal_scale_factor = 2;
+    const u32 source_width = blit.src_rect.GetWidth();
+    const u32 source_height = blit.src_rect.GetHeight();
+    if (source_width == 0 || source_height == 0) {
+        return;
+    }
+
+    const Anime4KResourceKey resource_key{
+        .width = source_width,
+        .height = source_height,
+        .source_format = surface.traits.native,
+    };
+    auto [resource_it, inserted] = anime4k_resources->sets.try_emplace(resource_key);
+    if (inserted) {
+        resource_it->second = std::make_unique<Anime4KResourceSet>(
+            instance, anime4k_xy_renderpass, anime4k_luma_renderpass, resource_key);
+    }
+    Anime4KResourceSet& resources = *resource_it->second;
+
+    renderpass_cache.EndRendering();
+
+    if (inserted) {
+        const std::array images{resources.source.image, resources.xy.image, resources.luma.image};
+        scheduler.Record([images](vk::CommandBuffer cmdbuf) {
+            std::array<vk::ImageMemoryBarrier, images.size()> barriers;
+            for (std::size_t index = 0; index < images.size(); ++index) {
+                barriers[index] = vk::ImageMemoryBarrier{
+                    .srcAccessMask = vk::AccessFlagBits::eNone,
+                    .dstAccessMask = vk::AccessFlagBits::eTransferWrite |
+                                     vk::AccessFlagBits::eColorAttachmentWrite,
+                    .oldLayout = vk::ImageLayout::eUndefined,
+                    .newLayout = vk::ImageLayout::eGeneral,
+                    .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                    .image = images[index],
+                    .subresourceRange{
+                        .aspectMask = vk::ImageAspectFlagBits::eColor,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                };
+            }
+            cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                   vk::PipelineStageFlagBits::eTransfer |
+                                       vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                                   vk::DependencyFlagBits::eByRegion, {}, {}, barriers);
+        });
+    }
+
+    const vk::Image source_image = resources.source.image;
+    const vk::Image surface_image = surface.Image(Type::Base);
+    const vk::ImageCopy source_copy = {
+        .srcSubresource{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .srcOffset = {static_cast<s32>(blit.src_rect.left), static_cast<s32>(blit.src_rect.bottom),
+                      0},
+        .dstSubresource{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        },
+        .dstOffset = {0, 0, 0},
+        .extent = {source_width, source_height, 1},
+    };
+    scheduler.Record([source_image, surface_image, source_copy](vk::CommandBuffer cmdbuf) {
+        const vk::ImageMemoryBarrier prepare_copy = {
+            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = source_image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+                               vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, prepare_copy);
+        cmdbuf.copyImage(surface_image, vk::ImageLayout::eGeneral, source_image,
+                         vk::ImageLayout::eGeneral, source_copy);
+        const vk::ImageMemoryBarrier finish_copy = {
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = source_image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                               vk::PipelineStageFlagBits::eFragmentShader,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, finish_copy);
+    });
+
+    const vk::DescriptorSet texture_descriptor_set = three_textures_provider.Commit();
+    update_queue.AddImageSampler(texture_descriptor_set, 0, 0,
+                                 resources.source.image_views[ViewType::Sample], linear_sampler,
+                                 vk::ImageLayout::eGeneral);
+    update_queue.AddImageSampler(texture_descriptor_set, 1, 0,
+                                 resources.luma.image_views[ViewType::Sample], linear_sampler,
+                                 vk::ImageLayout::eGeneral);
+    update_queue.AddImageSampler(texture_descriptor_set, 2, 0,
+                                 resources.xy.image_views[ViewType::Sample], nearest_sampler,
+                                 vk::ImageLayout::eGeneral);
+
+    const auto transition_image =
+        [this](vk::Image image, vk::AccessFlags src_access, vk::AccessFlags dst_access,
+               vk::PipelineStageFlags src_stage, vk::PipelineStageFlags dst_stage) {
+            scheduler.Record(
+                [image, src_access, dst_access, src_stage, dst_stage](vk::CommandBuffer cmdbuf) {
+                    const vk::ImageMemoryBarrier barrier = {
+                        .srcAccessMask = src_access,
+                        .dstAccessMask = dst_access,
+                        .oldLayout = vk::ImageLayout::eGeneral,
+                        .newLayout = vk::ImageLayout::eGeneral,
+                        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                        .image = image,
+                        .subresourceRange{
+                            .aspectMask = vk::ImageAspectFlagBits::eColor,
+                            .baseMipLevel = 0,
+                            .levelCount = 1,
+                            .baseArrayLayer = 0,
+                            .layerCount = 1,
+                        },
+                    };
+                    cmdbuf.pipelineBarrier(src_stage, dst_stage, vk::DependencyFlagBits::eByRegion,
+                                           {}, {}, barrier);
+                });
+        };
+
+    const auto draw_pass =
+        [this, texture_descriptor_set](vk::Pipeline pipeline, vk::PipelineLayout layout,
+                                       vk::Framebuffer framebuffer, vk::RenderPass renderpass,
+                                       vk::Rect2D output_rect, FilterPushConstants push_constants) {
+            const RenderPass render_pass = {
+                .framebuffer = framebuffer,
+                .render_pass = renderpass,
+                .render_area = output_rect,
+            };
+            renderpass_cache.BeginRendering(render_pass);
+            scheduler.Record([pipeline, layout, texture_descriptor_set, output_rect,
+                              push_constants](vk::CommandBuffer cmdbuf) {
+                const vk::Viewport viewport = {
+                    .x = static_cast<float>(output_rect.offset.x),
+                    .y = static_cast<float>(output_rect.offset.y),
+                    .width = static_cast<float>(output_rect.extent.width),
+                    .height = static_cast<float>(output_rect.extent.height),
+                    .minDepth = 0.0f,
+                    .maxDepth = 1.0f,
+                };
+                cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+                cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0,
+                                          texture_descriptor_set, {});
+                cmdbuf.pushConstants(layout, FILTER_PUSH_CONSTANT_RANGE.stageFlags,
+                                     FILTER_PUSH_CONSTANT_RANGE.offset,
+                                     FILTER_PUSH_CONSTANT_RANGE.size, &push_constants);
+                cmdbuf.setViewport(0, viewport);
+                cmdbuf.setScissor(0, output_rect);
+                cmdbuf.draw(3, 1, 0, 0);
+            });
+            renderpass_cache.EndRendering();
+        };
+
+    const vk::Extent2D intermediate_extent{
+        .width = source_width * internal_scale_factor,
+        .height = source_height * internal_scale_factor,
+    };
+    const vk::Rect2D intermediate_rect{
+        .offset = {0, 0},
+        .extent = intermediate_extent,
+    };
+    const FilterPushConstants full_texture_constants{
+        .tex_scale = {1.0f, 1.0f},
+        .tex_offset = {0.0f, 0.0f},
+        .res_scale = static_cast<float>(surface.GetResScale()),
+    };
+
+    transition_image(resources.xy.image, vk::AccessFlagBits::eShaderRead,
+                     vk::AccessFlagBits::eColorAttachmentWrite,
+                     vk::PipelineStageFlagBits::eFragmentShader,
+                     vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    draw_pass(
+        MakeFilterPipeline(x_gradient_frag, three_textures_pipeline_layout, anime4k_xy_renderpass),
+        three_textures_pipeline_layout, resources.xy.framebuffer, anime4k_xy_renderpass,
+        intermediate_rect, full_texture_constants);
+    transition_image(resources.xy.image, vk::AccessFlagBits::eColorAttachmentWrite,
+                     vk::AccessFlagBits::eShaderRead,
+                     vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                     vk::PipelineStageFlagBits::eFragmentShader);
+
+    transition_image(resources.luma.image, vk::AccessFlagBits::eShaderRead,
+                     vk::AccessFlagBits::eColorAttachmentWrite,
+                     vk::PipelineStageFlagBits::eFragmentShader,
+                     vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    draw_pass(MakeFilterPipeline(y_gradient_frag, three_textures_pipeline_layout,
+                                 anime4k_luma_renderpass),
+              three_textures_pipeline_layout, resources.luma.framebuffer, anime4k_luma_renderpass,
+              intermediate_rect, full_texture_constants);
+    transition_image(resources.luma.image, vk::AccessFlagBits::eColorAttachmentWrite,
+                     vk::AccessFlagBits::eShaderRead,
+                     vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                     vk::PipelineStageFlagBits::eFragmentShader);
+
+    const vk::Offset2D output_offset{
+        .x = std::min<s32>(blit.dst_rect.left, blit.dst_rect.right),
+        .y = std::min<s32>(blit.dst_rect.bottom, blit.dst_rect.top),
+    };
+    const vk::Rect2D output_rect{
+        .offset = output_offset,
+        .extent = {blit.dst_rect.GetWidth(), blit.dst_rect.GetHeight()},
+    };
+    const vk::RenderPass output_renderpass = renderpass_cache.GetRenderpass(
+        surface.pixel_format, VideoCore::PixelFormat::Invalid, false);
+    draw_pass(MakeFilterPipeline(refine_frag, three_textures_pipeline_layout, surface.pixel_format),
+              three_textures_pipeline_layout, surface.Framebuffer(), output_renderpass, output_rect,
+              full_texture_constants);
+    transition_image(surface.Image(), vk::AccessFlagBits::eColorAttachmentWrite,
+                     vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead,
+                     vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                     vk::PipelineStageFlagBits::eFragmentShader |
+                         vk::PipelineStageFlagBits::eTransfer);
+    scheduler.MakeDirty(StateFlags::Pipeline);
 }
 
 void BlitHelper::FilterBicubic(Surface& surface, const VideoCore::TextureBlit& blit) {
@@ -695,22 +1052,27 @@ void BlitHelper::FilterMMPX(Surface& surface, const VideoCore::TextureBlit& blit
 vk::Pipeline BlitHelper::MakeFilterPipeline(vk::ShaderModule fragment_shader,
                                             vk::PipelineLayout layout,
                                             VideoCore::PixelFormat color_format) {
+    const vk::RenderPass renderpass =
+        renderpass_cache.GetRenderpass(color_format, VideoCore::PixelFormat::Invalid, false);
+    return MakeFilterPipeline(fragment_shader, layout, renderpass);
+}
+
+vk::Pipeline BlitHelper::MakeFilterPipeline(vk::ShaderModule fragment_shader,
+                                            vk::PipelineLayout layout, vk::RenderPass renderpass) {
 
     const VkShaderModule c_shader = static_cast<VkShaderModule>(fragment_shader);
     const VkPipelineLayout c_layout = static_cast<VkPipelineLayout>(layout);
+    const VkRenderPass c_renderpass = static_cast<VkRenderPass>(renderpass);
     const u64 cache_key = Common::HashCombine(
         Common::HashCombine(static_cast<u64>(reinterpret_cast<uintptr_t>(c_shader)),
                             static_cast<u64>(reinterpret_cast<uintptr_t>(c_layout))),
-        static_cast<u64>(color_format));
+        static_cast<u64>(reinterpret_cast<uintptr_t>(c_renderpass)));
 
     if (const auto it = filter_pipeline_cache.find(cache_key); it != filter_pipeline_cache.end()) {
         return it->second;
     }
 
     const std::array stages = MakeStages(full_screen_vert, fragment_shader);
-    // Use the provided color format for render pass compatibility
-    const auto renderpass =
-        renderpass_cache.GetRenderpass(color_format, VideoCore::PixelFormat::Invalid, false);
 
     vk::GraphicsPipelineCreateInfo pipeline_info = {
         .stageCount = static_cast<u32>(stages.size()),
@@ -789,91 +1151,6 @@ void BlitHelper::FilterPass(Surface& surface, vk::Pipeline pipeline, vk::Pipelin
 
         // Set up viewport and scissor for filtering (don't use BindBlitState as it overwrites push
         // constants)
-        const vk::Offset2D offset{
-            .x = std::min<s32>(blit.dst_rect.left, blit.dst_rect.right),
-            .y = std::min<s32>(blit.dst_rect.bottom, blit.dst_rect.top),
-        };
-        const vk::Extent2D extent{
-            .width = blit.dst_rect.GetWidth(),
-            .height = blit.dst_rect.GetHeight(),
-        };
-        const vk::Viewport viewport{
-            .x = static_cast<float>(offset.x),
-            .y = static_cast<float>(offset.y),
-            .width = static_cast<float>(extent.width),
-            .height = static_cast<float>(extent.height),
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-        };
-        const vk::Rect2D scissor{
-            .offset = offset,
-            .extent = extent,
-        };
-        cmdbuf.setViewport(0, viewport);
-        cmdbuf.setScissor(0, scissor);
-        cmdbuf.draw(3, 1, 0, 0);
-    });
-    scheduler.MakeDirty(StateFlags::Pipeline);
-}
-
-void BlitHelper::FilterPassThreeTextures(Surface& surface, vk::Pipeline pipeline,
-                                         vk::PipelineLayout layout,
-                                         const VideoCore::TextureBlit& blit) {
-    const auto texture_descriptor_set = three_textures_provider.Commit();
-
-    update_queue.AddImageSampler(texture_descriptor_set, 0, 0,
-                                 surface.ImageView(ViewType::Sample, Type::Base), linear_sampler,
-                                 vk::ImageLayout::eGeneral);
-    update_queue.AddImageSampler(texture_descriptor_set, 1, 0,
-                                 surface.ImageView(ViewType::Sample, Type::Base), linear_sampler,
-                                 vk::ImageLayout::eGeneral);
-    update_queue.AddImageSampler(texture_descriptor_set, 2, 0,
-                                 surface.ImageView(ViewType::Sample, Type::Base), linear_sampler,
-                                 vk::ImageLayout::eGeneral);
-
-    const auto renderpass = renderpass_cache.GetRenderpass(surface.pixel_format,
-                                                           VideoCore::PixelFormat::Invalid, false);
-
-    const RenderPass render_pass = {
-        .framebuffer = surface.Framebuffer(),
-        .render_pass = renderpass,
-        .render_area =
-            {
-                .offset = {0, 0},
-                .extent = {surface.GetScaledWidth(), surface.GetScaledHeight()},
-            },
-    };
-    renderpass_cache.BeginRendering(render_pass);
-
-    const float src_scale = static_cast<float>(surface.GetResScale());
-    // Calculate normalized texture coordinates like OpenGL does
-    const auto src_extent = surface.RealExtent(false); // Get unscaled texture extent
-    const float tex_scale_x =
-        static_cast<float>(blit.src_rect.GetWidth()) / static_cast<float>(src_extent.width);
-    const float tex_scale_y =
-        static_cast<float>(blit.src_rect.GetHeight()) / static_cast<float>(src_extent.height);
-    const float tex_offset_x =
-        static_cast<float>(blit.src_rect.left) / static_cast<float>(src_extent.width);
-    const float tex_offset_y =
-        static_cast<float>(blit.src_rect.bottom) / static_cast<float>(src_extent.height);
-
-    scheduler.Record([pipeline, layout, texture_descriptor_set, blit, tex_scale_x, tex_scale_y,
-                      tex_offset_x, tex_offset_y, src_scale](vk::CommandBuffer cmdbuf) {
-        const FilterPushConstants push_constants{.tex_scale = {tex_scale_x, tex_scale_y},
-                                                 .tex_offset = {tex_offset_x, tex_offset_y},
-                                                 .res_scale = src_scale};
-
-        cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-
-        // Bind single texture descriptor set
-        cmdbuf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, layout, 0,
-                                  texture_descriptor_set, {});
-
-        cmdbuf.pushConstants(layout, FILTER_PUSH_CONSTANT_RANGE.stageFlags,
-                             FILTER_PUSH_CONSTANT_RANGE.offset, FILTER_PUSH_CONSTANT_RANGE.size,
-                             &push_constants);
-
-        // Set up viewport and scissor using safe viewport like working filters
         const vk::Offset2D offset{
             .x = std::min<s32>(blit.dst_rect.left, blit.dst_rect.right),
             .y = std::min<s32>(blit.dst_rect.bottom, blit.dst_rect.top),

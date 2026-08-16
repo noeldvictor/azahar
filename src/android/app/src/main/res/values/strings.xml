@@ -283,7 +283,7 @@
     <string name="use_integer_scaling">Integer Scaling</string>
     <string name="use_integer_scaling_description">Scales the screens with an integer multiplier of the original 3DS screen. For layouts with two different screen sizes, the largest screen is integer-scaled.</string>
     <string name="texture_filter_name">Texture Filter</string>
-    <string name="texture_filter_description">Enhances the visuals of applications by applying a filter to textures. The supported filters are Anime4K Ultrafast, Bicubic, ScaleForce, xBRZ freescale, and MMPX.</string>
+    <string name="texture_filter_description">Upscales game textures above 1x internal resolution; this is not a final-screen filter. On AYN Thor, start with None for the lowest GPU load or Bicubic for lightweight smoothing. ScaleForce targets 3D art. xBRZ and MMPX target 2D pixel art and cost more GPU work. Anime4K uses three passes for anime-style art and has the highest GPU and memory cost.</string>
     <string name="delay_render_thread">Delay Game Render Thread</string>
     <string name="delay_render_thread_description">Delay the game render thread when it submits data to the GPU. Helps with performance issues in the (very few) applications with dynamic framerates.</string>
     <string name="simulate_3ds_gpu_timings">Simulate 3DS GPU Timings</string>
@@ -829,11 +829,12 @@
     <string name="vulkan">Vulkan</string>
 
     <!-- Texture filter names -->
-    <string name="anime4k">Anime4K</string>
-    <string name="bicubic">Bicubic</string>
-    <string name="scaleforce">ScaleForce</string>
-    <string name="xbrz">xBRZ</string>
-    <string name="mmpx">MMPX</string>
+    <string name="texture_filter_none">None (fastest · lowest GPU load)</string>
+    <string name="anime4k">Anime4K (anime art · very heavy)</string>
+    <string name="bicubic">Bicubic (smooth · lightweight)</string>
+    <string name="scaleforce">ScaleForce (3D art · medium)</string>
+    <string name="xbrz">xBRZ (2D art · heavy)</string>
+    <string name="mmpx">MMPX (pixel art · heavy)</string>
 
     <!-- Texture Sampling names -->
     <string name="game_controlled">Game Controlled</string>

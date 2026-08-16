@@ -316,7 +316,7 @@
     </integer-array>
 
     <string-array name="textureFilterNames">
-        <item>@string/none</item>
+        <item>@string/texture_filter_none</item>
         <item>@string/anime4k</item>
         <item>@string/bicubic</item>
         <item>@string/scaleforce</item>

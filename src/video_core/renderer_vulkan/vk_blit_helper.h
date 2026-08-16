@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 
 #include "video_core/rasterizer_cache/pixel_format.h"
@@ -22,6 +23,7 @@ class RenderManager;
 class Scheduler;
 class Surface;
 class DescriptorUpdateQueue;
+struct Anime4KResources;
 
 class BlitHelper {
     friend class TextureRuntime;
@@ -45,6 +47,8 @@ private:
     vk::Pipeline MakeFilterPipeline(
         vk::ShaderModule fragment_shader, vk::PipelineLayout layout,
         VideoCore::PixelFormat color_format = VideoCore::PixelFormat::RGBA8);
+    vk::Pipeline MakeFilterPipeline(vk::ShaderModule fragment_shader, vk::PipelineLayout layout,
+                                    vk::RenderPass renderpass);
 
     void FilterAnime4K(Surface& surface, const VideoCore::TextureBlit& blit);
     void FilterBicubic(Surface& surface, const VideoCore::TextureBlit& blit);
@@ -55,12 +59,6 @@ private:
     void FilterPass(Surface& surface, vk::Pipeline pipeline, vk::PipelineLayout layout,
                     const VideoCore::TextureBlit& blit);
 
-    void FilterPassThreeTextures(Surface& surface, vk::Pipeline pipeline, vk::PipelineLayout layout,
-                                 const VideoCore::TextureBlit& blit);
-
-    void FilterPassYGradient(Surface& surface, vk::Pipeline pipeline, vk::PipelineLayout layout,
-                             const VideoCore::TextureBlit& blit);
-
 private:
     const Instance& instance;
     Scheduler& scheduler;
@@ -68,7 +66,8 @@ private:
     DescriptorUpdateQueue& update_queue;
 
     vk::Device device;
-    vk::RenderPass r32_renderpass;
+    vk::RenderPass anime4k_xy_renderpass;
+    vk::RenderPass anime4k_luma_renderpass;
 
     DescriptorHeap compute_provider;
     DescriptorHeap compute_buffer_provider;
@@ -89,6 +88,8 @@ private:
     vk::ShaderModule scale_force_frag;
     vk::ShaderModule xbrz_frag;
     vk::ShaderModule mmpx_frag;
+    vk::ShaderModule x_gradient_frag;
+    vk::ShaderModule y_gradient_frag;
     vk::ShaderModule refine_frag;
 
     vk::Pipeline d24s8_to_rgba8_pipeline;
@@ -99,6 +100,7 @@ private:
 
     /// Cache of texture filter pipelines (keyed by shader+layout+format hash)
     std::unordered_map<std::uint64_t, vk::Pipeline> filter_pipeline_cache;
+    std::unique_ptr<Anime4KResources> anime4k_resources;
 };
 
 } // namespace Vulkan
