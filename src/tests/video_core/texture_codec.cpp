@@ -130,6 +130,36 @@ void CheckConvertedRGB8() {
     REQUIRE(encoded == tiled);
 }
 
+void CheckD24S8() {
+    std::array<u8, 8 * 8 * 4> tiled{};
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        tiled[i] = static_cast<u8>((i * 43 + 23) & 0xFF);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 source = VideoCore::MortonInterleave(x, y) * 4;
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            expected[dest] = tiled[source + 3];
+            expected[dest + 1] = tiled[source];
+            expected[dest + 2] = tiled[source + 1];
+            expected[dest + 3] = tiled[source + 2];
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, VideoCore::PixelFormat::D24S8, false>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, 8 * 8 * 4> encoded{};
+    encoded.fill(0xA5);
+    VideoCore::MortonCopyTile<false, VideoCore::PixelFormat::D24S8, false>(10, encoded, decoded);
+    REQUIRE(encoded == tiled);
+}
+
 } // namespace
 
 TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]") {
@@ -159,6 +189,9 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("D24") {
         CheckTileCodec<VideoCore::PixelFormat::D24>();
+    }
+    SECTION("D24S8 byte rotation") {
+        CheckD24S8();
     }
     SECTION("IA8 expansion") {
         CheckExpandedTexture<VideoCore::PixelFormat::IA8>();

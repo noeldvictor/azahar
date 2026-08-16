@@ -116,6 +116,38 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   mode, and run time while recording CPU time, frametimes, battery power, temperature, and thermal
   slope.
 
+## 2026-08-16 AArch64 D24S8 Tile Codec
+
+- D24S8 was the last 32-bit full-tile format still using the scalar 64-pixel Morton loop. Each
+  upload pixel performed a scalar load, an eight-bit rotate, and a scalar store; the inverse
+  download repeated the same pattern in the other direction.
+- The AArch64 path now reuses the exact RGBA8 `LD2`/paired-store Morton geometry and applies one
+  `TBL` permutation per 16-byte vector. Upload maps each four source bytes from
+  `[b0, b1, b2, b3]` to `[b3, b0, b1, b2]`, matching the old `rotl(u32, 8)`. Download applies
+  `[b1, b2, b3, b0]`, matching `rotr(u32, 8)`. A compile-time composition check proves that the
+  two table permutations are inverses.
+- Final ThinLTO upload code contains eight `LD2`, sixteen one-table `TBL`, and eight paired vector
+  stores per full 8x8 tile. That is 32 core load/shuffle/store operations in place of 64 scalar
+  loads, 64 rotates, and 64 scalar stores: an 83.3% reduction in that core tile body. The full
+  aligned download path is vectorized with the inverse table as well.
+- The optimized upload symbol grew from 408 to 440 bytes (7.8%). The download wrapper grew from
+  592 to 1,116 bytes because ThinLTO duplicated the inlined vector body into partial-tile staging
+  paths. The larger wrapper is an explicit tradeoff for avoiding a call in the full-tile hot loop;
+  runtime profiling can revisit it if instruction-cache pressure outweighs the reduced tile work.
+- A focused test independently computes the scalar Morton layout with a padded ten-pixel stride,
+  verifies the exact D24S8 byte rotation on upload, and verifies an inverse round trip on download.
+  The ARM64 test executable compiled and linked, but was not run because the current restriction
+  forbids using the Thor.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` both passed. The APK is 28,963,743 bytes with SHA-256
+  `D3D20220D444185398929E8BC247F54E22B7E77B58D73C3E85B05DCB2DE14C23`. Only the active
+  `arm64-v8a` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or Thor execution
+  was performed.
+- This is a major instruction-count reduction in one texture conversion hot path, not evidence of
+  a major whole-emulator FPS or wattage gain. A future allowed matched A/B should target titles and
+  scenes with frequent D24S8 depth-stencil upload, readback, or render-target churn and record the
+  complete correctness, frametime, power, and thermal acceptance set.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.
