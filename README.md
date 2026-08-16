@@ -26,7 +26,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 ## Target Hardware
 
-Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, LPDDR5X, and UFS4 storage. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
+Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
 See [Thor optimization notes](docs/thor-optimization-notes.md) for current performance hooks and candidate code paths.
 
@@ -56,6 +56,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS above 100% speed
   while emulation continues at the selected turbo limit. It can be disabled under General for
   smoother fast-forward on the Thor's 120 Hz panel.
+- Android Graphics has a separate Screen Filter selector. Its opt-in Anime4K v4 Mobile mode applies
+  a single-pass, screen-space DoG filter while each 3DS screen is scaled into the layout; the older
+  Texture Filter choices still operate on game textures and remain separate.
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.

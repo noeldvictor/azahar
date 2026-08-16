@@ -333,6 +333,16 @@
         <item>5</item>
     </integer-array>
 
+    <string-array name="screenFilterNames">
+        <item>@string/screen_filter_none</item>
+        <item>@string/screen_filter_anime4k</item>
+    </string-array>
+
+    <integer-array name="screenFilterValues">
+        <item>0</item>
+        <item>1</item>
+    </integer-array>
+
     <string-array name="textureSamplingNames">
         <item>@string/game_controlled</item>
         <item>@string/nearest_neighbor</item>

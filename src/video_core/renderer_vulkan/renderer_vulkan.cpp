@@ -16,6 +16,7 @@
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
 #include "video_core/host_shaders/vulkan_present_anaglyph_frag.h"
+#include "video_core/host_shaders/vulkan_present_anime4k_frag.h"
 #include "video_core/host_shaders/vulkan_present_frag.h"
 #include "video_core/host_shaders/vulkan_present_interlaced_frag.h"
 #include "video_core/host_shaders/vulkan_present_vert.h"
@@ -129,6 +130,7 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
     CompileShaders();
     BuildLayouts();
     BuildPipelines();
+    ReloadPipeline(Settings::values.render_3d.GetValue());
     if (secondary_window) {
         secondary_present_window_ptr = std::make_unique<PresentWindow>(
             *secondary_window, instance, scheduler, IsLowRefreshRate());
@@ -186,7 +188,13 @@ void RendererVulkan::PrepareRendertarget() {
 }
 
 void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& layout) {
-    const auto sampler = present_samplers[!Settings::values.filter_mode.GetValue()];
+    const bool screen_filter_enabled =
+        Settings::values.screen_filter.GetValue() != Settings::ScreenFilter::None &&
+        layout.render_3d_mode != Settings::StereoRenderOption::Anaglyph &&
+        layout.render_3d_mode != Settings::StereoRenderOption::Interlaced &&
+        layout.render_3d_mode != Settings::StereoRenderOption::ReverseInterlaced;
+    const auto sampler =
+        present_samplers[screen_filter_enabled ? 0 : !Settings::values.filter_mode.GetValue()];
     const auto present_set = present_heap.Commit();
     for (u32 index = 0; index < screen_infos.size(); index++) {
         update_queue.AddImageSampler(present_set, 0, index, screen_infos[index].image_view,
@@ -304,6 +312,8 @@ void RendererVulkan::CompileShaders() {
     present_shaders[1] = Compile(HostShaders::VULKAN_PRESENT_ANAGLYPH_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
     present_shaders[2] = Compile(HostShaders::VULKAN_PRESENT_INTERLACED_FRAG,
+                                 vk::ShaderStageFlagBits::eFragment, device, preamble);
+    present_shaders[3] = Compile(HostShaders::VULKAN_PRESENT_ANIME4K_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
 
     cursor_vertex_shader =
@@ -735,7 +745,10 @@ void RendererVulkan::ReloadPipeline(Settings::StereoRenderOption render_3d) {
         draw_info.reverse_interlaced = render_3d == Settings::StereoRenderOption::ReverseInterlaced;
         break;
     default:
-        current_pipeline = 0;
+        current_pipeline = Settings::values.screen_filter.GetValue() ==
+                                   Settings::ScreenFilter::Anime4K
+                               ? 3
+                               : 0;
         break;
     }
 }

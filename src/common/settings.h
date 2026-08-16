@@ -123,6 +123,11 @@ enum class TextureFilter : u32 {
     MMPX = 5,
 };
 
+enum class ScreenFilter : u32 {
+    None = 0,
+    Anime4K = 1,
+};
+
 enum class TextureSampling : u32 {
     GameControlled = 0,
     NearestNeighbor = 1,
@@ -626,6 +631,7 @@ struct Values {
     Setting<s32> cardboard_y_shift{0, Keys::cardboard_y_shift};
 
     SwitchableSetting<bool> filter_mode{true, Keys::filter_mode};
+    SwitchableSetting<ScreenFilter> screen_filter{ScreenFilter::None, Keys::screen_filter};
     SwitchableSetting<std::string> pp_shader_name{"None (builtin)", Keys::pp_shader_name};
     SwitchableSetting<std::string> anaglyph_shader_name{"Dubois (builtin)",
                                                         Keys::anaglyph_shader_name};

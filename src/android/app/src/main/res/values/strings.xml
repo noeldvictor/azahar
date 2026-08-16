@@ -280,6 +280,10 @@
     <string name="async_shaders_description">Compiles shaders in the background to reduce stuttering during gameplay. When enabled expect temporary graphical glitches</string>
     <string name="linear_filtering">Linear Filtering</string>
     <string name="linear_filtering_description">Enables linear filtering, which causes game visuals to appear smoother.</string>
+    <string name="screen_filter_name">Screen Filter</string>
+    <string name="screen_filter_description">Filters each finished 3DS screen as it is scaled into the layout. Anime4K v4 Mobile targets anime-style lines using a bandwidth-conscious single-pass DoG port; it is heavier than plain linear filtering and falls back to normal presentation for anaglyph or interlaced 3D.</string>
+    <string name="screen_filter_none">None (fastest · lowest GPU load)</string>
+    <string name="screen_filter_anime4k">Anime4K v4 Mobile (anime art · GPU heavy)</string>
     <string name="use_integer_scaling">Integer Scaling</string>
     <string name="use_integer_scaling_description">Scales the screens with an integer multiplier of the original 3DS screen. For layouts with two different screen sizes, the largest screen is integer-scaled.</string>
     <string name="texture_filter_name">Texture Filter</string>

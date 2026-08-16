@@ -85,6 +85,37 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - A fixed title-screen capture rendered at 30 FPS with no fatal, pipeline-creation, Vulkan, or shader error. Its expected Anime4K edge refinement matched a control capture from the existing OpenGL Anime4K path; screenshots and device logs were test artifacts and are not committed.
 - This restores correctness, not efficiency. Anime4K performs three full-screen texture passes plus a source copy for each filtered upload and keeps intermediate images by source size/format for safe reuse across queued Vulkan work. It is labeled very heavy in the Android UI. None or Bicubic remains the better Thor choice when lower GPU load, memory use, and battery power matter more than aggressive anime-line refinement.
 
+## 2026-08-16 Anime4K v4 Mobile Screen Filter
+
+- Android Graphics settings now has a separate **Screen Filter** selector beside Linear Filtering.
+  It is distinct from **Texture Filter**: the old filter changes individual emulated textures before
+  games use them, while the new mode filters each finished 3DS screen as it is scaled into the
+  final layout. The default is None, so existing output and GPU cost do not change unless selected.
+- **Anime4K v4 Mobile** is derived from the MIT-licensed non-CNN DoG upscaler shipped in the
+  official [Anime4K v4.0.1 release](https://github.com/bloc97/Anime4K/tree/v4.0.1/glsl/Upscale).
+  The desktop-oriented implementation uses luma, horizontal Gaussian, vertical Gaussian, and
+  apply passes. This Thor port fuses the DoG idea into one presentation pass with a normalized 3x3
+  Gaussian, the same 0.8 luma correction strength, and a local luma min/max clamp. It samples nine
+  source texels per output fragment but creates no intermediate image and performs no extra
+  full-frame read/write pass, reducing mobile tile-memory bandwidth at the cost of not being a
+  pixel-identical port of the full separable filter or its multi-pass CNN alternatives.
+- The shader activates only when both output axes exceed the input by 1.2x, matching Anime4K's
+  upscale-only intent. It preserves source alpha, clamps corrected RGB, forces the required linear
+  sampler only while the screen filter is active, and leaves normal nearest/linear presentation
+  alone at native size or while downscaling. Anaglyph and interlaced 3D retain their existing
+  two-eye shaders and the user's ordinary presentation sampler.
+- Vulkan has a dedicated fourth presentation pipeline and supports both dynamic descriptor-array
+  indexing and the existing switch fallback. OpenGL has a matching built-in presentation shader.
+  The setting is persisted through Android and desktop configuration and is logged by name.
+- NDK `glslc` accepted both Vulkan indexing variants and the OpenGL fragment shader. The complete
+  ARM64 `:app:assembleVanillaRelWithDebInfoLite` build passed; the APK is 28,961,939 bytes with
+  SHA-256 `4C7979B6A8AB5A6A725AF9EE07536A7D5172BB809286112E093F51F8EA58E543`.
+- Per the active no-launch restriction, the APK was not installed or run. Visual quality, Adreno
+  frametime, and power remain unmeasured. The required A/B is None versus Anime4K v4 Mobile in the
+  same anime-heavy title and fixed scene, with identical renderer, internal resolution, layout,
+  driver, brightness, fan/performance mode, cache state, and duration; record frame distribution,
+  KGSL busy time, battery power, temperature, and thermal slope before changing recommendations.
+
 ## 2026-08-16 Dynarmic A32 ARM64 FastDispatch
 
 - The ARM64 A32 backend previously sent every `FastDispatchHint` terminal back through

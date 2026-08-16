@@ -86,6 +86,7 @@ object SettingKeys {
     external fun cardboard_x_shift(): String
     external fun cardboard_y_shift(): String
     external fun filter_mode(): String
+    external fun screen_filter(): String
     external fun pp_shader_name(): String
     external fun anaglyph_shader_name(): String
     external fun dump_textures(): String

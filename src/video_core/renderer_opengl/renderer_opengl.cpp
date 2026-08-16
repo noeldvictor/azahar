@@ -17,6 +17,7 @@
 #include "video_core/shader/generator/glsl_shader_gen.h"
 
 #include "video_core/host_shaders/opengl_present_anaglyph_frag.h"
+#include "video_core/host_shaders/opengl_present_anime4k_frag.h"
 #include "video_core/host_shaders/opengl_present_frag.h"
 #include "video_core/host_shaders/opengl_present_interlaced_frag.h"
 #include "video_core/host_shaders/opengl_present_vert.h"
@@ -428,7 +429,9 @@ void RendererOpenGL::ReloadShader(Settings::StereoRenderOption render_3d) {
                render_3d == Settings::StereoRenderOption::ReverseInterlaced) {
         shader_data += HostShaders::OPENGL_PRESENT_INTERLACED_FRAG;
     } else {
-        if (Settings::values.pp_shader_name.GetValue() == "None (builtin)") {
+        if (Settings::values.screen_filter.GetValue() == Settings::ScreenFilter::Anime4K) {
+            shader_data += HostShaders::OPENGL_PRESENT_ANIME4K_FRAG;
+        } else if (Settings::values.pp_shader_name.GetValue() == "None (builtin)") {
             shader_data += HostShaders::OPENGL_PRESENT_FRAG;
         } else {
             std::string shader_text = OpenGL::GetPostProcessingShaderCode(
@@ -585,7 +588,10 @@ void RendererOpenGL::DrawSingleScreen(const ScreenInfo& screen_info, float x, fl
     }
 
     const u32 scale_factor = GetResolutionScaleFactor();
-    const GLuint sampler = samplers[Settings::values.filter_mode.GetValue()].handle;
+    const bool use_linear = Settings::values.screen_filter.GetValue() !=
+                                Settings::ScreenFilter::None ||
+                            Settings::values.filter_mode.GetValue();
+    const GLuint sampler = samplers[use_linear].handle;
     glUniform4f(uniform_i_resolution, static_cast<float>(screen_info.texture.width * scale_factor),
                 static_cast<float>(screen_info.texture.height * scale_factor),
                 1.0f / static_cast<float>(screen_info.texture.width * scale_factor),

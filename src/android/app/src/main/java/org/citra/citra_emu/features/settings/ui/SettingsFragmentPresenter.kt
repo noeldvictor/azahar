@@ -1024,6 +1024,17 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
                 )
             )
             add(
+                SingleChoiceSetting(
+                    IntSetting.SCREEN_FILTER,
+                    R.string.screen_filter_name,
+                    R.string.screen_filter_description,
+                    R.array.screenFilterNames,
+                    R.array.screenFilterValues,
+                    IntSetting.SCREEN_FILTER.key,
+                    IntSetting.SCREEN_FILTER.defaultValue
+                )
+            )
+            add(
                 SwitchSetting(
                     BooleanSetting.SHADERS_ACCURATE_MUL,
                     R.string.shaders_accurate_mul,

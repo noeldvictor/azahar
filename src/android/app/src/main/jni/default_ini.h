@@ -205,6 +205,11 @@ static const char* android_config_default_file_content = (BOOST_HANA_STRING(R"(
 # 0: Nearest, 1 (default): Linear
 )") DECLARE_KEY(filter_mode) BOOST_HANA_STRING(R"(
 
+# Final-screen upscale/filter applied as each finished 3DS screen is composed into the layout.
+# 0 (default): None
+# 1: Anime4K v4 Mobile (single-pass DoG screen port)
+)") DECLARE_KEY(screen_filter) BOOST_HANA_STRING(R"(
+
 # Delays the game render thread by the specified amount of microseconds
 # Set to 0 for no delay, only useful in dynamic-fps games to simulate GPU delay.
 )") DECLARE_KEY(delay_game_render_thread_us) BOOST_HANA_STRING(R"(
