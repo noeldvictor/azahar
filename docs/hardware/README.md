@@ -1,8 +1,10 @@
-# Snapdragon 8 Gen 2 Reference Index
+# Hardware Reference Index
 
 The AYN Thor Base/Pro/Max target is Snapdragon 8 Gen 2 (`kalama`/SM8550-class), with one Cortex-X3, two Cortex-A715, two Cortex-A710, three Cortex-A510 cores, and Adreno 740. The vendor documents below are held in the sibling `ps3-thor/rpcsx-ui-android/docs/hardware` research library.
 
-The PDFs are not copied into this public fork yet. Their redistribution terms are not explicit in the files, and the set is 26.8 MiB. This index records exact inputs so they cannot be confused with an unverified download; vendor them only after an explicit source-policy decision.
+Manual PDFs are deliberately not committed to this public fork. Their redistribution terms are not always explicit, and binary manuals make source history needlessly heavy. The local copies used for this review live outside the Git repository under the workspace `reference/manuals/` directory. This index records exact inputs so they cannot be confused with an unverified download.
+
+## Snapdragon 8 Gen 2 host references
 
 | Document | Revision or scope | Size | SHA-256 | Azahar relevance |
 | --- | --- | ---: | --- | --- |
@@ -20,3 +22,34 @@ The PDFs are not copied into this public fork yet. Their redistribution terms ar
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
+
+## Nintendo 3DS guest CPU references
+
+These describe processors emulated by Azahar, not the Snapdragon host. They are most useful for guest ISA correctness, cache/control behavior, WFE/WFI semantics, and deciding whether cycle-sensitive timing assumptions are justified. They do not imply that reproducing the guest pipeline on the host will improve performance.
+
+| Document | Public source | Scope | Local research copy | SHA-256 |
+| --- | --- | --- | --- | --- |
+| Arm `ARM11 MPCore Processor Technical Reference Manual`, DDI 0360E | [Arm documentation service](https://documentation-service.arm.com/static/5e8e1cd9fd977155116a4a7a) | 730 pages; ARMv6K MPCore programmer model, memory system, coherency, WFE/WFI, pipeline, and cycle timings | `reference/manuals/arm11-mpcore-trm-ddi0360e.pdf` (3.82 MiB) | `15EA1BA2AEF0F6F756ABD70D0C67F3E26103CB28EF3061660864E7F0D0E419B4` |
+| Arm `ARM946E-S Technical Reference Manual`, DDI 0201D | [Arm documentation service](https://documentation-service.arm.com/static/5e8e3ee588295d1e18d3aa82) | 218 pages; ARMv5TE programmer model, caches, MPU, TCM, bus behavior, and control registers | `reference/manuals/arm946e-s-trm-ddi0201d.pdf` (1.48 MiB) | `FB45E13849688DCB8165CDF1C5CE0849492A64712AC5F094EECC23955A6D043F` |
+
+The ARM11 timing tables show a three-pipeline design with instruction-dependent interlocks and forwarding. Use those facts to validate timing-sensitive titles or instrumentation. Azahar's ARM64 JIT should still be optimized from measured host hot paths rather than by imitating the guest microarchitecture.
+
+## Nintendo 3DS PICA200 GPU references
+
+No complete, public PICA200 technical reference manual was found. Do not obtain or redistribute Nintendo SDK documentation. The closest lawful public vendor material is the DMP-authored PICA200 slide in the SIGGRAPH 2007 mobile 3D course notes; it is a high-level, pre-3DS overview rather than a register or shader manual.
+
+| Document | Public source | Scope | Local research copy | SHA-256 |
+| --- | --- | --- | --- | --- |
+| `Mobile 3D Graphics API, Architecture and Roadmap`, SIGGRAPH 2007 course notes | [MIT-hosted course PDF](https://people.csail.mit.edu/kapu/siggraph_2007/mob3D_SG07_notes.pdf) | 495 pages; DMP page 67 identifies PICA200 features, MAESTRO extensions, nominal throughput, clock range, and power range | `reference/manuals/pica200-mobile-3d-siggraph-2007-notes.pdf` (9.91 MiB) | `90289889966392C2BD799CDC29053CC84A75AE50369E41137273D1C881CCE951` |
+
+For command-level behavior, use the project's PICA implementation and hardware-tested community references, while treating unknowns as experimental rather than official: [internal registers](https://www.3dbrew.org/wiki/GPU/Internal_Registers), [external registers](https://www.3dbrew.org/wiki/GPU/External_Registers), and [shader instruction set](https://www.3dbrew.org/wiki/GPU/Shader_Instruction_Set). The hardware-tested floating-point notes are particularly important because PICA200 behavior is not generally interchangeable with host IEEE floating point.
+
+## AYN Thor device reference
+
+| Document | Public source | Scope | Local research copy | SHA-256 |
+| --- | --- | --- | --- | --- |
+| `AYN THOR Handheld Game Console User Manual` | [FCC exhibit record](https://apps.fcc.gov/eas/GetApplicationAttachment.html?id=8915262) ([mirror metadata](https://fccid.io/2BDXNBASE/User-Manual/UserManual-8915262)) | 11 pages; controls, Thor settings, display modes, calibration, device specifications, and regulatory information | `reference/manuals/ayn-thor-user-manual.pdf` (859 KiB) | `8714F2F6A70646AE79C6D39BA70EF8FE83DBD9109B2C32FFAED0C129F7CB92ED` |
+
+The filing confirms the Base/Pro/Max Snapdragon 8 Gen 2 and Adreno 740 target, active cooling, 6000 mAh battery, 120 Hz primary display, and 60 Hz secondary display. It also documents controller calibration, video-output selection, and Thor settings that may matter during repeatable tests. Its hash matches the identifier used by the public manual mirror, so it is the same 11-page document reviewed from the user-provided context.
+
+The manual reports UFS 4.0, but [AYN's current product page](https://www.ayntec.com/products/ayn-thor) lists UFS 3.1 for Lite, Base, Pro, and Max. Treat UFS generation as unverified until the connected device reports enough evidence to resolve the conflict.
