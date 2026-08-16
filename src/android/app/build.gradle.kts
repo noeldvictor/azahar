@@ -22,6 +22,7 @@ plugins {
  */
 val autoVersion = (((System.currentTimeMillis() / 1000) - 1451606400) / 10).toInt()
 val abiFilter = listOf("arm64-v8a")
+val hostPython = System.getenv("AZAHAR_HOST_PYTHON")?.replace('\\', '/')
 
 val downloadedJniLibsPath = "${layout.buildDirectory.get().asFile.path}/downloadedJniLibs"
 
@@ -84,6 +85,9 @@ android {
                     // sizes
                     "-DENABLE_GDBSTUB=OFF" // Disable GDB stub
                 )
+                if (!hostPython.isNullOrBlank()) {
+                    arguments("-DPython3_EXECUTABLE=$hostPython")
+                }
             }
         }
 
