@@ -2,11 +2,40 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <cstdint>
+#include <memory>
 #include <catch2/catch_test_macros.hpp>
+#include "common/arch.h"
 #include "core/core.h"
 #include "core/core_timing.h"
 #include "core/hle/kernel/process.h"
 #include "core/memory.h"
+
+TEST_CASE("PageTable keeps C++ and Dynarmic pointers consistent", "[core][memory]") {
+    constexpr VAddr page_index = 0x12345;
+    auto page_table = std::make_unique<Memory::PageTable>();
+    page_table->Clear();
+
+    auto backing = std::make_shared<BufferMem>(Memory::CITRA_PAGE_SIZE);
+    MemoryRef memory{backing};
+    page_table->pointers[page_index] = memory;
+
+    CHECK(static_cast<u8*>(page_table->pointers[page_index]) == memory.GetPtr());
+    const auto dynarmic_entry =
+        reinterpret_cast<std::uintptr_t>(page_table->GetDynarmicPageTable()[page_index]);
+    if constexpr (CITRA_ARCH(arm64)) {
+        const auto guest_page_base = static_cast<std::uintptr_t>(page_index)
+                                     << Memory::CITRA_PAGE_BITS;
+        CHECK(dynarmic_entry + guest_page_base ==
+              reinterpret_cast<std::uintptr_t>(memory.GetPtr()));
+    } else {
+        CHECK(dynarmic_entry == reinterpret_cast<std::uintptr_t>(memory.GetPtr()));
+    }
+
+    page_table->pointers[page_index] = nullptr;
+    CHECK(static_cast<u8*>(page_table->pointers[page_index]) == nullptr);
+    CHECK(page_table->GetDynarmicPageTable()[page_index] == nullptr);
+}
 
 TEST_CASE("memory.IsValidVirtualAddress", "[core][memory]") {
     Core::Timing timing(1, 100);

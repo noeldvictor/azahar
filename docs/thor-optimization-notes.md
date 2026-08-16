@@ -154,6 +154,31 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   It installed on the Thor, restored the user's original config after testing, and booted the same
   game at the original 100% limit with Eco Turbo defaulting on and no fatal exception or signal.
 
+## 2026-08-16 Dynarmic A32 ARM64 Absolute-Offset Page Table
+
+- Every ordinary mapped A32 guest load/store uses Dynarmic's inline page-table lookup. The old
+  ARM64 sequence loaded the host page pointer and then emitted `AND guest_address, 0xfff` into a
+  second scratch register before the host access. Dynarmic already supports an absolute-offset
+  table whose entry is `host_page_pointer - guest_page_base`; adding the full guest address then
+  reaches the same host byte and removes that `AND` plus its scratch-register dependency.
+- The implementation does not allocate a duplicate page table. The existing 1,048,576-entry raw
+  table stores adjusted entries on AArch64, while its C++ wrapper decodes them before any normal
+  memory-system caller sees a pointer. Mapping, unmapping, rasterizer-cache transitions,
+  watchpoints, and savestate reconstruction already route through that wrapper or the shared
+  rebuild helper. Non-AArch64 hosts retain ordinary host pointers and Dynarmic's original mode.
+- Correctness relies only on unsigned `uintptr_t` arithmetic, so encoding and decoding are exact
+  modulo the host address width. Null mappings remain null. An always-on assertion rejects the one
+  value Dynarmic cannot represent in this mode: a valid host page whose adjusted entry is null.
+  A focused test checks the C++ pointer round trip, the exact Dynarmic entry equation, and unmapping.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 3m50s, including compilation and linking of
+  the ARM64 test executable and `libcitra-android.so`. Per the active no-launch restriction, the app
+  and ARM64 test executable were not run on the Thor.
+- This is a generated-instruction reduction, not yet a game FPS or battery-watt result. It affects
+  mapped page-table loads/stores; the page-index extraction, entry load, null check, and callback
+  fallback remain. The required Thor A/B is the same fixed title/scene, caches, Vulkan driver,
+  resolution, layout, brightness, fan/performance mode, and run duration, recording FPS,
+  frametimes, process CPU time, battery power, temperature, and thermal slope.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
