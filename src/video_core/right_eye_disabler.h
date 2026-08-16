@@ -29,8 +29,8 @@ private:
     bool top_screen_drawn = false;
     bool top_screen_transfered = false;
     bool top_screen_blocked = false;
-    bool cmd_trigger_blocked = false;
     PAddr top_screen_buf = 0;
+    PAddr blocked_top_screen_buf = 0;
 
     bool cmd_queue_trigger_happened = false;
     bool display_tranfer_happened = false;

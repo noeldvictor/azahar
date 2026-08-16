@@ -27,12 +27,11 @@ bool RightEyeDisabler::ShouldAllowCmdQueueTrigger(PAddr addr, u32 size) {
         }
         top_screen_drawn = true;
         if (top_screen_transfered) {
-            cmd_trigger_blocked = true;
+            blocked_top_screen_buf = guess.paddr;
             return false;
         }
     }
 
-    cmd_trigger_blocked = false;
     return true;
 }
 bool RightEyeDisabler::ShouldAllowDisplayTransfer(PAddr src_address, size_t size) {
@@ -44,7 +43,9 @@ bool RightEyeDisabler::ShouldAllowDisplayTransfer(PAddr src_address, size_t size
             top_screen_transfered = true;
         }
 
-        if (src_address == top_screen_buf && cmd_trigger_blocked) {
+        // The right eye can render into a different buffer than the left eye. Match the transfer
+        // against the buffer belonging to the skipped draw, not the first top-screen buffer.
+        if (blocked_top_screen_buf != 0 && src_address == blocked_top_screen_buf) {
             top_screen_blocked = true;
             return false;
         }
@@ -65,9 +66,9 @@ void RightEyeDisabler::ReportEndFrame() {
         top_screen_transfered = false;
         top_screen_blocked = false;
         cmd_queue_trigger_happened = false;
-        cmd_trigger_blocked = false;
         display_tranfer_happened = false;
         top_screen_buf = 0;
+        blocked_top_screen_buf = 0;
     } else {
         report_end_frame_pending = true;
     }
