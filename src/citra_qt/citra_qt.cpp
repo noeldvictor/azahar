@@ -234,7 +234,8 @@ void GMainWindow::ShowCommandOutput(std::string title, std::string message) {
 bool IsPrereleaseBuild() {
     return ((strstr(Common::g_build_fullname, "alpha") != NULL) ||
             (strstr(Common::g_build_fullname, "beta") != NULL) ||
-            (strstr(Common::g_build_fullname, "rc") != NULL));
+            (strstr(Common::g_build_fullname, "rc") != NULL) ||
+            (strstr(Common::g_build_fullname, "test") != NULL));
 }
 
 #ifdef ENABLE_QT_UPDATE_CHECKER
@@ -1801,28 +1802,21 @@ void GMainWindow::UpdateSaveStates() {
         if (savestate.slot >= Core::SaveStateSlotCount) {
             continue;
         }
-        const bool display_name =
-            savestate.status == Core::SaveStateInfo::ValidationStatus::RevisionDismatch &&
-            !savestate.build_name.empty();
         actions_load_state[savestate.slot]->setEnabled(true);
         if (savestate.slot == 0) {
-            const auto text = tr("%2 %3")
+            const auto text = tr("%2")
                                   .arg(QDateTime::fromSecsSinceEpoch(savestate.time)
                                            .toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
-                                  .arg(display_name ? QString::fromStdString(savestate.build_name)
-                                                    : QLatin1String())
                                   .trimmed();
             ui->action_Quick_Save->setText(tr("Quick Save - %1").arg(text).trimmed());
             ui->action_Quick_Load->setText(tr("Quick Load - %1").arg(text).trimmed());
             continue;
         }
-        const auto text =
-            tr("Slot %1 - %2 %3")
-                .arg(savestate.slot)
-                .arg(QDateTime::fromSecsSinceEpoch(savestate.time)
-                         .toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
-                .arg(display_name ? QString::fromStdString(savestate.build_name) : QLatin1String())
-                .trimmed();
+        const auto text = tr("Slot %1 - %2")
+                              .arg(savestate.slot)
+                              .arg(QDateTime::fromSecsSinceEpoch(savestate.time)
+                                       .toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
+                              .trimmed();
 
         actions_load_state[savestate.slot]->setText(text);
         actions_save_state[savestate.slot]->setText(text);
@@ -2353,8 +2347,8 @@ void GMainWindow::OnMenuSetUpSystemFiles() {
 
     QRadioButton radio1(&dialog);
     QRadioButton radio2(&dialog);
-    QString new3dsSetupString = tr("Old 3DS setup");
-    QString old3dsSetupString = tr("New 3DS setup");
+    QString new3dsSetupString = tr("New 3DS setup");
+    QString old3dsSetupString = tr("Old 3DS setup");
     QString availableIcon = QStringLiteral("(\u2139\uFE0F) ");
     QString unavailableIcon = QStringLiteral("(\u26A0) ");
     QString installedIcon = QStringLiteral("(\u2705) ");
@@ -3901,6 +3895,17 @@ void GMainWindow::OnCoreError(Core::System::ResultStatus result, std::string det
         message =
             tr("An invalid memory access occurred while executing the emulated application.\n\n");
         message += QString::fromStdString(details);
+        error_severity_icon = QMessageBox::Icon::Critical;
+    } else if (result == Core::System::ResultStatus::ErrorSavestateBuildMismatch) {
+        title = tr("Savestate version mismatch");
+        message = tr("Could not load savestate because it was created on a different Azahar "
+                     "version:<br/>"
+                     "<b>Azahar %1</b>.<br/><br/>Please read our blog entry <a "
+                     "href='https://azahar-emu.org/blog/understanding-save-states/'>understanding "
+                     "savestates</a> for more information.<br/><br/>To recover your progress, "
+                     "downgrade to <b>Azahar %1</b>, load this savestate and use the application's "
+                     "built-in save functionality.")
+                      .arg(QString::fromStdString(details));
         error_severity_icon = QMessageBox::Icon::Critical;
     } else {
         title = tr("Fatal Error");

@@ -103,15 +103,6 @@ void Config::ReadSetting(const std::string& group, Settings::Setting<Type, range
     }
 }
 
-static bool IsAndroidConfigOmittedKey(std::string_view key) {
-    for (const auto* omitted_key : DefaultINI::android_config_omitted_keys) {
-        if (key == std::string_view(omitted_key)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void Config::ReadValues() {
     // Controls
     for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
@@ -347,10 +338,10 @@ void Config::Reload() {
     for (auto key = Settings::Keys::keys_array.begin(); key != Settings::Keys::keys_array.end();
          ++key) {
         const auto key_declaration_string = std::string(*key) + " =";
-        // FIXME: This code looks so ass when formatted by clang-format -OS
-        if (!IsAndroidConfigOmittedKey(*key) &&
-            std::string(DefaultINI::android_config_default_file_content)
-                    .find(key_declaration_string) == std::string::npos) {
+        if ((std::ranges::find(DefaultINI::android_config_omitted_keys, std::string_view(*key)) ==
+             std::end(DefaultINI::android_config_omitted_keys)) &&
+            (std::string_view(DefaultINI::android_config_default_file_content)
+                 .find(key_declaration_string) == std::string_view::npos)) {
             ASSERT_MSG(false,
                        "Validation of default config content (jni/default_ini.h) failed: Missing "
                        "declaration for key '{}'",
