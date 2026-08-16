@@ -1,6 +1,7 @@
 # Agent Notes
 
-- Work directly on `master` for this repository unless the user explicitly asks for a branch.
+- Always work directly on the repository's existing default branch (`master` here, or `main` in repositories that use it). Do not create, switch to, or leave work on any other branch.
+- Ask the user before making a materially different product, source-policy, or UX choice when the repository and existing requirements do not settle it. Keep moving with safe, reversible assumptions when the choice does not materially change the result.
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
 - Android work lives under `src/android`; keep cheat-build branding and UI changes scoped there when possible.
@@ -16,3 +17,4 @@
 - Keep Android/Thor profile manifests under `src/android/app/src/main/assets/game_profiles/` in sync with any hardcoded game-specific profile logic.
 - Keep first-party Markdown current when behavior changes: `README.md`, `AGENTS.md`, `AI-POLICY.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/*.md`, `tools/README.md`, and Android asset READMEs. Leave vendored dependency Markdown and license files alone unless a dependency itself changes.
 - Track Thor performance findings in `docs/thor-optimization-notes.md`. Thor dual-display mode intentionally pins the primary panel to the 3DS top screen and the secondary panel to the 3DS bottom screen, and the app must not recreate the old hidden virtual secondary-display render path.
+- Keep Snapdragon/Adreno/ARM research used for this fork under `docs/research/` and a provenance index under `docs/hardware/`. Prefer concise project-specific summaries and do not import unrelated emulator notes or large vendor manuals without recording their origin, document revision, and relevance to Snapdragon 8 Gen 2.

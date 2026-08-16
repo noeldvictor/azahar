@@ -131,11 +131,10 @@ void RasterizerCache<T>::RunGarbageCollector() {
     const u64 remove_tick = runtime.GetResourceTick();
     for (auto it = sentenced.begin(); it != sentenced.end();) {
         const auto [surface_id, resource_tick] = *it;
-        // Anything older(lower tick-value) than the resource-free tick-value is done being used
-        // and is ready to be deleted
-        if (remove_tick >= resource_tick) {
-            // Resource is still possibly in-use, skip
-            it++;
+        // A resource remains potentially in use until the runtime advances beyond the tick at
+        // which it was sentenced. Once the completed tick is newer, it is safe to delete.
+        if (remove_tick <= resource_tick) {
+            ++it;
             continue;
         }
         RemoveFramebuffers(surface_id);
