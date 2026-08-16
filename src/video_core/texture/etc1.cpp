@@ -117,11 +117,103 @@ union ETC1Tile {
     }
 };
 
+class ETC1Decoder {
+public:
+    explicit ETC1Decoder(u64 value) : tile{value}, flip{tile.flip != 0} {
+        table_indices[0] = static_cast<u8>(tile.table_index_1.Value());
+        table_indices[1] = static_cast<u8>(tile.table_index_2.Value());
+
+        if (tile.differential_mode) {
+            const int red = static_cast<int>(tile.differential.r);
+            const int green = static_cast<int>(tile.differential.g);
+            const int blue = static_cast<int>(tile.differential.b);
+            base_colors[0] = ConvertDifferential(red, green, blue);
+            base_colors[1] =
+                ConvertDifferential(red + static_cast<int>(tile.differential.dr),
+                                    green + static_cast<int>(tile.differential.dg),
+                                    blue + static_cast<int>(tile.differential.db));
+        } else {
+            base_colors[0] = {
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.r1)),
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.g1)),
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.b1)),
+            };
+            base_colors[1] = {
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.r2)),
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.g2)),
+                Common::Color::Convert4To8(static_cast<u8>(tile.separate.b2)),
+            };
+        }
+    }
+
+    Common::Vec3<u8> GetRGB(unsigned int x, unsigned int y) const {
+        const unsigned int texel = 4 * x + y;
+        const unsigned int subblock = flip ? y / 2 : x / 2;
+        Common::Vec3<int> color = base_colors[subblock];
+
+        int modifier =
+            etc1_modifier_table[table_indices[subblock]][tile.GetTableSubIndex(texel)];
+        if (tile.GetNegationFlag(texel)) {
+            modifier = -modifier;
+        }
+
+        color.r() = std::clamp(color.r() + modifier, 0, 255);
+        color.g() = std::clamp(color.g() + modifier, 0, 255);
+        color.b() = std::clamp(color.b() + modifier, 0, 255);
+        return color.Cast<u8>();
+    }
+
+private:
+    static Common::Vec3<int> ConvertDifferential(int red, int green, int blue) {
+        return {
+            Common::Color::Convert5To8(static_cast<u8>(red)),
+            Common::Color::Convert5To8(static_cast<u8>(green)),
+            Common::Color::Convert5To8(static_cast<u8>(blue)),
+        };
+    }
+
+    ETC1Tile tile;
+    std::array<Common::Vec3<int>, 2> base_colors{};
+    std::array<u8, 2> table_indices{};
+    bool flip{};
+};
+
+template <bool has_alpha>
+void DecodeETC1SubtileImpl(u64 value, u64 alpha, u8* output,
+                           std::ptrdiff_t output_stride) {
+    const ETC1Decoder decoder{value};
+    u8* row = output;
+    for (unsigned int y = 0; y < 4; ++y) {
+        for (unsigned int x = 0; x < 4; ++x) {
+            const Common::Vec3<u8> rgb = decoder.GetRGB(x, y);
+            u8* const pixel = row + x * 4;
+            pixel[0] = rgb.r();
+            pixel[1] = rgb.g();
+            pixel[2] = rgb.b();
+            if constexpr (has_alpha) {
+                const u8 alpha4 = static_cast<u8>((alpha >> (4 * (x * 4 + y))) & 0xF);
+                pixel[3] = Common::Color::Convert4To8(alpha4);
+            } else {
+                pixel[3] = 0xFF;
+            }
+        }
+        row += output_stride;
+    }
+}
+
 } // anonymous namespace
 
 Common::Vec3<u8> SampleETC1Subtile(u64 value, unsigned int x, unsigned int y) {
     ETC1Tile tile{value};
     return tile.GetRGB(x, y);
+}
+
+void DecodeETC1Subtile(u64 value, u8* output, std::ptrdiff_t output_stride) {
+    DecodeETC1SubtileImpl<false>(value, 0, output, output_stride);
+}
+
+void DecodeETC1A4Subtile(u64 value, u64 alpha, u8* output, std::ptrdiff_t output_stride) {
+    DecodeETC1SubtileImpl<true>(value, alpha, output, output_stride);
 }
 
 } // namespace Pica::Texture

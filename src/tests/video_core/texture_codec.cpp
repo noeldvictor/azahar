@@ -160,6 +160,54 @@ void CheckD24S8() {
     REQUIRE(encoded == tiled);
 }
 
+template <VideoCore::PixelFormat format>
+void CheckETC1() {
+    static_assert(format == VideoCore::PixelFormat::ETC1 ||
+                  format == VideoCore::PixelFormat::ETC1A4);
+    constexpr bool has_alpha = format == VideoCore::PixelFormat::ETC1A4;
+    constexpr u32 subtile_size = has_alpha ? 16 : 8;
+    std::array<u8, subtile_size * 4> tiled{};
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        tiled[i] = static_cast<u8>((i * 47 + 31) & 0xFF);
+    }
+
+    // Exercise all four flip/differential mode combinations across the tile's subblocks.
+    for (u32 subtile = 0; subtile < 4; ++subtile) {
+        constexpr u32 color_offset = has_alpha ? 8 : 0;
+        tiled[subtile * subtile_size + color_offset + 4] =
+            static_cast<u8>((tiled[subtile * subtile_size + color_offset + 4] & ~0x3U) | subtile);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 subtile = x / 4 + 2 * (y / 4);
+            const u8* subtile_ptr = tiled.data() + subtile * subtile_size;
+            u8 alpha = 0xFF;
+            if constexpr (has_alpha) {
+                const u64_le packed_alpha = VideoCore::MakeInt<u64_le>(subtile_ptr);
+                alpha = Common::Color::Convert4To8(
+                    static_cast<u8>((packed_alpha >> (4 * ((x % 4) * 4 + y % 4))) & 0xF));
+                subtile_ptr += sizeof(u64);
+            }
+
+            const u64_le value = VideoCore::MakeInt<u64_le>(subtile_ptr);
+            const auto rgb = Pica::Texture::SampleETC1Subtile(value, x % 4, y % 4);
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            expected[dest] = rgb.r();
+            expected[dest + 1] = rgb.g();
+            expected[dest + 2] = rgb.b();
+            expected[dest + 3] = alpha;
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, format, false>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+}
+
 } // namespace
 
 TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]") {
@@ -207,5 +255,11 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("IA4 expansion") {
         CheckExpandedTexture<VideoCore::PixelFormat::IA4>();
+    }
+    SECTION("ETC1 block decode") {
+        CheckETC1<VideoCore::PixelFormat::ETC1>();
+    }
+    SECTION("ETC1A4 block decode") {
+        CheckETC1<VideoCore::PixelFormat::ETC1A4>();
     }
 }

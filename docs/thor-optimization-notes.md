@@ -148,6 +148,45 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   scenes with frequent D24S8 depth-stencil upload, readback, or render-target churn and record the
   complete correctness, frametime, power, and thermal acceptance set.
 
+## 2026-08-16 ETC1 Block Decoder
+
+- ETC1 and ETC1A4 were the most expensive remaining texture-upload scalar paths. The old 8x8
+  tile loop called the 356-byte `SampleETC1Subtile()` function once for every pixel: 64 calls per
+  tile. Each call re-extracted differential/separate base colors, table indices, and flip state
+  from the same 64-bit 4x4 block, so those block-invariant calculations were repeated 16 times.
+- Uploads now decode the four 4x4 blocks directly. Each block computes both base colors and its
+  modifier-table indices once, then reuses them for all 16 pixels. The unchanged per-pixel
+  sampler remains available for individual software texture lookups and as an independent
+  correctness oracle.
+  Final ARM64 ThinLTO code contains exactly four block-decoder calls per full tile and no calls back
+  to the old per-pixel sampler.
+- The ETC1 upload wrapper shrank from 688 to 408 bytes (40.7%); the ETC1A4 wrapper shrank from 448
+  to 396 bytes (11.6%). More importantly, both changed from 64 decoder calls to four. The new block
+  helpers are 312 bytes for ETC1 and 348 bytes for ETC1A4, while the original 356-byte sampler is
+  unchanged. This is an algorithmic invariant-hoisting win on every host architecture, including
+  the Thor's AArch64 cores, rather than a guest-semantics shortcut.
+- Temporary host differential harnesses checked 100,000 arbitrary raw blocks in both ETC1 and
+  ETC1A4 modes (1.6 million pixels per format) and then 10,000 complete padded-stride tiles per
+  format. Every byte matched the old sampler, including all flip/differential combinations,
+  modifier/sign bits, clamping, ETC1A4 alpha nibble order, subblock placement, and bottom-up output
+  rows. The temporary executables and sources were deleted afterward. A permanent focused Catch2
+  test covers the same layout and all four mode combinations; the ARM64 test executable compiled
+  and linked but was not run because the current restriction forbids using the Thor.
+- A direct Vulkan ETC2 compressed-image route was also evaluated. It could eventually avoid CPU
+  decompression and reduce texture memory traffic substantially on Adreno, but the current surface
+  cache requires common transfer, attachment, and blit behavior and maps PICA compressed formats
+  to RGBA8. Guest block orientation, partial updates, copies, and mip generation need a separate
+  sampled-only surface design plus device correctness testing, so that larger route was not enabled
+  blindly.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` both passed. The APK is 28,965,083 bytes with SHA-256
+  `A5FDA902BF284313BD710CB3527C2F4F4B6240BEA143694F3E817468A871A75F`. Only the active
+  `arm64-v8a` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or Thor execution
+  was performed.
+- This proves a large reduction in repeated ETC decode work, not a whole-game FPS or wattage
+  result. A future allowed matched A/B should use ETC-heavy texture-streaming scenes and record
+  texture upload time, frametimes, battery power, temperature, and visual correctness.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.

@@ -90,36 +90,6 @@ constexpr void DecodePixel4(u32 x, u32 y, const u8* source_tile, u8* dest_pixel)
     }
 }
 
-template <PixelFormat format>
-constexpr void DecodePixelETC1(u32 x, u32 y, const u8* source_tile, u8* dest_pixel) {
-    constexpr u32 subtile_width = 4;
-    constexpr u32 subtile_height = 4;
-    constexpr bool has_alpha = format == PixelFormat::ETC1A4;
-    constexpr std::size_t subtile_size = has_alpha ? 16 : 8;
-
-    const u32 subtile_index = (x / subtile_width) + 2 * (y / subtile_height);
-    x %= subtile_width;
-    y %= subtile_height;
-
-    const u8* subtile_ptr = source_tile + subtile_index * subtile_size;
-
-    u8 alpha = 255;
-    if constexpr (has_alpha) {
-        u64_le packed_alpha;
-        std::memcpy(&packed_alpha, subtile_ptr, sizeof(u64));
-        subtile_ptr += sizeof(u64);
-
-        alpha = Common::Color::Convert4To8((packed_alpha >> (4 * (x * subtile_width + y))) & 0xF);
-    }
-
-    const u64_le subtile_data = MakeInt<u64_le>(subtile_ptr);
-    const auto rgb = Pica::Texture::SampleETC1Subtile(subtile_data, x, y);
-
-    // Copy the uncompressed pixel to the destination
-    std::memcpy(dest_pixel, rgb.AsArray(), 3);
-    dest_pixel[3] = alpha;
-}
-
 template <PixelFormat format, bool converted>
 constexpr void EncodePixel(const u8* source, u8* dest) {
     using namespace Common::Color;
@@ -199,6 +169,36 @@ constexpr void EncodePixel4(u32 x, u32 y, const u8* source_pixel, u8* dest_tile_
         dest_tile_buffer[byte_offset] = (new_value << 4) | (current_values & 0x0F);
     } else {
         dest_tile_buffer[byte_offset] = (current_values & 0xF0) | new_value;
+    }
+}
+
+template <PixelFormat format>
+inline void MortonCopyTileETC1(u32 stride, const u8* tile_buffer, u8* linear_buffer) {
+    static_assert(format == PixelFormat::ETC1 || format == PixelFormat::ETC1A4);
+    constexpr bool has_alpha = format == PixelFormat::ETC1A4;
+    constexpr u32 subtile_size = has_alpha ? 16 : 8;
+    constexpr u32 subtile_width = 4;
+    constexpr u32 subtile_height = 4;
+    const std::ptrdiff_t output_stride = -static_cast<std::ptrdiff_t>(stride * sizeof(u32));
+
+    for (u32 subtile_y = 0; subtile_y < 2; ++subtile_y) {
+        for (u32 subtile_x = 0; subtile_x < 2; ++subtile_x) {
+            const u32 subtile_index = subtile_x + 2 * subtile_y;
+            const u8* subtile_ptr = tile_buffer + subtile_index * subtile_size;
+            u8* const output =
+                linear_buffer + ((7 - subtile_y * subtile_height) * stride +
+                                 subtile_x * subtile_width) *
+                                    sizeof(u32);
+
+            if constexpr (has_alpha) {
+                const u64_le alpha = MakeInt<u64_le>(subtile_ptr);
+                const u64_le value = MakeInt<u64_le>(subtile_ptr + sizeof(u64));
+                Pica::Texture::DecodeETC1A4Subtile(value, alpha, output, output_stride);
+            } else {
+                const u64_le value = MakeInt<u64_le>(subtile_ptr);
+                Pica::Texture::DecodeETC1Subtile(value, output, output_stride);
+            }
+        }
     }
 }
 
@@ -538,6 +538,11 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
     constexpr bool is_compressed = format == PixelFormat::ETC1 || format == PixelFormat::ETC1A4;
     constexpr bool is_4bit = format == PixelFormat::I4 || format == PixelFormat::A4;
 
+    if constexpr (morton_to_linear && is_compressed) {
+        MortonCopyTileETC1<format>(stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    }
+
 #if CITRA_ARCH(arm64)
     if constexpr (morton_to_linear && !converted &&
                   (format == PixelFormat::I8 || format == PixelFormat::A8 ||
@@ -576,9 +581,7 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
             const auto linear_pixel = linear_buffer.subspan(
                 ((7 - y) * stride + x) * linear_bytes_per_pixel, linear_bytes_per_pixel);
             if constexpr (morton_to_linear) {
-                if constexpr (is_compressed) {
-                    DecodePixelETC1<format>(x, y, tile_buffer.data(), linear_pixel.data());
-                } else if constexpr (is_4bit) {
+                if constexpr (is_4bit) {
                     DecodePixel4<format>(x, y, tile_buffer.data(), linear_pixel.data());
                 } else {
                     DecodePixel<format, converted>(tiled_pixel.data(), linear_pixel.data());
