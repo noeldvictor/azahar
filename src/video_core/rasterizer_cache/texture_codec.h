@@ -7,11 +7,16 @@
 #include <algorithm>
 #include <bit>
 #include <span>
+#include "common/arch.h"
 #include "common/alignment.h"
 #include "common/color.h"
 #include "video_core/rasterizer_cache/pixel_format.h"
 #include "video_core/texture/etc1.h"
 #include "video_core/utils.h"
+
+#if CITRA_ARCH(arm64)
+#include <arm_neon.h>
+#endif
 
 namespace VideoCore {
 
@@ -196,12 +201,114 @@ constexpr void EncodePixel4(u32 x, u32 y, const u8* source_pixel, u8* dest_tile_
     }
 }
 
+#if CITRA_ARCH(arm64)
+
+template <bool morton_to_linear, bool reverse_pixel_bytes>
+inline void MortonCopyTile32A64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * sizeof(u32);
+        u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
+        u8* const second_row = first_row - stride * sizeof(u32);
+
+        if constexpr (morton_to_linear) {
+            const uint64x2x2_t left =
+                vld2q_u64(reinterpret_cast<const u64*>(tile_buffer + tile_offset));
+            const uint64x2x2_t right =
+                vld2q_u64(reinterpret_cast<const u64*>(tile_buffer + tile_offset + 64));
+
+            uint8x16_t first_left = vreinterpretq_u8_u64(left.val[0]);
+            uint8x16_t second_left = vreinterpretq_u8_u64(left.val[1]);
+            uint8x16_t first_right = vreinterpretq_u8_u64(right.val[0]);
+            uint8x16_t second_right = vreinterpretq_u8_u64(right.val[1]);
+            if constexpr (reverse_pixel_bytes) {
+                first_left = vrev32q_u8(first_left);
+                second_left = vrev32q_u8(second_left);
+                first_right = vrev32q_u8(first_right);
+                second_right = vrev32q_u8(second_right);
+            }
+
+            vst1q_u8(first_row, first_left);
+            vst1q_u8(first_row + 16, first_right);
+            vst1q_u8(second_row, second_left);
+            vst1q_u8(second_row + 16, second_right);
+        } else {
+            uint8x16_t first_left = vld1q_u8(first_row);
+            uint8x16_t first_right = vld1q_u8(first_row + 16);
+            uint8x16_t second_left = vld1q_u8(second_row);
+            uint8x16_t second_right = vld1q_u8(second_row + 16);
+            if constexpr (reverse_pixel_bytes) {
+                first_left = vrev32q_u8(first_left);
+                first_right = vrev32q_u8(first_right);
+                second_left = vrev32q_u8(second_left);
+                second_right = vrev32q_u8(second_right);
+            }
+
+            uint64x2x2_t left;
+            left.val[0] = vreinterpretq_u64_u8(first_left);
+            left.val[1] = vreinterpretq_u64_u8(second_left);
+            vst2q_u64(reinterpret_cast<u64*>(tile_buffer + tile_offset), left);
+
+            uint64x2x2_t right;
+            right.val[0] = vreinterpretq_u64_u8(first_right);
+            right.val[1] = vreinterpretq_u64_u8(second_right);
+            vst2q_u64(reinterpret_cast<u64*>(tile_buffer + tile_offset + 64), right);
+        }
+    }
+}
+
+template <bool morton_to_linear>
+inline void MortonCopyTile16A64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * sizeof(u16);
+        u16* const first_row =
+            reinterpret_cast<u16*>(linear_buffer + (7 - y) * stride * sizeof(u16));
+        u16* const second_row = first_row - stride;
+
+        if constexpr (morton_to_linear) {
+            const uint32x2x2_t left =
+                vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
+            const uint32x2x2_t right =
+                vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset + 32));
+            vst1q_u16(first_row,
+                      vreinterpretq_u16_u32(vcombine_u32(left.val[0], right.val[0])));
+            vst1q_u16(second_row,
+                      vreinterpretq_u16_u32(vcombine_u32(left.val[1], right.val[1])));
+        } else {
+            const uint32x4_t first = vreinterpretq_u32_u16(vld1q_u16(first_row));
+            const uint32x4_t second = vreinterpretq_u32_u16(vld1q_u16(second_row));
+
+            uint32x2x2_t left;
+            left.val[0] = vget_low_u32(first);
+            left.val[1] = vget_low_u32(second);
+            vst2_u32(reinterpret_cast<u32*>(tile_buffer + tile_offset), left);
+
+            uint32x2x2_t right;
+            right.val[0] = vget_high_u32(first);
+            right.val[1] = vget_high_u32(second);
+            vst2_u32(reinterpret_cast<u32*>(tile_buffer + tile_offset + 32), right);
+        }
+    }
+}
+
+#endif
+
 template <bool morton_to_linear, PixelFormat format, bool converted>
 constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u8> linear_buffer) {
     constexpr u32 bytes_per_pixel = GetFormatBpp(format) / 8;
     constexpr u32 linear_bytes_per_pixel = converted ? 4 : GetFormatBytesPerPixel(format);
     constexpr bool is_compressed = format == PixelFormat::ETC1 || format == PixelFormat::ETC1A4;
     constexpr bool is_4bit = format == PixelFormat::I4 || format == PixelFormat::A4;
+
+#if CITRA_ARCH(arm64)
+    if constexpr (format == PixelFormat::RGBA8) {
+        MortonCopyTile32A64<morton_to_linear, converted>(stride, tile_buffer.data(),
+                                                         linear_buffer.data());
+        return;
+    } else if constexpr (!converted && bytes_per_pixel == 2 && linear_bytes_per_pixel == 2) {
+        MortonCopyTile16A64<morton_to_linear>(stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    }
+#endif
 
     for (u32 y = 0; y < 8; y++) {
         for (u32 x = 0; x < 8; x++) {
