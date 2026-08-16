@@ -85,6 +85,41 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - A fixed title-screen capture rendered at 30 FPS with no fatal, pipeline-creation, Vulkan, or shader error. Its expected Anime4K edge refinement matched a control capture from the existing OpenGL Anime4K path; screenshots and device logs were test artifacts and are not committed.
 - This restores correctness, not efficiency. Anime4K performs three full-screen texture passes plus a source copy for each filtered upload and keeps intermediate images by source size/format for safe reuse across queued Vulkan work. It is labeled very heavy in the Android UI. None or Bicubic remains the better Thor choice when lower GPU load, memory use, and battery power matter more than aggressive anime-line refinement.
 
+## 2026-08-16 Dynarmic A32 ARM64 FastDispatch
+
+- The ARM64 A32 backend previously sent every `FastDispatchHint` terminal back through
+  the C++ dispatcher even though the x64 backend had a native two-tier dispatch cache.
+  ARM64 now checks a 65,536-entry direct-mapped table in generated AArch64 code and calls
+  `GetOrEmit()` only on a descriptor miss. Return-stack-buffer misses use the same fast
+  path when the optimization is enabled.
+- The descriptor is loaded directly from the adjacent A32 PC and upper-descriptor state,
+  and the emitted hash exactly matches the C++ invalidation hash. Range invalidation
+  clears a matching entry; full cache clears discard the table and block-range map at the
+  same explicit virtual cache-clear boundary. Single-step mode retains the slow dispatcher.
+- Two focused cache tests warm a FastDispatch entry, mutate guest code, and verify that
+  range invalidation and full-cache clearing cannot execute stale host code. The release
+  ARM64 test binary passed all 11 assertions on the AYN Thor.
+- A hidden benchmark alternates between two dynamically selected ARM blocks so constant
+  propagation and ordinary block linking cannot bypass dispatch. Every other Dynarmic
+  optimization is identical between the baseline and candidate. Each long sample performs
+  one million indirect dispatches and the process is pinned to Thor CPU7.
+- The reverse-order long run measured the C++ dispatcher at 4.014-4.016 ms per million
+  dispatches and stable ARM64 FastDispatch at 2.128 ms: 1.89x dispatch throughput and
+  47.0% less time in this dispatcher-saturated workload. Across shorter pinned/unpinned
+  runs and both orderings, measured throughput ranged from 1.69x to 1.95x.
+- This is not a claim of 1.89x game FPS. Game impact scales with the share of CPU time spent
+  on unpredictable block dispatch; GPU-bound scenes may show no FPS change. The benchmark
+  was too short for a useful battery-power comparison, so lower watts remains unproven until
+  matched sustained game-scene A/B runs.
+- Dynarmic and its recursive build dependencies are now vendored in this repository from
+  upstream commit `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`; provenance and update rules
+  are in [`research/dynarmic-vendor.md`](research/dynarmic-vendor.md).
+- The final `:app:assembleVanillaRelWithDebInfoLite` build passed. The APK is 28,953,903
+  bytes with SHA-256 `F85766DB96E8F820BF5C6FE945714CFA111A36082CE4B2A9028B5C41D6AD2B89`.
+  It installed on the Thor and booted 7TH DRAGON III CODE: VFD through the vendored JIT
+  with Vulkan, Turnip Adreno 740, and Anime4K; the launch log had no fatal signal,
+  exception, or native abort.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
