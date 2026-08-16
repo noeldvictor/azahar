@@ -48,6 +48,58 @@ void CheckTileCodec() {
     REQUIRE(encoded == tiled);
 }
 
+template <VideoCore::PixelFormat format>
+void CheckExpandedTexture() {
+    constexpr u32 bytes_per_pixel = VideoCore::GetFormatBpp(format) / 8;
+    std::array<u8, 8 * 8 * bytes_per_pixel> tiled{};
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        tiled[i] = static_cast<u8>((i * 53 + 7) & 0xFF);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 source = VideoCore::MortonInterleave(x, y) * bytes_per_pixel;
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            if constexpr (format == VideoCore::PixelFormat::IA8) {
+                expected[dest] = tiled[source + 1];
+                expected[dest + 1] = tiled[source + 1];
+                expected[dest + 2] = tiled[source + 1];
+                expected[dest + 3] = tiled[source];
+            } else if constexpr (format == VideoCore::PixelFormat::RG8) {
+                expected[dest] = tiled[source + 1];
+                expected[dest + 1] = tiled[source];
+                expected[dest + 2] = 0;
+                expected[dest + 3] = 0xFF;
+            } else if constexpr (format == VideoCore::PixelFormat::I8) {
+                expected[dest] = tiled[source];
+                expected[dest + 1] = tiled[source];
+                expected[dest + 2] = tiled[source];
+                expected[dest + 3] = 0xFF;
+            } else if constexpr (format == VideoCore::PixelFormat::A8) {
+                expected[dest] = 0;
+                expected[dest + 1] = 0;
+                expected[dest + 2] = 0;
+                expected[dest + 3] = tiled[source];
+            } else {
+                static_assert(format == VideoCore::PixelFormat::IA4);
+                const u8 intensity = tiled[source] >> 4;
+                const u8 alpha = tiled[source] & 0x0F;
+                expected[dest] = static_cast<u8>((intensity << 4) | intensity);
+                expected[dest + 1] = expected[dest];
+                expected[dest + 2] = expected[dest];
+                expected[dest + 3] = static_cast<u8>((alpha << 4) | alpha);
+            }
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, format, false>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+}
+
 } // namespace
 
 TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]") {
@@ -68,5 +120,20 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("D16") {
         CheckTileCodec<VideoCore::PixelFormat::D16>();
+    }
+    SECTION("IA8 expansion") {
+        CheckExpandedTexture<VideoCore::PixelFormat::IA8>();
+    }
+    SECTION("RG8 expansion") {
+        CheckExpandedTexture<VideoCore::PixelFormat::RG8>();
+    }
+    SECTION("I8 expansion") {
+        CheckExpandedTexture<VideoCore::PixelFormat::I8>();
+    }
+    SECTION("A8 expansion") {
+        CheckExpandedTexture<VideoCore::PixelFormat::A8>();
+    }
+    SECTION("IA4 expansion") {
+        CheckExpandedTexture<VideoCore::PixelFormat::IA4>();
     }
 }

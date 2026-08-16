@@ -290,6 +290,90 @@ inline void MortonCopyTile16A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
     }
 }
 
+template <PixelFormat format>
+inline void StoreExpandedTextureRowA64(u8* dest, uint8x8_t low_component,
+                                       uint8x8_t high_component) {
+    const uint8x8_t zero = vdup_n_u8(0);
+    const uint8x8_t opaque = vdup_n_u8(0xFF);
+    uint8x8x4_t output;
+    if constexpr (format == PixelFormat::IA8) {
+        output.val[0] = high_component;
+        output.val[1] = high_component;
+        output.val[2] = high_component;
+        output.val[3] = low_component;
+    } else if constexpr (format == PixelFormat::RG8) {
+        output.val[0] = high_component;
+        output.val[1] = low_component;
+        output.val[2] = zero;
+        output.val[3] = opaque;
+    } else if constexpr (format == PixelFormat::I8) {
+        output.val[0] = low_component;
+        output.val[1] = low_component;
+        output.val[2] = low_component;
+        output.val[3] = opaque;
+    } else if constexpr (format == PixelFormat::A8) {
+        output.val[0] = zero;
+        output.val[1] = zero;
+        output.val[2] = zero;
+        output.val[3] = low_component;
+    } else {
+        static_assert(format == PixelFormat::IA4);
+        const uint8x8_t intensity_high = vand_u8(low_component, vdup_n_u8(0xF0));
+        const uint8x8_t alpha_low = vand_u8(low_component, vdup_n_u8(0x0F));
+        const uint8x8_t intensity = vorr_u8(intensity_high, vshr_n_u8(intensity_high, 4));
+        const uint8x8_t alpha = vorr_u8(alpha_low, vshl_n_u8(alpha_low, 4));
+        output.val[0] = intensity;
+        output.val[1] = intensity;
+        output.val[2] = intensity;
+        output.val[3] = alpha;
+    }
+    vst4_u8(dest, output);
+}
+
+template <PixelFormat format>
+inline void MortonCopyTile8To32A64(u32 stride, const u8* tile_buffer, u8* linear_buffer) {
+    static_assert(format == PixelFormat::I8 || format == PixelFormat::A8 ||
+                  format == PixelFormat::IA4);
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y);
+        const uint16x4_t left =
+            vld1_u16(reinterpret_cast<const u16*>(tile_buffer + tile_offset));
+        const uint16x4_t right =
+            vld1_u16(reinterpret_cast<const u16*>(tile_buffer + tile_offset + 16));
+        const uint16x4x2_t rows = vuzp_u16(left, right);
+        u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
+        u8* const second_row = first_row - stride * sizeof(u32);
+        StoreExpandedTextureRowA64<format>(first_row, vreinterpret_u8_u16(rows.val[0]), {});
+        StoreExpandedTextureRowA64<format>(second_row, vreinterpret_u8_u16(rows.val[1]), {});
+    }
+}
+
+template <PixelFormat format>
+inline void MortonCopyTile16To32A64(u32 stride, const u8* tile_buffer, u8* linear_buffer) {
+    static_assert(format == PixelFormat::IA8 || format == PixelFormat::RG8);
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * sizeof(u16);
+        const uint32x2x2_t left =
+            vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
+        const uint32x2x2_t right =
+            vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset + 32));
+        const uint8x16_t first =
+            vreinterpretq_u8_u32(vcombine_u32(left.val[0], right.val[0]));
+        const uint8x16_t second =
+            vreinterpretq_u8_u32(vcombine_u32(left.val[1], right.val[1]));
+        const uint8x8x2_t first_components =
+            vuzp_u8(vget_low_u8(first), vget_high_u8(first));
+        const uint8x8x2_t second_components =
+            vuzp_u8(vget_low_u8(second), vget_high_u8(second));
+        u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
+        u8* const second_row = first_row - stride * sizeof(u32);
+        StoreExpandedTextureRowA64<format>(first_row, first_components.val[0],
+                                           first_components.val[1]);
+        StoreExpandedTextureRowA64<format>(second_row, second_components.val[0],
+                                           second_components.val[1]);
+    }
+}
+
 #endif
 
 template <bool morton_to_linear, PixelFormat format, bool converted>
@@ -300,7 +384,16 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
     constexpr bool is_4bit = format == PixelFormat::I4 || format == PixelFormat::A4;
 
 #if CITRA_ARCH(arm64)
-    if constexpr (format == PixelFormat::RGBA8) {
+    if constexpr (morton_to_linear && !converted &&
+                  (format == PixelFormat::I8 || format == PixelFormat::A8 ||
+                   format == PixelFormat::IA4)) {
+        MortonCopyTile8To32A64<format>(stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    } else if constexpr (morton_to_linear && !converted &&
+                         (format == PixelFormat::IA8 || format == PixelFormat::RG8)) {
+        MortonCopyTile16To32A64<format>(stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    } else if constexpr (format == PixelFormat::RGBA8) {
         MortonCopyTile32A64<morton_to_linear, converted>(stride, tile_buffer.data(),
                                                          linear_buffer.data());
         return;
