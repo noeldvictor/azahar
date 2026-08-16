@@ -29,13 +29,18 @@ namespace Common {
 std::pair<u8, u8> FindMinMax(const std::span<const u8>& data) {
     const size_t count = data.size();
     const u8* data_ptr = data.data();
-    u8 final_min, final_max;
+    u8 final_min = 0xFF;
+    u8 final_max = 0;
 #if defined(CITRA_HAS_SSE42) || defined(CITRA_HAS_NEON)
     u8 simd_min = 0xFF;
     u8 simd_max = 0;
     size_t i = 0;
     constexpr size_t simd_line_count = 16;
+#if defined(CITRA_HAS_NEON) && defined(__aarch64__)
+    constexpr size_t count_threshold = simd_line_count;
+#else
     constexpr size_t count_threshold = simd_line_count * 2;
+#endif
     if (count >= count_threshold) {
 #if defined(CITRA_HAS_SSE42)
         __m128i vmin = _mm_set1_epi8(static_cast<char>(0xFF));
@@ -58,11 +63,16 @@ std::pair<u8, u8> FindMinMax(const std::span<const u8>& data) {
             vmin = vminq_u8(vmin, vals);
             vmax = vmaxq_u8(vmax, vals);
         }
+#if defined(__aarch64__)
+        simd_min = vminvq_u8(vmin);
+        simd_max = vmaxvq_u8(vmax);
+#else
         alignas(16) uint8_t tmp[simd_line_count];
         vst1q_u8(tmp, vmin);
         simd_min = *std::min_element(tmp, tmp + simd_line_count);
         vst1q_u8(tmp, vmax);
         simd_max = *std::max_element(tmp, tmp + simd_line_count);
+#endif
 #endif // CITRA_HAS_SSE42
     }
     DISABLE_VECTORIZE
@@ -90,14 +100,19 @@ std::pair<u8, u8> FindMinMax(const std::span<const u8>& data) {
 std::pair<u16, u16> FindMinMax(const std::span<const u16>& data) {
     const size_t count = data.size();
     const u16* data_ptr = data.data();
-    u16 final_min, final_max;
+    u16 final_min = 0xFFFF;
+    u16 final_max = 0;
 
 #if defined(CITRA_HAS_SSE42) || defined(CITRA_HAS_NEON)
     u16 simd_min = 0xFFFF;
     u16 simd_max = 0;
     size_t i = 0;
     constexpr size_t simd_line_count = 8;
+#if defined(CITRA_HAS_NEON) && defined(__aarch64__)
+    constexpr size_t count_threshold = simd_line_count;
+#else
     constexpr size_t count_threshold = simd_line_count * 2;
+#endif
     if (count >= count_threshold) {
 #if defined(CITRA_HAS_SSE42)
         __m128i vmin = _mm_set1_epi16(static_cast<short>(0xFFFF));
@@ -120,11 +135,16 @@ std::pair<u16, u16> FindMinMax(const std::span<const u16>& data) {
             vmin = vminq_u16(vmin, vals);
             vmax = vmaxq_u16(vmax, vals);
         }
+#if defined(__aarch64__)
+        simd_min = vminvq_u16(vmin);
+        simd_max = vmaxvq_u16(vmax);
+#else
         alignas(16) uint16_t tmp[simd_line_count];
         vst1q_u16(tmp, vmin);
         simd_min = *std::min_element(tmp, tmp + simd_line_count);
         vst1q_u16(tmp, vmax);
         simd_max = *std::max_element(tmp, tmp + simd_line_count);
+#endif
 #endif // CITRA_HAS_SSE42
     }
     DISABLE_VECTORIZE
