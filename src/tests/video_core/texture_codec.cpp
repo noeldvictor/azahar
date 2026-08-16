@@ -100,6 +100,36 @@ void CheckExpandedTexture() {
     REQUIRE(decoded == expected);
 }
 
+void CheckConvertedRGB8() {
+    std::array<u8, 8 * 8 * 3> tiled{};
+    for (std::size_t i = 0; i < tiled.size(); ++i) {
+        tiled[i] = static_cast<u8>((i * 29 + 11) & 0xFF);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 source = VideoCore::MortonInterleave(x, y) * 3;
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            expected[dest] = tiled[source + 2];
+            expected[dest + 1] = tiled[source + 1];
+            expected[dest + 2] = tiled[source];
+            expected[dest + 3] = 0xFF;
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, VideoCore::PixelFormat::RGB8, true>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, 8 * 8 * 3> encoded{};
+    encoded.fill(0xA5);
+    VideoCore::MortonCopyTile<false, VideoCore::PixelFormat::RGB8, true>(10, encoded, decoded);
+    REQUIRE(encoded == tiled);
+}
+
 } // namespace
 
 TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]") {
@@ -108,6 +138,12 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("RGBA8 converted byte order") {
         CheckTileCodec<VideoCore::PixelFormat::RGBA8, true>();
+    }
+    SECTION("RGB8 native") {
+        CheckTileCodec<VideoCore::PixelFormat::RGB8>();
+    }
+    SECTION("RGB8 converted to RGBA8") {
+        CheckConvertedRGB8();
     }
     SECTION("RGB5A1") {
         CheckTileCodec<VideoCore::PixelFormat::RGB5A1>();
@@ -120,6 +156,9 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("D16") {
         CheckTileCodec<VideoCore::PixelFormat::D16>();
+    }
+    SECTION("D24") {
+        CheckTileCodec<VideoCore::PixelFormat::D24>();
     }
     SECTION("IA8 expansion") {
         CheckExpandedTexture<VideoCore::PixelFormat::IA8>();

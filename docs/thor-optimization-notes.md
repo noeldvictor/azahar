@@ -71,11 +71,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - `MortonCopyTile()` sits in every rasterizer-cache texture upload and download. Exact release AArch64 codegen proved that a full 8x8 RGBA8 tile was still expanded into 64 scalar loads, 64 scalar stores, and, for Vulkan's required RGBA conversion, 64 scalar byte reversals.
 - The AArch64 path now maps the PICA 2x2/4x4/8x8 Morton structure directly onto NEON structured loads and stores. RGBA8 upload uses eight `LD2` operations to deinterleave pairs of rows, sixteen vector `REV32` operations when Vulkan needs component reversal, and eight paired 256-bit row stores. That replaces 192 scalar load/reverse/store operations with 32 vector memory/shuffle operations per full converted tile, an 83.3% reduction in those core operations. The reverse download path uses the corresponding `ST2` interleave. Native RGB5A1, RGB565, RGBA4, and D16 tiles use the same approach at 16 bits per pixel.
 - The always-expanded PICA texture formats were a second scalar gap. IA8, RG8, I8, A8, and IA4 now combine Morton deinterleave with NEON `ST4` RGBA expansion during uploads instead of processing and storing one pixel at a time. For I8, the old exact AArch64 tile function ran a 53-instruction row body eight times; the ThinLTO full-tile vector body is 54 instructions total, an 87.3% reduction in that hot body. IA4 performs both nibble replications in vector lanes.
-- The optimization is gated to AArch64 and only to formats whose old behavior can be represented exactly: RGBA8 with or without its existing whole-pixel byte reversal, non-converted raw 16-bit formats, and the five upload-only expansion formats above. RGB8/D24 packing, D24S8 rotation, ETC decoding, I4/A4 unpacking, and expanded-format downloads stay on their existing scalar paths.
+- That first optimization was gated to AArch64 and only to formats whose old behavior could be represented exactly: RGBA8 with or without its existing whole-pixel byte reversal, non-converted raw 16-bit formats, and the five upload-only expansion formats above. It deliberately left RGB8/D24 packing, D24S8 rotation, ETC decoding, I4/A4 unpacking, and expanded-format downloads on their scalar paths; the separate RGB8/D24 follow-up below closes the safe 24-bit part of that gap.
 - A focused test covers both Morton-to-linear upload and linear-to-Morton download, a deliberately padded ten-pixel stride, native and converted RGBA8, all three native 16-bit color formats, D16, and exact IA8/RG8/I8/A8/IA4 expansion. It compares against byte-wise scalar Morton references and verifies exact raw-format round trips. It passed on the AYN Thor with 17 assertions in one test case.
 - The latest `:app:assembleVanillaRelWithDebInfoLite` passed in 2m16s. ThinLTO preserved the intended `LD2`, `UZP`, vector `REV32`, `ST2`, paired-store, and `ST4` sequences in `libcitra-android.so`. The APK is 28,945,287 bytes with SHA-256 `4B8A57E3ECD8754389F6CA568E53BF463F1C0888D94B40BDB001ACA52B8B17B6`.
 - This is a static work and instruction-count win, not yet a claimed FPS or wattage result. Texture-cache effectiveness makes the on-device impact title- and scene-dependent; the matched Thor A/B must include texture-streaming scenes and render-target readbacks as well as steady-state gameplay.
 - The verified APK installed successfully as `org.azahar_emu.azahar.debug`, launched into `MainActivity`, and remained running. Temporary stripped test runners were deleted from both the PC temp directory and `/data/local/tmp` after the checks.
+
+## 2026-08-16 AArch64 RGB8/D24 Tile Codec
+
+- RGB8 and raw D24 were the remaining byte-packed full-tile formats in the scalar 64-pixel
+  `MortonCopyTile()` loop. Vulkan cannot use RGB8 as an attachment and selects a converted RGBA8
+  host surface, so RGB8 render-target traffic specifically paid both the Morton walk and scalar
+  BGR-to-RGBA expansion. D24-to-float conversion keeps its existing scalar path because changing
+  its normalization or rounding would not be byte-equivalent; raw D24 copies are safe to vectorize.
+- The AArch64 path now loads each pair of Morton chunks with `LD3`, combines their component
+  lanes, and uses one-table `TBL` permutations to recover the two linear rows. Native RGB8/D24
+  writes use `ST3`. Converted RGB8 uses explicit `ZIP1`/`ZIP2` interleaving and ordinary paired
+  32-byte stores, preserving the exact BGR-to-RGBA channel order and opaque alpha without a
+  per-pixel loop. Downloads apply the inverse compile-time-checked permutation.
+- This store choice came from the actual Thor core manuals indexed under
+  [`hardware/`](hardware/README.md), not an x86 analogy. The X3 and A710 tables list D-form `ST4`
+  throughput at one instruction per three cycles, while the A510 lists one per 25 cycles; the A715
+  is much stronger at one per cycle. The portable `ZIP` plus paired-store sequence avoids the
+  extreme efficiency-core cliff and remains vectorized on every core, but the A715 tradeoff is why
+  this is not yet presented as a measured whole-device win.
+- Focused tests add native RGB8 and D24 round trips plus converted RGB8 with a padded ten-pixel
+  stride. The converted reference independently computes every Morton offset, checks BGR-to-RGBA
+  order and alpha `0xFF`, and then verifies an exact inverse round trip. The ARM64 test executable
+  linked successfully; per the no-device restriction it was not run.
+- Final ThinLTO codegen contains the intended `LD3`, `TBL`, `ZIP`, `STP`, `LD4`, and `ST3`
+  instructions. The common converted RGB8 upload symbol fell from 588 to 404 bytes (31.3%), native
+  RGB8 upload from 552 to 372 bytes (32.6%), and raw D24 upload from 556 to 376 bytes (32.4%). The
+  download wrappers grew by 220 bytes because partial-tile staging duplicates the inlined inverse
+  body; full aligned tiles still take the vector path. Avoiding a call in the hot full-tile loop was
+  kept as the better theoretical tradeoff pending profiles.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` both passed. The APK is 28,963,931 bytes with SHA-256
+  `0349A65F8604ECB6A495F1A645CEE6915CAAF17E0343535FEE5E5FBECE38746A`. Only the active
+  `arm64-v8a` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or Thor execution
+  was performed.
+- This is a source, machine-code, and manual-supported instruction reduction, not an FPS or wattage
+  claim. A future allowed A/B should target RGB8 render-target churn or readback-heavy scenes with
+  fixed title, scene, caches, renderer, resolution, layout, driver, display state, performance/fan
+  mode, and run time while recording CPU time, frametimes, battery power, temperature, and thermal
+  slope.
 
 ## 2026-08-16 Vulkan Anime4K Repair
 

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <span>
 #include "common/arch.h"
@@ -290,6 +291,125 @@ inline void MortonCopyTile16A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
     }
 }
 
+// A two-row band in a 24-bit Morton tile is split into two eight-pixel chunks. Within each
+// chunk, pairs of pixels alternate between the two rows. Express that permutation directly as
+// an AArch64 table lookup instead of expanding 64 per-pixel Morton offsets and 3/4-byte copies.
+inline constexpr std::array<u8, 16> MORTON_24_TO_ROWS_A64 = {
+    0, 1, 4, 5, 8, 9, 12, 13, 2, 3, 6, 7, 10, 11, 14, 15,
+};
+inline constexpr std::array<u8, 16> ROWS_TO_MORTON_24_A64 = {
+    0, 1, 8, 9, 2, 3, 10, 11, 4, 5, 12, 13, 6, 7, 14, 15,
+};
+
+static_assert([] {
+    for (u32 i = 0; i < MORTON_24_TO_ROWS_A64.size(); ++i) {
+        if (MORTON_24_TO_ROWS_A64[ROWS_TO_MORTON_24_A64[i]] != i) {
+            return false;
+        }
+    }
+    return true;
+}());
+
+inline uint8x16_t Morton24ToRowsA64(uint8x8_t left, uint8x8_t right) {
+    const uint8x16_t pixels = vcombine_u8(left, right);
+    const uint8x16_t indices = vld1q_u8(MORTON_24_TO_ROWS_A64.data());
+    return vqtbl1q_u8(pixels, indices);
+}
+
+inline uint8x16_t RowsToMorton24A64(uint8x8_t first, uint8x8_t second) {
+    const uint8x16_t rows = vcombine_u8(first, second);
+    const uint8x16_t indices = vld1q_u8(ROWS_TO_MORTON_24_A64.data());
+    return vqtbl1q_u8(rows, indices);
+}
+
+// Avoid ST4 here. It is a complex, throughput-limited store on the Cortex-X3/A710 and is
+// especially expensive on the Cortex-A510 efficiency cores in Snapdragon 8 Gen 2. ZIP keeps the
+// interleave on the vector ALUs and lets the store pipelines consume ordinary contiguous vectors.
+inline void StoreRGBA8RowsA64(u8* first_row, u8* second_row, uint8x16_t red,
+                              uint8x16_t green, uint8x16_t blue, uint8x16_t alpha) {
+    const uint8x16x2_t red_green = vzipq_u8(red, green);
+    const uint8x16x2_t blue_alpha = vzipq_u8(blue, alpha);
+    const uint16x8x2_t first =
+        vzipq_u16(vreinterpretq_u16_u8(red_green.val[0]),
+                  vreinterpretq_u16_u8(blue_alpha.val[0]));
+    const uint16x8x2_t second =
+        vzipq_u16(vreinterpretq_u16_u8(red_green.val[1]),
+                  vreinterpretq_u16_u8(blue_alpha.val[1]));
+
+    vst1q_u8(first_row, vreinterpretq_u8_u16(first.val[0]));
+    vst1q_u8(first_row + 16, vreinterpretq_u8_u16(first.val[1]));
+    vst1q_u8(second_row, vreinterpretq_u8_u16(second.val[0]));
+    vst1q_u8(second_row + 16, vreinterpretq_u8_u16(second.val[1]));
+}
+
+template <bool morton_to_linear, bool converted>
+inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
+    constexpr u32 encoded_bytes_per_pixel = 3;
+    constexpr u32 linear_bytes_per_pixel = converted ? 4 : encoded_bytes_per_pixel;
+    const uint8x16_t opaque = vdupq_n_u8(0xFF);
+
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * encoded_bytes_per_pixel;
+        u8* const first_row = linear_buffer + (7 - y) * stride * linear_bytes_per_pixel;
+        u8* const second_row = first_row - stride * linear_bytes_per_pixel;
+
+        if constexpr (morton_to_linear) {
+            const uint8x8x3_t left = vld3_u8(tile_buffer + tile_offset);
+            const uint8x8x3_t right =
+                vld3_u8(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel);
+            const uint8x16_t component_0 = Morton24ToRowsA64(left.val[0], right.val[0]);
+            const uint8x16_t component_1 = Morton24ToRowsA64(left.val[1], right.val[1]);
+            const uint8x16_t component_2 = Morton24ToRowsA64(left.val[2], right.val[2]);
+
+            if constexpr (converted) {
+                StoreRGBA8RowsA64(first_row, second_row, component_2, component_1,
+                                  component_0, opaque);
+            } else {
+                uint8x8x3_t first;
+                first.val[0] = vget_low_u8(component_0);
+                first.val[1] = vget_low_u8(component_1);
+                first.val[2] = vget_low_u8(component_2);
+                vst3_u8(first_row, first);
+
+                uint8x8x3_t second;
+                second.val[0] = vget_high_u8(component_0);
+                second.val[1] = vget_high_u8(component_1);
+                second.val[2] = vget_high_u8(component_2);
+                vst3_u8(second_row, second);
+            }
+        } else {
+            uint8x16_t component_0;
+            uint8x16_t component_1;
+            uint8x16_t component_2;
+            if constexpr (converted) {
+                const uint8x8x4_t first = vld4_u8(first_row);
+                const uint8x8x4_t second = vld4_u8(second_row);
+                component_0 = RowsToMorton24A64(first.val[2], second.val[2]);
+                component_1 = RowsToMorton24A64(first.val[1], second.val[1]);
+                component_2 = RowsToMorton24A64(first.val[0], second.val[0]);
+            } else {
+                const uint8x8x3_t first = vld3_u8(first_row);
+                const uint8x8x3_t second = vld3_u8(second_row);
+                component_0 = RowsToMorton24A64(first.val[0], second.val[0]);
+                component_1 = RowsToMorton24A64(first.val[1], second.val[1]);
+                component_2 = RowsToMorton24A64(first.val[2], second.val[2]);
+            }
+
+            uint8x8x3_t left;
+            left.val[0] = vget_low_u8(component_0);
+            left.val[1] = vget_low_u8(component_1);
+            left.val[2] = vget_low_u8(component_2);
+            vst3_u8(tile_buffer + tile_offset, left);
+
+            uint8x8x3_t right;
+            right.val[0] = vget_high_u8(component_0);
+            right.val[1] = vget_high_u8(component_1);
+            right.val[2] = vget_high_u8(component_2);
+            vst3_u8(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel, right);
+        }
+    }
+}
+
 template <PixelFormat format>
 inline void StoreExpandedTextureRowA64(u8* dest, uint8x8_t low_component,
                                        uint8x8_t high_component) {
@@ -395,6 +515,11 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
         return;
     } else if constexpr (format == PixelFormat::RGBA8) {
         MortonCopyTile32A64<morton_to_linear, converted>(stride, tile_buffer.data(),
+                                                         linear_buffer.data());
+        return;
+    } else if constexpr (format == PixelFormat::RGB8 ||
+                         (format == PixelFormat::D24 && !converted)) {
+        MortonCopyTile24A64<morton_to_linear, converted>(stride, tile_buffer.data(),
                                                          linear_buffer.data());
         return;
     } else if constexpr (!converted && bytes_per_pixel == 2 && linear_bytes_per_pixel == 2) {
