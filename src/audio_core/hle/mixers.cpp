@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include "audio_core/hle/mixers.h"
 #include "common/assert.h"
 #include "common/logging/log.h"
@@ -106,11 +109,76 @@ static std::array<s16, 2> AddAndClampToS16(const std::array<s16, 2>& a,
             ClampToS16(static_cast<s32>(a[1]) + static_cast<s32>(b[1]))};
 }
 
+#if defined(__aarch64__)
+static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
+                              const QuadFrame32& samples) {
+    static_assert(samples_per_frame % 4 == 0);
+    static_assert(sizeof(QuadFrame32::value_type) == 4 * sizeof(s32));
+    static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
+
+    const float32x4_t gain_vec = vdupq_n_f32(gain);
+    for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
+        const int32x4x4_t input = vld4q_s32(samples[sample].data());
+        int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
+
+        const float32x4_t front_left = vcvtq_f32_s32(input.val[0]);
+        const float32x4_t front_right = vcvtq_f32_s32(input.val[1]);
+        const float32x4_t back_left = vcvtq_f32_s32(input.val[2]);
+        const float32x4_t back_right = vcvtq_f32_s32(input.val[3]);
+
+        // Keep the same multiply/FMA order emitted for the scalar AArch64 path.
+        float32x4_t left = vmulq_f32(back_left, gain_vec);
+        float32x4_t right = vmulq_f32(back_right, gain_vec);
+        left = vfmaq_f32(left, front_left, gain_vec);
+        right = vfmaq_f32(right, front_right, gain_vec);
+
+        const int16x4_t left_s16 = vqmovn_s32(vcvtq_s32_f32(left));
+        const int16x4_t right_s16 = vqmovn_s32(vcvtq_s32_f32(right));
+        accumulator.val[0] = vqadd_s16(accumulator.val[0], left_s16);
+        accumulator.val[1] = vqadd_s16(accumulator.val[1], right_s16);
+        vst2_s16(current_frame[sample].data(), accumulator);
+    }
+}
+
+static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
+                            const QuadFrame32& samples) {
+    static_assert(samples_per_frame % 4 == 0);
+    static_assert(sizeof(QuadFrame32::value_type) == 4 * sizeof(s32));
+    static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
+
+    const float32x4_t gain_vec = vdupq_n_f32(gain);
+    for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
+        const int32x4x4_t input = vld4q_s32(samples[sample].data());
+        int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
+
+        const float32x4_t channel_0 = vcvtq_f32_s32(input.val[0]);
+        const float32x4_t channel_1 = vcvtq_f32_s32(input.val[1]);
+        const float32x4_t channel_2 = vcvtq_f32_s32(input.val[2]);
+        const float32x4_t channel_3 = vcvtq_f32_s32(input.val[3]);
+
+        // Match the scalar AArch64 operation order before dividing the mono sum by two.
+        float32x4_t mono = vmulq_f32(channel_1, gain_vec);
+        mono = vfmaq_f32(mono, channel_0, gain_vec);
+        mono = vfmaq_f32(mono, channel_2, gain_vec);
+        mono = vfmaq_f32(mono, channel_3, gain_vec);
+        mono = vmulq_n_f32(mono, 0.5f);
+
+        const int16x4_t mono_s16 = vqmovn_s32(vcvtq_s32_f32(mono));
+        accumulator.val[0] = vqadd_s16(accumulator.val[0], mono_s16);
+        accumulator.val[1] = vqadd_s16(accumulator.val[1], mono_s16);
+        vst2_s16(current_frame[sample].data(), accumulator);
+    }
+}
+#endif
+
 void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& samples) {
     // TODO(merry): Limiter. (Currently we're performing final mixing assuming a disabled limiter.)
 
     switch (state.output_format) {
     case OutputFormat::Mono:
+#if defined(__aarch64__)
+        DownmixMonoNEON(current_frame, gain, samples);
+#else
         std::transform(
             current_frame.begin(), current_frame.end(), samples.begin(), current_frame.begin(),
             [gain](const std::array<s16, 2>& accumulator,
@@ -122,6 +190,7 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
                 // Mix into current frame
                 return AddAndClampToS16(accumulator, {mono, mono});
             });
+#endif
         return;
 
     case OutputFormat::Surround:
@@ -129,6 +198,9 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
         // fallthrough
 
     case OutputFormat::Stereo:
+#if defined(__aarch64__)
+        DownmixStereoNEON(current_frame, gain, samples);
+#else
         std::transform(
             current_frame.begin(), current_frame.end(), samples.begin(), current_frame.begin(),
             [gain](const std::array<s16, 2>& accumulator,
@@ -139,6 +211,7 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
                 // Mix into current frame
                 return AddAndClampToS16(accumulator, {left, right});
             });
+#endif
         return;
     }
 
