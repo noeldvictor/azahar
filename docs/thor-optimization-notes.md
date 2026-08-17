@@ -655,6 +655,46 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   process CPU time, battery power, temperature, thermal slope, stability, and visual correctness;
   do not infer a whole-game speed or power result from the exact instruction counts alone.
 
+## 2026-08-16 AArch64 SoundTouch Stereo-Overlap NEON
+
+- Android configures SoundTouch for 16-bit integer samples and defines `SOUNDTOUCH_USE_NEON`, but
+  SoundTouch 2.3.3 has no NEON-specific implementation class. Disassembly showed that Clang already
+  autovectorizes the expensive WSOLA cross-correlation loops into AArch64 `SMULL`/`SMLAL`, so those
+  loops were deliberately left alone. The stereo overlap loop remained scalar and issued two
+  `SDIV` instructions per frame, one for each channel.
+- SoundTouch's integer path rounds `overlapLength` to a power of two from 16 through 1024 samples.
+  The new AArch64-only path processes four stereo frames per loop with two 128-bit loads,
+  `SMULL`/`SMULL2`, `SMLAL`/`SMLAL2`, signed variable shifts, narrowing, and one 128-bit store. Final
+  object-code inspection contains zero `SDIV` in this function, replacing eight scalar divides for
+  the same four frames. This is a scoped generated-code fact, not a whole-emulator speed claim.
+- Correctness preserves the scalar expression rather than copying SoundTouch's older MMX rounding.
+  For a negative numerator, adding `(overlapLength - 1)` before the arithmetic right shift exactly
+  reproduces C++ signed division's truncation toward zero; nonnegative values receive no bias.
+  Boundary-heavy verification covered 292,608 numerator/weight combinations at every supported
+  power-of-two length. The committed differential test fills both channels with positive, negative,
+  and signed-16-bit edge values and compares the production overlap against scalar division at
+  16-, 256-, and 1024-frame overlap lengths. Arm's Neon Intrinsics on Android guide documents the
+  widening signed multiply-accumulate operation used here.
+- `externals/soundtouch` is now vendored from former submodule commit
+  `9ef8458d8561d9471dd20e9619e3be4cfe564796`; a custom dependency gitlink would otherwise require a
+  separate repository. The upstream LGPL license remains in-tree. The unused Android wrapper JAR
+  and three prebuilt example DLL/shared-library files were omitted, avoiding 780,377 bytes of
+  irrelevant binary payload while retaining source, build files, and documentation.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled the NEON source and differential test, linked
+  `libSoundTouch.a`, the AArch64 test executable, and `libcitra-android.so`, and completed in 1m14s.
+  `:app:assembleVanillaRelWithDebInfoLite` then passed in 54s. The resulting 28,965,579-byte APK
+  contains only `arm64-v8a` native libraries and has SHA-256
+  `226FC37EB4037E42D24AA8A3F6436E8654BC5C85944D9F588F74A61CB62BB5A1`. The test executable cannot
+  run on this x64 host and the active restriction forbids Thor use, so runtime regression and power
+  measurements remain pending. No ADB command, install, launch, or device access was performed.
+- After verification, Gradle was stopped and the exact 1,854,299,737-byte reproducible
+  `src/android/app/build/intermediates` tree was removed. The verified APK and active AArch64
+  RelWithDebInfo CMake cache were retained.
+- A future allowed A/B should use an audio-active scene that holds below full speed so time stretch
+  remains engaged, with the same title, save, cache state, renderer, driver, resolution, display
+  layout, speed limit, performance/fan mode, brightness, and duration. Record audio glitches,
+  output underruns, frametimes, process CPU time, battery power, temperature, and thermal slope.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

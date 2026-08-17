@@ -69,6 +69,9 @@ This fork has moved away from stock Azahar in visible ways:
 - The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
   and refreshes it only after geometry `EMIT`, removing repeated bank loads and address generation
   from every ordinary output write.
+- Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
+  power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
+  divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
@@ -106,6 +109,14 @@ without reading untouched lanes, and a cached output-bank pointer removes repeat
 address generation. These are exact generated-instruction and memory-traffic reductions validated
 by ARM64 compilation and focused regression sources. Whole-game FPS and battery-watt effects still
 require a controlled Thor A/B and are not estimated from static counts.
+
+## AArch64 Audio Time-Stretch Updates
+
+Thor's integer SoundTouch path already receives useful compiler-generated NEON for WSOLA
+cross-correlation. The remaining scalar stereo-overlap loop now uses explicit baseline AArch64 NEON
+for four frames at a time and eliminates eight `SDIV` instructions over that span. Negative results
+retain C++ truncation-toward-zero behavior. ARM64 compile/link and differential regression sources
+validate the path; sustained speed and power effects still require a controlled Thor A/B.
 
 ## Thor Screenshot
 

@@ -4,6 +4,7 @@
 - Commit small, coherent, verified slices directly on `master` and push them to `origin/master` frequently. Never include unrelated user files or generated build output just to make a checkpoint.
 - Use command-line Git over the repository's SSH remotes for status, fetch, commit, and push operations. Do not use GitHub workflow guides, PR automation, web publishing flows, or the GitHub CLI unless the user explicitly asks for them.
 - Keep fork-specific source, patches, tests, and documentation in this repository. Do not create a separate repository or fork for a customized dependency; vendor that dependency here when a normal submodule commit would otherwise require another remote.
+- `externals/soundtouch` is intentionally vendored from former submodule commit `9ef8458d8561d9471dd20e9619e3be4cfe564796` so its Thor AArch64 overlap path stays in this repository. Do not restore it to a gitlink; retain the LGPL license and omit unused prebuilt example binaries.
 - Ask the user before making a materially different product, source-policy, or UX choice when the repository and existing requirements do not settle it. Keep moving with safe, reversible assumptions when the choice does not materially change the result.
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
