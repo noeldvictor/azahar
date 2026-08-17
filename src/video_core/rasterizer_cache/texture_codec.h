@@ -8,8 +8,8 @@
 #include <array>
 #include <bit>
 #include <span>
-#include "common/arch.h"
 #include "common/alignment.h"
+#include "common/arch.h"
 #include "common/color.h"
 #include "video_core/rasterizer_cache/pixel_format.h"
 #include "video_core/texture/etc1.h"
@@ -185,10 +185,9 @@ inline void MortonCopyTileETC1(u32 stride, const u8* tile_buffer, u8* linear_buf
         for (u32 subtile_x = 0; subtile_x < 2; ++subtile_x) {
             const u32 subtile_index = subtile_x + 2 * subtile_y;
             const u8* subtile_ptr = tile_buffer + subtile_index * subtile_size;
-            u8* const output =
-                linear_buffer + ((7 - subtile_y * subtile_height) * stride +
-                                 subtile_x * subtile_width) *
-                                    sizeof(u32);
+            u8* const output = linear_buffer + ((7 - subtile_y * subtile_height) * stride +
+                                                subtile_x * subtile_width) *
+                                                   sizeof(u32);
 
             if constexpr (has_alpha) {
                 const u64_le alpha = MakeInt<u64_le>(subtile_ptr);
@@ -231,8 +230,7 @@ inline uint8x16_t TransformPixel32A64(uint8x16_t pixels) {
     if constexpr (transform == Pixel32TransformA64::ReverseBytes) {
         return vrev32q_u8(pixels);
     } else if constexpr (transform == Pixel32TransformA64::D24S8) {
-        constexpr const auto& indices =
-            morton_to_linear ? D24S8_TO_HOST_A64 : D24S8_FROM_HOST_A64;
+        constexpr const auto& indices = morton_to_linear ? D24S8_TO_HOST_A64 : D24S8_FROM_HOST_A64;
         return vqtbl1q_u8(pixels, vld1q_u8(indices.data()));
     } else {
         return pixels;
@@ -305,10 +303,8 @@ inline void MortonCopyTile16A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
                 vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
             const uint32x2x2_t right =
                 vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset + 32));
-            vst1q_u16(first_row,
-                      vreinterpretq_u16_u32(vcombine_u32(left.val[0], right.val[0])));
-            vst1q_u16(second_row,
-                      vreinterpretq_u16_u32(vcombine_u32(left.val[1], right.val[1])));
+            vst1q_u16(first_row, vreinterpretq_u16_u32(vcombine_u32(left.val[0], right.val[0])));
+            vst1q_u16(second_row, vreinterpretq_u16_u32(vcombine_u32(left.val[1], right.val[1])));
         } else {
             const uint32x4_t first = vreinterpretq_u32_u16(vld1q_u16(first_row));
             const uint32x4_t second = vreinterpretq_u32_u16(vld1q_u16(second_row));
@@ -360,21 +356,136 @@ inline uint8x16_t RowsToMorton24A64(uint8x8_t first, uint8x8_t second) {
 // Avoid ST4 here. It is a complex, throughput-limited store on the Cortex-X3/A710 and is
 // especially expensive on the Cortex-A510 efficiency cores in Snapdragon 8 Gen 2. ZIP keeps the
 // interleave on the vector ALUs and lets the store pipelines consume ordinary contiguous vectors.
-inline void StoreRGBA8RowsA64(u8* first_row, u8* second_row, uint8x16_t red,
-                              uint8x16_t green, uint8x16_t blue, uint8x16_t alpha) {
+inline void StoreRGBA8RowsA64(u8* first_row, u8* second_row, uint8x16_t red, uint8x16_t green,
+                              uint8x16_t blue, uint8x16_t alpha) {
     const uint8x16x2_t red_green = vzipq_u8(red, green);
     const uint8x16x2_t blue_alpha = vzipq_u8(blue, alpha);
     const uint16x8x2_t first =
-        vzipq_u16(vreinterpretq_u16_u8(red_green.val[0]),
-                  vreinterpretq_u16_u8(blue_alpha.val[0]));
+        vzipq_u16(vreinterpretq_u16_u8(red_green.val[0]), vreinterpretq_u16_u8(blue_alpha.val[0]));
     const uint16x8x2_t second =
-        vzipq_u16(vreinterpretq_u16_u8(red_green.val[1]),
-                  vreinterpretq_u16_u8(blue_alpha.val[1]));
+        vzipq_u16(vreinterpretq_u16_u8(red_green.val[1]), vreinterpretq_u16_u8(blue_alpha.val[1]));
 
     vst1q_u8(first_row, vreinterpretq_u8_u16(first.val[0]));
     vst1q_u8(first_row + 16, vreinterpretq_u8_u16(first.val[1]));
     vst1q_u8(second_row, vreinterpretq_u8_u16(second.val[0]));
     vst1q_u8(second_row + 16, vreinterpretq_u8_u16(second.val[1]));
+}
+
+template <PixelFormat format>
+inline uint8x8x4_t DecodePixels16A64(uint16x8_t pixels) {
+    static_assert(format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                  format == PixelFormat::RGBA4);
+
+    uint16x8_t red;
+    uint16x8_t green;
+    uint16x8_t blue;
+    uint16x8_t alpha;
+    if constexpr (format == PixelFormat::RGB565) {
+        red = vshrq_n_u16(pixels, 11);
+        green = vandq_u16(vshrq_n_u16(pixels, 5), vdupq_n_u16(0x3F));
+        blue = vandq_u16(pixels, vdupq_n_u16(0x1F));
+        red = vorrq_u16(vshlq_n_u16(red, 3), vshrq_n_u16(red, 2));
+        green = vorrq_u16(vshlq_n_u16(green, 2), vshrq_n_u16(green, 4));
+        blue = vorrq_u16(vshlq_n_u16(blue, 3), vshrq_n_u16(blue, 2));
+        alpha = vdupq_n_u16(0xFF);
+    } else if constexpr (format == PixelFormat::RGB5A1) {
+        red = vshrq_n_u16(pixels, 11);
+        green = vandq_u16(vshrq_n_u16(pixels, 6), vdupq_n_u16(0x1F));
+        blue = vandq_u16(vshrq_n_u16(pixels, 1), vdupq_n_u16(0x1F));
+        red = vorrq_u16(vshlq_n_u16(red, 3), vshrq_n_u16(red, 2));
+        green = vorrq_u16(vshlq_n_u16(green, 3), vshrq_n_u16(green, 2));
+        blue = vorrq_u16(vshlq_n_u16(blue, 3), vshrq_n_u16(blue, 2));
+        alpha = vceqq_u16(vandq_u16(pixels, vdupq_n_u16(1)), vdupq_n_u16(1));
+    } else {
+        red = vshrq_n_u16(pixels, 12);
+        green = vandq_u16(vshrq_n_u16(pixels, 8), vdupq_n_u16(0x0F));
+        blue = vandq_u16(vshrq_n_u16(pixels, 4), vdupq_n_u16(0x0F));
+        alpha = vandq_u16(pixels, vdupq_n_u16(0x0F));
+        red = vorrq_u16(vshlq_n_u16(red, 4), red);
+        green = vorrq_u16(vshlq_n_u16(green, 4), green);
+        blue = vorrq_u16(vshlq_n_u16(blue, 4), blue);
+        alpha = vorrq_u16(vshlq_n_u16(alpha, 4), alpha);
+    }
+
+    uint8x8x4_t result;
+    result.val[0] = vmovn_u16(red);
+    result.val[1] = vmovn_u16(green);
+    result.val[2] = vmovn_u16(blue);
+    result.val[3] = vmovn_u16(alpha);
+    return result;
+}
+
+template <PixelFormat format>
+inline uint16x8_t EncodePixels16A64(const uint8x8x4_t& pixels) {
+    static_assert(format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                  format == PixelFormat::RGBA4);
+
+    const uint16x8_t red = vmovl_u8(pixels.val[0]);
+    const uint16x8_t green = vmovl_u8(pixels.val[1]);
+    const uint16x8_t blue = vmovl_u8(pixels.val[2]);
+    const uint16x8_t alpha = vmovl_u8(pixels.val[3]);
+    if constexpr (format == PixelFormat::RGB565) {
+        const uint16x8_t red5 = vshlq_n_u16(vshrq_n_u16(red, 3), 11);
+        const uint16x8_t green6 = vshlq_n_u16(vshrq_n_u16(green, 2), 5);
+        const uint16x8_t blue5 = vshrq_n_u16(blue, 3);
+        return vorrq_u16(vorrq_u16(red5, green6), blue5);
+    } else if constexpr (format == PixelFormat::RGB5A1) {
+        const uint16x8_t red5 = vshlq_n_u16(vshrq_n_u16(red, 3), 11);
+        const uint16x8_t green5 = vshlq_n_u16(vshrq_n_u16(green, 3), 6);
+        const uint16x8_t blue5 = vshlq_n_u16(vshrq_n_u16(blue, 3), 1);
+        const uint16x8_t alpha1 = vshrq_n_u16(alpha, 7);
+        return vorrq_u16(vorrq_u16(red5, green5), vorrq_u16(blue5, alpha1));
+    } else {
+        const uint16x8_t red4 = vshlq_n_u16(vshrq_n_u16(red, 4), 12);
+        const uint16x8_t green4 = vshlq_n_u16(vshrq_n_u16(green, 4), 8);
+        const uint16x8_t blue4 = vshlq_n_u16(vshrq_n_u16(blue, 4), 4);
+        const uint16x8_t alpha4 = vshrq_n_u16(alpha, 4);
+        return vorrq_u16(vorrq_u16(red4, green4), vorrq_u16(blue4, alpha4));
+    }
+}
+
+template <bool morton_to_linear, PixelFormat format>
+inline void MortonCopyTile16ConvertedA64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
+    static_assert(format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                  format == PixelFormat::RGBA4);
+
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * sizeof(u16);
+        u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
+        u8* const second_row = first_row - stride * sizeof(u32);
+
+        if constexpr (morton_to_linear) {
+            const uint32x2x2_t left =
+                vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
+            const uint32x2x2_t right =
+                vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset + 32));
+            const uint16x8_t first = vreinterpretq_u16_u32(vcombine_u32(left.val[0], right.val[0]));
+            const uint16x8_t second =
+                vreinterpretq_u16_u32(vcombine_u32(left.val[1], right.val[1]));
+            const uint8x8x4_t first_pixels = DecodePixels16A64<format>(first);
+            const uint8x8x4_t second_pixels = DecodePixels16A64<format>(second);
+            StoreRGBA8RowsA64(first_row, second_row,
+                              vcombine_u8(first_pixels.val[0], second_pixels.val[0]),
+                              vcombine_u8(first_pixels.val[1], second_pixels.val[1]),
+                              vcombine_u8(first_pixels.val[2], second_pixels.val[2]),
+                              vcombine_u8(first_pixels.val[3], second_pixels.val[3]));
+        } else {
+            const uint16x8_t first = EncodePixels16A64<format>(vld4_u8(first_row));
+            const uint16x8_t second = EncodePixels16A64<format>(vld4_u8(second_row));
+            const uint32x4_t first_words = vreinterpretq_u32_u16(first);
+            const uint32x4_t second_words = vreinterpretq_u32_u16(second);
+
+            uint32x2x2_t left;
+            left.val[0] = vget_low_u32(first_words);
+            left.val[1] = vget_low_u32(second_words);
+            vst2_u32(reinterpret_cast<u32*>(tile_buffer + tile_offset), left);
+
+            uint32x2x2_t right;
+            right.val[0] = vget_high_u32(first_words);
+            right.val[1] = vget_high_u32(second_words);
+            vst2_u32(reinterpret_cast<u32*>(tile_buffer + tile_offset + 32), right);
+        }
+    }
 }
 
 inline uint8x8_t Expand4BitPixelsA64(uint8x8_t packed) {
@@ -398,9 +509,8 @@ inline void MortonCopyTile4To32A64(u32 stride, const u8* tile_buffer, u8* linear
         const uint8x8_t packed = vreinterpret_u8_u64(
             vcreate_u64(static_cast<u64>(left) | (static_cast<u64>(right) << 32)));
         const uint8x8x2_t packed_rows = vuzp_u8(packed, packed);
-        const uint8x16_t pixels =
-            vcombine_u8(Expand4BitPixelsA64(packed_rows.val[0]),
-                        Expand4BitPixelsA64(packed_rows.val[1]));
+        const uint8x16_t pixels = vcombine_u8(Expand4BitPixelsA64(packed_rows.val[0]),
+                                              Expand4BitPixelsA64(packed_rows.val[1]));
         u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
         u8* const second_row = first_row - stride * sizeof(u32);
 
@@ -432,8 +542,8 @@ inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
             const uint8x16_t component_2 = Morton24ToRowsA64(left.val[2], right.val[2]);
 
             if constexpr (converted) {
-                StoreRGBA8RowsA64(first_row, second_row, component_2, component_1,
-                                  component_0, opaque);
+                StoreRGBA8RowsA64(first_row, second_row, component_2, component_1, component_0,
+                                  opaque);
             } else {
                 uint8x8x3_t first;
                 first.val[0] = vget_low_u8(component_0);
@@ -526,8 +636,7 @@ inline void MortonCopyTile8To32A64(u32 stride, const u8* tile_buffer, u8* linear
                   format == PixelFormat::IA4);
     for (u32 y = 0; y < 8; y += 2) {
         const u32 tile_offset = VideoCore::MortonInterleave(0, y);
-        const uint16x4_t left =
-            vld1_u16(reinterpret_cast<const u16*>(tile_buffer + tile_offset));
+        const uint16x4_t left = vld1_u16(reinterpret_cast<const u16*>(tile_buffer + tile_offset));
         const uint16x4_t right =
             vld1_u16(reinterpret_cast<const u16*>(tile_buffer + tile_offset + 16));
         const uint16x4x2_t rows = vuzp_u16(left, right);
@@ -543,18 +652,13 @@ inline void MortonCopyTile16To32A64(u32 stride, const u8* tile_buffer, u8* linea
     static_assert(format == PixelFormat::IA8 || format == PixelFormat::RG8);
     for (u32 y = 0; y < 8; y += 2) {
         const u32 tile_offset = VideoCore::MortonInterleave(0, y) * sizeof(u16);
-        const uint32x2x2_t left =
-            vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
+        const uint32x2x2_t left = vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset));
         const uint32x2x2_t right =
             vld2_u32(reinterpret_cast<const u32*>(tile_buffer + tile_offset + 32));
-        const uint8x16_t first =
-            vreinterpretq_u8_u32(vcombine_u32(left.val[0], right.val[0]));
-        const uint8x16_t second =
-            vreinterpretq_u8_u32(vcombine_u32(left.val[1], right.val[1]));
-        const uint8x8x2_t first_components =
-            vuzp_u8(vget_low_u8(first), vget_high_u8(first));
-        const uint8x8x2_t second_components =
-            vuzp_u8(vget_low_u8(second), vget_high_u8(second));
+        const uint8x16_t first = vreinterpretq_u8_u32(vcombine_u32(left.val[0], right.val[0]));
+        const uint8x16_t second = vreinterpretq_u8_u32(vcombine_u32(left.val[1], right.val[1]));
+        const uint8x8x2_t first_components = vuzp_u8(vget_low_u8(first), vget_high_u8(first));
+        const uint8x8x2_t second_components = vuzp_u8(vget_low_u8(second), vget_high_u8(second));
         u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
         u8* const second_row = first_row - stride * sizeof(u32);
         StoreExpandedTextureRowA64<format>(first_row, first_components.val[0],
@@ -597,7 +701,9 @@ inline constexpr std::array<std::array<u8, 16>, 3> LINEAR_RGB8_ENCODE_SHUFFLES_A
 
 template <bool decode, PixelFormat format>
 inline std::size_t LinearCopyConvertedA64(const u8* src, u8* dst, std::size_t pixel_count) {
-    static_assert(format == PixelFormat::RGBA8 || format == PixelFormat::RGB8);
+    static_assert(format == PixelFormat::RGBA8 || format == PixelFormat::RGB8 ||
+                  format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                  format == PixelFormat::RGBA4);
     std::size_t pixel = 0;
 
     if constexpr (format == PixelFormat::RGBA8) {
@@ -613,34 +719,58 @@ inline std::size_t LinearCopyConvertedA64(const u8* src, u8* dst, std::size_t pi
             vst1q_u8(dst_block + 32, pixels_2);
             vst1q_u8(dst_block + 48, pixels_3);
         }
+    } else if constexpr (format == PixelFormat::RGB8) {
+        if constexpr (decode) {
+            const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[0].data());
+            const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[1].data());
+            const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[2].data());
+            const uint8x16_t shuffle_3 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[3].data());
+            const uint8x16_t opaque = vdupq_n_u8(0xFF);
+            for (; pixel + 16 <= pixel_count; pixel += 16) {
+                const u8* const src_block = src + pixel * 3;
+                u8* const dst_block = dst + pixel * 4;
+                const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
+                                            vld1q_u8(src_block + 32), opaque};
+                vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
+                vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
+                vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
+                vst1q_u8(dst_block + 48, vqtbl4q_u8(table, shuffle_3));
+            }
+        } else {
+            const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[0].data());
+            const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[1].data());
+            const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[2].data());
+            for (; pixel + 16 <= pixel_count; pixel += 16) {
+                const u8* const src_block = src + pixel * 4;
+                u8* const dst_block = dst + pixel * 3;
+                const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
+                                            vld1q_u8(src_block + 32), vld1q_u8(src_block + 48)};
+                vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
+                vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
+                vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
+            }
+        }
     } else if constexpr (decode) {
-        const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[0].data());
-        const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[1].data());
-        const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[2].data());
-        const uint8x16_t shuffle_3 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[3].data());
-        const uint8x16_t opaque = vdupq_n_u8(0xFF);
         for (; pixel + 16 <= pixel_count; pixel += 16) {
-            const u8* const src_block = src + pixel * 3;
+            const u8* const src_block = src + pixel * 2;
             u8* const dst_block = dst + pixel * 4;
-            const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
-                                        vld1q_u8(src_block + 32), opaque};
-            vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
-            vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
-            vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
-            vst1q_u8(dst_block + 48, vqtbl4q_u8(table, shuffle_3));
+            const uint8x8x4_t first =
+                DecodePixels16A64<format>(vld1q_u16(reinterpret_cast<const u16*>(src_block)));
+            const uint8x8x4_t second =
+                DecodePixels16A64<format>(vld1q_u16(reinterpret_cast<const u16*>(src_block + 16)));
+            StoreRGBA8RowsA64(dst_block, dst_block + 32, vcombine_u8(first.val[0], second.val[0]),
+                              vcombine_u8(first.val[1], second.val[1]),
+                              vcombine_u8(first.val[2], second.val[2]),
+                              vcombine_u8(first.val[3], second.val[3]));
         }
     } else {
-        const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[0].data());
-        const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[1].data());
-        const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[2].data());
         for (; pixel + 16 <= pixel_count; pixel += 16) {
             const u8* const src_block = src + pixel * 4;
-            u8* const dst_block = dst + pixel * 3;
-            const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
-                                        vld1q_u8(src_block + 32), vld1q_u8(src_block + 48)};
-            vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
-            vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
-            vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
+            u8* const dst_block = dst + pixel * 2;
+            const uint16x8_t first = EncodePixels16A64<format>(vld4_u8(src_block));
+            const uint16x8_t second = EncodePixels16A64<format>(vld4_u8(src_block + 32));
+            vst1q_u16(reinterpret_cast<u16*>(dst_block), first);
+            vst1q_u16(reinterpret_cast<u16*>(dst_block + 16), second);
         }
     }
 
@@ -676,8 +806,8 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
         MortonCopyTile4To32A64<format>(stride, tile_buffer.data(), linear_buffer.data());
         return;
     } else if constexpr (format == PixelFormat::RGBA8) {
-        constexpr Pixel32TransformA64 transform = converted ? Pixel32TransformA64::ReverseBytes
-                                                            : Pixel32TransformA64::None;
+        constexpr Pixel32TransformA64 transform =
+            converted ? Pixel32TransformA64::ReverseBytes : Pixel32TransformA64::None;
         MortonCopyTile32A64<morton_to_linear, transform>(stride, tile_buffer.data(),
                                                          linear_buffer.data());
         return;
@@ -689,6 +819,12 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
                          (format == PixelFormat::D24 && !converted)) {
         MortonCopyTile24A64<morton_to_linear, converted>(stride, tile_buffer.data(),
                                                          linear_buffer.data());
+        return;
+    } else if constexpr (converted &&
+                         (format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                          format == PixelFormat::RGBA4)) {
+        MortonCopyTile16ConvertedA64<morton_to_linear, format>(stride, tile_buffer.data(),
+                                                               linear_buffer.data());
         return;
     } else if constexpr (!converted && bytes_per_pixel == 2 && linear_bytes_per_pixel == 2) {
         MortonCopyTile16A64<morton_to_linear>(stride, tile_buffer.data(), linear_buffer.data());
@@ -848,7 +984,9 @@ static constexpr void LinearCopy(std::span<u8> src_buffer, std::span<u8> dst_buf
 
         std::size_t first_scalar_pixel = 0;
 #if CITRA_ARCH(arm64)
-        if constexpr (format == PixelFormat::RGBA8 || format == PixelFormat::RGB8) {
+        if constexpr (format == PixelFormat::RGBA8 || format == PixelFormat::RGB8 ||
+                      format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
+                      format == PixelFormat::RGBA4) {
             const std::size_t pixel_count =
                 std::min(src_size / src_bytes_per_pixel, dst_size / dst_bytes_per_pixel);
             first_scalar_pixel = LinearCopyConvertedA64<decode, format>(

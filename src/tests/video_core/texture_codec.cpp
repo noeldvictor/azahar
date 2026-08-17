@@ -167,6 +167,54 @@ void CheckConvertedRGB8() {
     REQUIRE(encoded == tiled);
 }
 
+template <VideoCore::PixelFormat format>
+Common::Vec4<u8> DecodeConverted16(const u8* source) {
+    static_assert(format == VideoCore::PixelFormat::RGB5A1 ||
+                  format == VideoCore::PixelFormat::RGB565 ||
+                  format == VideoCore::PixelFormat::RGBA4);
+    if constexpr (format == VideoCore::PixelFormat::RGB5A1) {
+        return Common::Color::DecodeRGB5A1(source);
+    } else if constexpr (format == VideoCore::PixelFormat::RGB565) {
+        return Common::Color::DecodeRGB565(source);
+    } else {
+        return Common::Color::DecodeRGBA4(source);
+    }
+}
+
+template <VideoCore::PixelFormat format>
+void CheckConverted16() {
+    constexpr u32 values_per_tile = 8 * 8;
+    for (u32 first_value = 0; first_value <= 0xFFFF; first_value += values_per_tile) {
+        std::array<u8, values_per_tile * 2> tiled{};
+        for (u32 index = 0; index < values_per_tile; ++index) {
+            const u16 value = static_cast<u16>(first_value + index);
+            tiled[index * 2] = static_cast<u8>(value);
+            tiled[index * 2 + 1] = static_cast<u8>(value >> 8);
+        }
+
+        std::array<u8, 10 * 8 * 4> expected{};
+        expected.fill(0xCD);
+        for (u32 y = 0; y < 8; ++y) {
+            for (u32 x = 0; x < 8; ++x) {
+                const u32 source = VideoCore::MortonInterleave(x, y) * 2;
+                const u32 dest = ((7 - y) * 10 + x) * 4;
+                const auto rgba = DecodeConverted16<format>(tiled.data() + source);
+                std::memcpy(expected.data() + dest, rgba.AsArray(), 4);
+            }
+        }
+
+        auto decoded = expected;
+        decoded.fill(0xCD);
+        VideoCore::MortonCopyTile<true, format, true>(10, tiled, decoded);
+        REQUIRE(decoded == expected);
+
+        std::array<u8, values_per_tile * 2> encoded{};
+        encoded.fill(0xA5);
+        VideoCore::MortonCopyTile<false, format, true>(10, encoded, decoded);
+        REQUIRE(encoded == tiled);
+    }
+}
+
 void CheckD24S8() {
     std::array<u8, 8 * 8 * 4> tiled{};
     for (std::size_t i = 0; i < tiled.size(); ++i) {
@@ -254,6 +302,41 @@ void CheckLinearConvertedRGB8() {
     auto expected_roundtrip = encoded;
     expected_roundtrip[pixel_count * 3] = 0xA5;
     expected_roundtrip[pixel_count * 3 + 1] = 0xA5;
+    REQUIRE(roundtrip == expected_roundtrip);
+}
+
+template <VideoCore::PixelFormat format>
+void CheckLinearConverted16() {
+    constexpr std::size_t pixel_count = 37;
+    std::array<u8, pixel_count * 2 + 3> encoded{};
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        const u16 value = static_cast<u16>((pixel * 0x8421U + 0x1F3DU) & 0xFFFFU);
+        encoded[pixel * 2] = static_cast<u8>(value);
+        encoded[pixel * 2 + 1] = static_cast<u8>(value >> 8);
+    }
+    encoded[pixel_count * 2] = 0xD1;
+    encoded[pixel_count * 2 + 1] = 0xD2;
+    encoded[pixel_count * 2 + 2] = 0xD3;
+
+    std::array<u8, pixel_count * 4 + 3> expected{};
+    expected.fill(0xCD);
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        const auto rgba = DecodeConverted16<format>(encoded.data() + pixel * 2);
+        std::memcpy(expected.data() + pixel * 4, rgba.AsArray(), 4);
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::LinearCopy<true, format, true>(encoded, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, pixel_count * 2 + 3> roundtrip{};
+    roundtrip.fill(0xA5);
+    VideoCore::LinearCopy<false, format, true>(decoded, roundtrip);
+    auto expected_roundtrip = encoded;
+    expected_roundtrip[pixel_count * 2] = 0xA5;
+    expected_roundtrip[pixel_count * 2 + 1] = 0xA5;
+    expected_roundtrip[pixel_count * 2 + 2] = 0xA5;
     REQUIRE(roundtrip == expected_roundtrip);
 }
 
@@ -388,6 +471,15 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     SECTION("RGB8 converted to RGBA8") {
         CheckConvertedRGB8();
     }
+    SECTION("RGB5A1 converted to RGBA8 exhaustive") {
+        CheckConverted16<VideoCore::PixelFormat::RGB5A1>();
+    }
+    SECTION("RGB565 converted to RGBA8 exhaustive") {
+        CheckConverted16<VideoCore::PixelFormat::RGB565>();
+    }
+    SECTION("RGBA4 converted to RGBA8 exhaustive") {
+        CheckConverted16<VideoCore::PixelFormat::RGBA4>();
+    }
     SECTION("RGB5A1") {
         CheckTileCodec<VideoCore::PixelFormat::RGB5A1>();
     }
@@ -444,5 +536,14 @@ TEST_CASE("PICA linear converted codec preserves pixel layout", "[video_core][te
     }
     SECTION("RGB8 converted to RGBA8") {
         CheckLinearConvertedRGB8();
+    }
+    SECTION("RGB5A1 converted to RGBA8") {
+        CheckLinearConverted16<VideoCore::PixelFormat::RGB5A1>();
+    }
+    SECTION("RGB565 converted to RGBA8") {
+        CheckLinearConverted16<VideoCore::PixelFormat::RGB565>();
+    }
+    SECTION("RGBA4 converted to RGBA8") {
+        CheckLinearConverted16<VideoCore::PixelFormat::RGBA4>();
     }
 }

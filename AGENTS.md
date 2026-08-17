@@ -30,6 +30,14 @@
   alpha nibble order, RGBA byte order, arbitrary signed output stride, and the unchanged scalar
   non-AArch64 path. Final ThinLTO should retain vector `USHL`, `SQXTUN`, `ZIP`, four Q stores, and
   one `TBL`/`SLI` alpha expansion for ETC1A4 rather than regressing to a 16-pixel scalar loop.
+- AArch64 converted RGB5A1, RGB565, and RGBA4 texture copies deliberately process sixteen pixels
+  per linear loop or two Morton rows per tile loop. Preserve exact 5/6/4/1-bit replication on
+  decode, high-bit truncation on encode, bottom-up Morton row placement, padded row strides, and
+  the scalar non-AArch64 path. Full-tile decode should retain `LD2`, vector shifts/masks,
+  vector narrowing, `ZIP`, and ordinary paired Q stores; do not replace its output with `ST4`.
+  Encode may use D-form `LD4` to deinterleave RGBA input and `ST2` for the Morton rows. Keep the
+  exhaustive 65,536-value round-trip and odd linear-length/canary coverage, and recheck final
+  ThinLTO instead of assuming the intrinsics survived.
 - Vulkan `CommandChunk::Empty()` must derive emptiness from its linked-list head: successful first record sets `first`, and `ExecuteAll()` destroys every command before clearing it. Do not add a separate stale counter. Preserve the scheduler's queue-before-execution lock order and shared-condition-variable `notify_all` behavior; they prevent worker/waiter races.
 - Routine Vulkan timeline progress polling is deliberately limited to every fourth submitted tick, matching the command-buffer pool depth. Preserve immediate `Refresh()` calls for explicit waits and exhausted resource pools, monotonic cached completion, and conservative garbage-collection behavior; stale-low progress may delay reuse/deletion but must never permit unfinished GPU resources to be reused or destroyed.
 - Vulkan `current_tick` and `gpu_tick` are numerical sequence/completion caches, not memory-publication primitives. Keep their loads, increment, and monotonic `AdvanceGpuTick()` compare/exchange relaxed unless new side data is explicitly published through a tick; Vulkan submission/completion and the existing queue/fence mutexes provide the required ordering. Query the timeline-semaphore driver counter once per `Refresh()` and fold it into the cache with atomic max so a CAS retry never repeats the driver call or regresses known completion.

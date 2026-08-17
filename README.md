@@ -78,6 +78,9 @@ This fork has moved away from stock Azahar in visible ways:
 - ETC1 and ETC1A4 texture uploads decode each 4x4 block as two eight-pixel AArch64 AdvSIMD bands.
   Native variable shifts gather the column-major selector bits, saturating narrows clamp RGB, one
   table lookup expands ETC1A4 alpha, and four Q stores write the completed block.
+- Converted RGB5A1, RGB565, and RGBA4 texture copies now process sixteen pixels per AArch64 loop,
+  including full Morton tiles and linear surfaces, instead of converting one packed pixel at a
+  time. Decode uses ordinary RGBA stores rather than the Cortex-A510-hostile `ST4` form.
 - Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
   an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Routine Vulkan timeline-counter polling runs once per four submissions; explicit waits and
@@ -160,6 +163,16 @@ four 16-byte stores for the whole 4x4 RGBA block. The scalar non-AArch64 decoder
 focused coverage preserves flip/differential modes, selector/sign extremes, alpha nibble order,
 padding, and positive or negative output stride. This is a texture-upload CPU-work reduction; its
 whole-game speed and battery effect still needs a controlled Thor A/B.
+
+Converted RGB5A1, RGB565, and RGBA4 surfaces now have exact AdvSIMD decode and encode paths for
+both 8x8 Morton tiles and linear copies. Each loop converts sixteen pixels while preserving the
+formats' bit-replication and high-bit-truncation rules. Full-tile decode deinterleaves Morton rows
+with `LD2`, narrows and interleaves RGBA with vector operations, and finishes with ordinary paired
+Q stores; this intentionally avoids `ST4`, whose Q-form byte/halfword throughput is especially poor
+in the Cortex-A510 guide. The reverse path uses D-form `LD4` to deinterleave RGBA input and `ST2`
+to restore the two Morton rows. Exhaustive coverage checks every possible packed 16-bit value for
+all three formats, and odd-length linear tests protect the scalar tail and buffer canaries. This is
+a verified format-conversion CPU-work reduction, not yet a whole-game FPS or wattage result.
 
 ## AArch64 Audio Updates
 
