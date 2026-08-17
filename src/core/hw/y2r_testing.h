@@ -45,4 +45,9 @@ void SendUnrotatedLinearData(Service::Y2R::OutputFormat output_format, u8* outpu
                              const ImageTile tiles[], std::size_t num_tiles, unsigned int height,
                              Service::Y2R::ConversionBuffer& buffer, u8 alpha);
 
+#if defined(__GNUC__)
+__attribute__((visibility("hidden")))
+#endif
+bool CanBypassDataBuffer(const Service::Y2R::ConversionConfiguration& configuration);
+
 } // namespace HW::Y2R::Testing

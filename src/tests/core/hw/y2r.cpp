@@ -13,10 +13,13 @@
 namespace {
 
 using HW::Y2R::Testing::ImageTile;
+using Service::Y2R::BlockAlignment;
 using Service::Y2R::CoefficientSet;
 using Service::Y2R::ConversionBuffer;
+using Service::Y2R::ConversionConfiguration;
 using Service::Y2R::InputFormat;
 using Service::Y2R::OutputFormat;
+using Service::Y2R::Rotation;
 
 constexpr u32 Canary = 0xC0DEC0DE;
 
@@ -270,6 +273,14 @@ TEST_CASE("Y2R zero-gap 8-bit input borrows the compact CDMA stream", "[core][hw
             CHECK(compact == untouched);
             CHECK(buffer.address == 0x12340000 + amount);
             CHECK(buffer.image_size == 0x100);
+
+            ConversionBuffer null_buffer{0x12340000, static_cast<u32>(amount + 0x100),
+                                         transfer_unit, 0};
+            const u8* null_prepared = HW::Y2R::Testing::PrepareInputData8(
+                input.data() + GuardBytes, nullptr, null_buffer, amount);
+            CHECK(null_prepared == input.data() + GuardBytes);
+            CHECK(null_buffer.address == 0x12340000 + amount);
+            CHECK(null_buffer.image_size == 0x100);
         }
     }
 }
@@ -375,4 +386,59 @@ TEST_CASE("Y2R zero-gap linear output packs tile rows directly", "[core][hw][y2r
             }
         }
     }
+}
+
+TEST_CASE("Y2R strip storage is bypassed only for fully direct transfers", "[core][hw][y2r]") {
+    ConversionConfiguration cvt{};
+    cvt.rotation = Rotation::None;
+    cvt.block_alignment = BlockAlignment::Linear;
+    cvt.dst.gap = 0;
+
+    for (const auto output_format : {OutputFormat::RGBA8, OutputFormat::RGB8,
+                                     OutputFormat::RGB5A1, OutputFormat::RGB565}) {
+        cvt.output_format = output_format;
+        for (const auto input_format :
+             {InputFormat::YUV422_Indiv8, InputFormat::YUV420_Indiv8}) {
+            cvt.input_format = input_format;
+            cvt.src_Y.gap = cvt.src_U.gap = cvt.src_V.gap = 0;
+            cvt.src_YUYV.gap = 7;
+            CHECK(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+
+            cvt.src_Y.gap = 1;
+            CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+            cvt.src_Y.gap = 0;
+            cvt.src_U.gap = 1;
+            CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+            cvt.src_U.gap = 0;
+            cvt.src_V.gap = 1;
+            CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+        }
+    }
+
+    cvt.input_format = InputFormat::YUYV422_Interleaved;
+    cvt.src_Y.gap = cvt.src_U.gap = cvt.src_V.gap = 9;
+    cvt.src_YUYV.gap = 0;
+    CHECK(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+    cvt.src_YUYV.gap = 1;
+    CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+
+    cvt.src_Y.gap = cvt.src_U.gap = cvt.src_V.gap = cvt.src_YUYV.gap = 0;
+    for (const auto input_format :
+         {InputFormat::YUV422_Indiv16, InputFormat::YUV420_Indiv16}) {
+        cvt.input_format = input_format;
+        CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+    }
+
+    cvt.input_format = InputFormat::YUV422_Indiv8;
+    for (const auto rotation :
+         {Rotation::Clockwise_90, Rotation::Clockwise_180, Rotation::Clockwise_270}) {
+        cvt.rotation = rotation;
+        CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+    }
+    cvt.rotation = Rotation::None;
+    cvt.block_alignment = BlockAlignment::Block8x8;
+    CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
+    cvt.block_alignment = BlockAlignment::Linear;
+    cvt.dst.gap = 1;
+    CHECK_FALSE(HW::Y2R::Testing::CanBypassDataBuffer(cvt));
 }

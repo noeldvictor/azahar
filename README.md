@@ -90,6 +90,10 @@ This fork has moved away from stock Azahar in visible ways:
   intermediate 32-bit strip, removing another eight logical bytes per pixel, or 768,000 bytes for
   a 400x240 conversion. Final ThinLTO keeps compact AdvSIMD loops with ordinary stores and no
   `ST3`/`ST4`; rotated, tiled, and gapped CDMA output retains the established paths.
+- When those direct input and output conditions coincide, Y2R no longer allocates its now-unused
+  strip buffer. This removes one `new[]`/`delete[]` pair and a 12,800-byte transient reservation at
+  400-pixel width (32 KiB maximum) from each qualifying conversion. Every 16-bit, gapped, rotated,
+  or tiled route retains uninitialized staging without adding a clearing pass.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

@@ -2663,6 +2663,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   bytes and `app/build` contains only the 28,969,511-byte APK. No device, ADB, install, launch,
   game, FPS, battery, wattage, temperature, or visual run was used.
 
+## 2026-08-17 Allocation-Free Fully Direct Y2R Route
+
+- After direct 8-bit input borrowing and direct zero-gap output packing landed, `PerformConversion()`
+  still unconditionally allocated `input_line_width * 8 * 4` bytes for the shared CDMA strip and
+  freed it at return. The fully direct route never read or wrote that storage. At 400-pixel width
+  this was a 12,800-byte transient reservation per conversion; the valid 1024-pixel maximum is
+  32,768 bytes.
+- The buffer is now omitted only when output is zero-gap, unrotated, and linear and the active input
+  is either YUV422/YUV420 8-bit planar with all three active gaps zero or interleaved YUYV with its
+  active gap zero. Inactive-plane gaps deliberately do not matter. Both 16-bit formats, every active
+  input gap, any output gap, rotation, and Block8x8 output retain the original staging behavior.
+  Fixed Y/U/V staging partitions are also calculated once outside the strip loop.
+- The null pointer is safe by construction: every active receive on the bypass route enters
+  `PrepareInputData8()` with `gap == 0`, advances the same address and image-size fields, and returns
+  guest memory before touching its compact-output argument. Conversion consumes those borrowed
+  inputs before direct output starts. The output formats, tile storage, conversion math, CDMA state,
+  and all fallback data paths are unchanged.
+- No-LTO AArch64 codegen exposed and rejected a tempting regression during review: array
+  `make_unique` value-initialized the fallback buffer and emitted a full `memset`. The retained
+  `new[]` allocation is uninitialized exactly like the baseline. The baseline `PerformConversion()`
+  was `0x2aa8` bytes and unconditionally called two `new[]` functions, deleted tile storage, then
+  tail-called the strip-buffer `delete[]`. The candidate is `0x2c18` bytes: its eligibility gate
+  branches around the first `new[]`, leaves the tile allocation, and uses `CBZ` after deleting tiles
+  to skip the matching strip-buffer delete. Final production ThinLTO retains the same `0x2c18`
+  size and contains no `memset` in this function.
+- Independent Catch2 coverage exercises all four output formats, both 8-bit planar formats, YUYV,
+  both 16-bit formats, every active and inactive input-gap distinction, all rotations, both block
+  layouts, and output gap. Existing zero-gap input coverage now also passes a null staging pointer
+  across transfer units 1/7/16/31 and zero/one/two/five units while checking exact returned pointer
+  and CDMA state. Both modified ARM64 objects compiled, and the complete test ELF plus production
+  shared library linked with ThinLTO in 1 minute 39 seconds. The test name is present in the test ELF
+  while the hidden predicate hook is absent from production. The ARM64 tests were not run because
+  device execution remains excluded.
+- This removes allocator and lifetime work rather than a pixel-loop instruction, so the Arm core
+  manuals do not provide a defensible cycle estimate. It is a bounded Y2R video/camera win, not a
+  measured FPS or wattage result.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 2 minutes
+  38 seconds. The package contains only `arm64-v8a`, is 28,969,947 bytes, and has SHA-256
+  `D2E7BFE0351144F646529B7DBCB0E607E29F2D2CEA3DC26B99D80CBEBBC94C49`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,499,957,480 logical bytes of native/JNI staging, the test/tools executables, codegen audit
+  objects, mappings, symbols, Kotlin/R8 output, and local Gradle state. The deletion pass reported
+  2,060,390,400 bytes recovered, with final C: free space at 109,464,788,992 bytes. The retained
+  `.cxx` cache is 2,786,934,832 bytes and `app/build` contains only the 28,969,947-byte APK. No
+  device, ADB, install, launch, game, FPS, battery, wattage, temperature, or visual run was used.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

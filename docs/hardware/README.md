@@ -67,6 +67,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   26, A710 page 39, and A510 page 32; `TBL2` and byte `LD4` are covered on X3 page 34, A715 page 37,
   A710 page 56, and A510 pages 46-47. This removes eight logical staging bytes per pixel while
   preserving the gapped, rotated, and tiled fallbacks.
+- Complete the lifetime analysis after removing staging traffic: if every active 8-bit input is
+  borrowed and final output is direct, do not allocate the now-dead strip buffer. Keep it for any
+  active input/output gap, 16-bit low-byte extraction, rotation, or tiling, and ignore gaps on
+  inactive planes. Preserve the fallback's uninitialized allocation; array `make_unique` would
+  value-initialize it and add a full clear. Hoist its fixed Y/U/V partition addresses out of the
+  strip loop and verify linked control flow skips only the matching allocation and deallocation.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

@@ -744,6 +744,35 @@ void Testing::WriteUnrotatedLinearTiles(u32* output, const ImageTile tiles[], st
     ::HW::Y2R::WriteUnrotatedLinearTiles(output, tiles, num_tiles, height, line_stride);
 }
 
+static bool HasDirectUnrotatedLinearOutput(const ConversionConfiguration& cvt) {
+    return cvt.rotation == Rotation::None && cvt.block_alignment == BlockAlignment::Linear &&
+           cvt.dst.gap == 0;
+}
+
+// The shared strip buffer is dead only when every active input can be borrowed in place and final
+// output also bypasses staging. Keep all inactive-plane gaps out of this decision.
+static bool CanBypassDataBuffer(const ConversionConfiguration& cvt) {
+    if (!HasDirectUnrotatedLinearOutput(cvt)) {
+        return false;
+    }
+
+    switch (cvt.input_format) {
+    case InputFormat::YUV422_Indiv8:
+    case InputFormat::YUV420_Indiv8:
+        return cvt.src_Y.gap == 0 && cvt.src_U.gap == 0 && cvt.src_V.gap == 0;
+    case InputFormat::YUYV422_Interleaved:
+        return cvt.src_YUYV.gap == 0;
+    case InputFormat::YUV422_Indiv16:
+    case InputFormat::YUV420_Indiv16:
+        return false;
+    }
+    return false;
+}
+
+bool Testing::CanBypassDataBuffer(const ConversionConfiguration& cvt) {
+    return ::HW::Y2R::CanBypassDataBuffer(cvt);
+}
+
 MICROPROFILE_DEFINE(Y2R_PerformConversion, "Y2R", "PerformConversion", MP_RGB(185, 66, 245));
 
 /**
@@ -805,10 +834,22 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
     std::size_t num_tiles = cvt.input_line_width / 8;
     ASSERT(num_tiles <= MAX_TILES);
 
-    // Buffer used as a CDMA source/target.
-    std::unique_ptr<u8[]> data_buffer(new u8[cvt.input_line_width * 8 * 4]);
+    const bool direct_unrotated_linear_output = HasDirectUnrotatedLinearOutput(cvt);
+
+    // Buffer used as a CDMA source/target. Fully direct 8-bit input plus output never touches it,
+    // so avoid allocator traffic and reserving up to 32 KiB for that common route.
+    std::unique_ptr<u8[]> data_buffer;
+    if (!CanBypassDataBuffer(cvt)) {
+        data_buffer.reset(new u8[cvt.input_line_width * 8 * 4]);
+    }
     // Intermediate storage for decoded 8x8 image tiles. Always stored as RGB32.
     std::unique_ptr<ImageTile[]> tiles(new ImageTile[num_tiles]);
+
+    // These staging partitions do not change between strips. A null base is valid only on the
+    // fully direct route, where every PrepareInputData8 call returns guest memory instead.
+    u8* const compact_Y = data_buffer.get();
+    u8* const compact_U = compact_Y ? compact_Y + 8 * cvt.input_line_width : nullptr;
+    u8* const compact_V = compact_U ? compact_U + 8 * cvt.input_line_width / 2 : nullptr;
 
     // LUT used to remap writes to a tile. Used to allow linear or swizzled output without
     // requiring two different code paths.
@@ -828,9 +869,6 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
         // Total size in pixels of incoming data required for this strip.
         const std::size_t row_data_size = row_height * cvt.input_line_width;
 
-        u8* const compact_Y = data_buffer.get();
-        u8* const compact_U = compact_Y + 8 * cvt.input_line_width;
-        u8* const compact_V = compact_U + 8 * cvt.input_line_width / 2;
         const u8* input_Y = compact_Y;
         const u8* input_U = compact_U;
         const u8* input_V = compact_V;
@@ -881,8 +919,7 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
             return;
         }
 
-        if (cvt.rotation == Rotation::None && cvt.block_alignment == BlockAlignment::Linear &&
-            cvt.dst.gap == 0) {
+        if (direct_unrotated_linear_output) {
             u8* const direct_output = memory.GetPointer(cvt.dst.address);
             switch (cvt.output_format) {
             case OutputFormat::RGBA8:
