@@ -69,6 +69,8 @@ This fork has moved away from stock Azahar in visible ways:
 - The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
   and refreshes it only after geometry `EMIT`, removing repeated bank loads and address generation
   from every ordinary output write.
+- The hottest PICA command-list parser has an AArch64 four-pair `LD2` path that validates ordinary
+  headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
@@ -101,7 +103,7 @@ percentages, and no whole-game wattage claim is made without a matched device A/
 sequences, build evidence, limitations, and the required benchmark controls are recorded in the
 [Thor optimization notes](docs/thor-optimization-notes.md).
 
-## AArch64 PICA JIT Updates
+## AArch64 PICA Updates
 
 The PICA vertex-shader JIT now attacks three common AArch64 lowering costs: baseline Armv8-A
 AdvSIMD `TBL` handles arbitrary source swizzles, `ST1` lane stores handle partial destination masks
@@ -109,6 +111,12 @@ without reading untouched lanes, and a cached output-bank pointer removes repeat
 address generation. These are exact generated-instruction and memory-traffic reductions validated
 by ARM64 compilation and focused regression sources. Whole-game FPS and battery-watt effects still
 require a controlled Thor A/B and are not estimated from static counts.
+
+The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
+`LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;
+nonconsecutive or duplicate IDs retain ordered writes, while special, extended, invalid, and short
+batches retain their scalar behavior. Final ThinLTO code shrinks the hot function by 9.5% despite
+adding the fast path.
 
 ## AArch64 Audio Time-Stretch Updates
 

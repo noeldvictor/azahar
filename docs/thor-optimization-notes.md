@@ -695,6 +695,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   layout, speed limit, performance/fan mode, brightness, and duration. Record audio glitches,
   output underruns, frametimes, process CPU time, battery power, temperature, and thermal slope.
 
+## 2026-08-16 AArch64 PICA Four-Command Fast Path
+
+- `PicaCore::ProcessCmdList()` identifies itself as Azahar's most CPU-expensive function outside
+  draw calls. Final Android ThinLTO disassembly showed that its existing four-command source loop
+  contained no SIMD: Clang expanded the partial-batch control flow into repeated scalar header
+  loads, bounds checks, LUT branches, stack staging, register updates, and dirty-bit read/modify/
+  writes. The baseline function was 1,476 bytes.
+- This change was selected from the actual Snapdragon core guides. Cortex-X3 issue 4.0 table 3-19,
+  Cortex-A715 issue 5.0 table 3-19, and Cortex-A710 issue 4.0 table 3-35 give Q-form B/H/S `LD2`
+  an eight-cycle L1-hit latency and 3/2-instruction-per-cycle throughput. Cortex-A510 issue 6.0
+  table 3-35 gives the same form four-cycle latency and one-instruction-per-two-cycle throughput.
+  One `LD2` per four interleaved pairs is therefore a bounded use; heavier structure-load patterns
+  were not generalized across the parser. The manual PDFs and temporary rendered pages remain
+  outside git and were removed after review.
+- The AArch64 common path now deinterleaves four `[value, header]` pairs, validates register bounds
+  and extra-data bits together, reduces the invalid mask with `UMAXV`, gathers four special-handler
+  flags, and branches once. Four consecutive ordinary IDs use one 128-bit register load, byte-mask
+  blend, 128-bit store, and one dirty-word update. Nonconsecutive IDs retain ordered scalar writes
+  so duplicate IDs still observe preceding writes; when all four dirty bits share a word they are
+  merged into one read/modify/write. Short, invalid, extended, or special batches use a separate
+  236-byte scalar loop and then the original slow handler. The call is direct, not through the PLT.
+- Correctness is an exact refactoring of the prior conditions. Header bits 0-15 remain the register
+  ID, bits 16-19 remain the byte mask, and only bits 20-27 reject the ordinary path; reserved high
+  bits and the group bit retain their prior treatment when extra length is zero. The fast path makes
+  no state change before all four headers and special-handler flags pass. It adds exactly four delay
+  commands, advances exactly eight words, preserves byte-select semantics, and reproduces the same
+  dirty set. A consecutive four-register group is unique by construction; its rare 64-bit dirty-
+  word crossing explicitly updates the next word.
+- The committed ARM64 test runs every `16^4` combination of four parameter masks against an
+  independent scalar expansion and blend, checking 262,144 lanes. It also checks all 65,536 IDs
+  with extra lengths 0, 1, and 255 and both clear/set reserved/group high bits, for 393,216 header
+  cases. Matching host-side semantic sweeps passed. The AArch64 test executable compiled and linked
+  but was not run because the host is x64 and Thor use remains forbidden.
+- Final ThinLTO contains the intended `LD2`, vector comparisons, `UMAXV`, Q register load/store,
+  and direct compact fallback. `ProcessCmdList()` is 1,336 bytes, 140 bytes or 9.5% smaller than the
+  1,476-byte baseline; the separate scalar fallback is 236 bytes. These are codegen facts, not a
+  whole-game speed or power claim. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled the source and
+  tests and linked `libcitra-android.so`; `:app:assembleVanillaRelWithDebInfoLite` passed in 24s.
+  The 28,966,471-byte APK contains only `arm64-v8a` native libraries and has SHA-256
+  `EC03BDBB838F23748E553D0A12C56D5817C496659209BF7B228E2998229EA388`. No ADB, install, launch,
+  or device access occurred.
+- A future allowed A/B should use a command-heavy, CPU-limited scene with identical title, save,
+  caches, renderer, driver, resolution, layout, performance/fan mode, brightness, and duration.
+  Record command counts, ordinary-four hit rate, frametimes, process CPU time, battery power,
+  temperature, thermal slope, stability, and rendering correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
