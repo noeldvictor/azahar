@@ -25,12 +25,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   stream-buffer wrap waits, and conservative deferred destruction instead of blocking the CPU on
   every duplicate/Eco-Turbo-skipped frame. Retain explicit waits for CPU readback and resource
   destruction. This preserves CPU/GPU overlap and avoids needless Adreno completion wakeups.
-- Treat normal native presentation as a FIFO handoff, not a CPU-worker join. Dispatch the queued
-  presentation callback behind the already-flushed render submission, then let the emulation and
-  Vulkan worker threads overlap. Completion-tick resource retirement must remain strict
-  (`completed > sentenced`), with explicit drains retained for synchronous presentation, LibRetro,
-  CPU readback, resize, and destruction. This removes a per-frame CPU wait/wakeup chain without
-  changing the Vulkan queue order or inventing another background thread.
+- Treat normal native presentation as one FIFO worker command, not a CPU-worker join or two
+  scheduler dispatches. Submit the render-ready semaphore first, release the submit lock, enqueue
+  the frame, release its predicate mutex, and only then notify presentation. Completion-tick
+  resource retirement must remain strict (`completed > sentenced`), with explicit drains retained
+  for synchronous presentation, LibRetro, CPU readback, resize, and destruction. This removes a
+  per-frame dispatch/queue/wakeup cycle without changing Vulkan queue order or inventing another
+  background thread.
 - Do not resolve a stereo presentation surface that no active layout can sample. For mono-left or
   bottom-only output, preserve a valid descriptor by aliasing the current left image and skip the
   right-eye surface lookup/upload. This applies the Adreno guide's avoid-unnecessary-resolve rule

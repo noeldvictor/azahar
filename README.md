@@ -508,14 +508,18 @@ render-frame recreation, swapchain/window destruction, and renderer teardown kee
 completion waits.
 
 Normal native threaded presentation also no longer joins the Vulkan command worker at every frame
-boundary. The render submission is flushed first, then the presentation-queue callback is
-dispatched behind it in the same FIFO; the emulation thread can continue while the worker records
-and submits. Resource retirement uses completed timeline ticks and requires completion to advance
-strictly beyond the sentenced tick, so queued or in-flight surfaces remain alive. LibRetro and the
-synchronous presentation fallback retain their worker drains, and mutable presentation clear data
-is copied into the worker command. The final Android AArch64 `TickFrame()` is only a direct cache
-tick with no `WaitWorker()` call. This proves removal of one CPU worker join per normal native
-Vulkan frame, not a measured whole-game FPS or battery-watt percentage.
+boundary. Its render submission and presentation-queue notification now occupy one typed worker
+command and one routine dispatch: the worker submits first, releases the Vulkan submit lock,
+enqueues the frame, releases the predicate lock, and then wakes presentation. This removes the old
+second command-chunk dispatch, descriptor-dispatch callback, scheduler queue push/pop, worker
+notification, and reserve-chunk lock cycle from every normally presented frame. Resource
+retirement uses
+completed timeline ticks and requires completion to advance strictly beyond the sentenced tick, so
+queued or in-flight surfaces remain alive. LibRetro and the synchronous presentation fallback
+retain their worker drains, and mutable presentation clear data is copied into the worker command.
+The final Android AArch64 `TickFrame()` is only a direct cache tick with no `WaitWorker()` call.
+These are exact per-frame synchronization removals, not measured whole-game FPS or battery-watt
+percentages.
 
 ## Thor Screenshot
 

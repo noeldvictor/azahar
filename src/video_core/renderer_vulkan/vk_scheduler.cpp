@@ -176,18 +176,22 @@ void Scheduler::AllocateWorkerCommandBuffers() {
     current_cmdbuf.begin(begin_info);
 }
 
-void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore) {
+u64 Scheduler::PrepareSubmission() {
     state = StateFlags::AllDirty;
     const u64 signal_value = master_semaphore->NextTick();
-
     on_submit();
 
-    Record([signal_semaphore, wait_semaphore, signal_value, this](vk::CommandBuffer cmdbuf) {
-        MICROPROFILE_SCOPE(Vulkan_Submit);
-        std::scoped_lock lock{submit_mutex};
-        master_semaphore->SubmitWork(cmdbuf, wait_semaphore, signal_semaphore, signal_value);
-    });
+    return signal_value;
+}
 
+void Scheduler::ExecuteSubmission(vk::CommandBuffer cmdbuf, vk::Semaphore signal_semaphore,
+                                  vk::Semaphore wait_semaphore, u64 signal_value) {
+    MICROPROFILE_SCOPE(Vulkan_Submit);
+    std::scoped_lock lock{submit_mutex};
+    master_semaphore->SubmitWork(cmdbuf, wait_semaphore, signal_semaphore, signal_value);
+}
+
+void Scheduler::DispatchSubmission(u64 signal_value) {
     master_semaphore->RefreshOnSubmit(signal_value);
 
     if (!use_worker_thread) {
@@ -196,6 +200,16 @@ void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wa
         chunk->MarkSubmit();
         DispatchWork();
     }
+}
+
+void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore) {
+    const u64 signal_value = PrepareSubmission();
+
+    Record([signal_semaphore, wait_semaphore, signal_value, this](vk::CommandBuffer cmdbuf) {
+        ExecuteSubmission(cmdbuf, signal_semaphore, wait_semaphore, signal_value);
+    });
+
+    DispatchSubmission(signal_value);
 }
 
 void Scheduler::AcquireNewChunk() {

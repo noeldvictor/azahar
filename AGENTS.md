@@ -129,14 +129,16 @@
   completed timeline ticks. Keep synchronous `Finish()` at explicit CPU readbacks, render-frame
   recreation, presentation-window destruction, and renderer teardown where the host actually needs
   completed work or is about to destroy its backing resources.
-- Native threaded Vulkan presentation must record its present-queue callback after the render
-  `Flush()` and immediately `DispatchWork()` so FIFO execution reaches that callback without a
-  per-frame producer-side `WaitWorker()`. Keep the original worker drain for LibRetro cache ticks
-  and the synchronous presentation fallback. Deferred rasterizer-cache destruction is safe only
-  when the runtime completion tick is strictly newer than the sentenced resource tick; equality
-  must retain the resource because that tick can still be queued or in flight. Any value read by a
-  worker callback while the producer may begin the next frame, such as the presentation clear
-  color, must be captured by value.
+- Native threaded Vulkan presentation must use `Scheduler::FlushWithCallback()` to keep the render
+  submission and present-queue notification in one typed worker command and one routine dispatch.
+  The worker must submit and release `submit_mutex`, enqueue the frame while holding `queue_mutex`,
+  release that predicate mutex, and only then notify the presentation thread. Do not split this
+  back into `Flush()` plus a separately recorded/dispatched callback. Keep the original worker
+  drain for LibRetro cache ticks and the synchronous presentation fallback. Deferred
+  rasterizer-cache destruction is safe only when the runtime completion tick is strictly newer
+  than the sentenced resource tick; equality must retain the resource because that tick can still
+  be queued or in flight. Any value read by a worker callback while the producer may begin the next
+  frame, such as the presentation clear color, must be captured by value.
 - HLE audio intermediate mixes deliberately use `PlanarQuadFrame32` from `Source::MixInto()` through
   aux exchange and final downmix. Preserve channel-major live storage, contiguous whole-buffer aux
   copies on little-endian hosts, the endian-converting fallback, and the historical sample-major

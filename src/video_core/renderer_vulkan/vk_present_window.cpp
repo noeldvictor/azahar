@@ -277,21 +277,20 @@ Frame* PresentWindow::GetRenderFrame() {
 
 void PresentWindow::Present(Frame* frame) {
     if (!use_present_thread) {
+        scheduler.Flush(frame->render_ready);
         scheduler.WaitWorker();
         CopyToSwapchain(frame);
         free_queue.push(frame);
         return;
     }
 
-    scheduler.Record([this, frame](vk::CommandBuffer) {
-        std::unique_lock lock{queue_mutex};
-        present_queue.push(frame);
+    scheduler.FlushWithCallback(frame->render_ready, [this, frame](vk::CommandBuffer) {
+        {
+            std::scoped_lock lock{queue_mutex};
+            present_queue.push(frame);
+        }
         frame_cv.notify_one();
     });
-    // The render submission was dispatched by Flush() immediately before Present(). Dispatch this
-    // callback behind it so the presentation thread can start without making the emulation thread
-    // wait for command recording and vkQueueSubmit to return.
-    scheduler.DispatchWork();
 }
 
 void PresentWindow::WaitPresent() {
@@ -335,8 +334,10 @@ void PresentWindow::PresentThread(std::stop_token token) {
         CopyToSwapchain(frame);
 
         // Free the frame for reuse
-        std::scoped_lock fl{free_mutex};
-        free_queue.push(frame);
+        {
+            std::scoped_lock fl{free_mutex};
+            free_queue.push(frame);
+        }
         free_cv.notify_one();
     }
 }

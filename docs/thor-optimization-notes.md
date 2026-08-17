@@ -2834,6 +2834,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Reported C: free space increased by 2,025,144,320 bytes to 100,816,732,160. The retained `.cxx`
   cache is 2,781,916,118 bytes and `app/build` contains only the final APK.
 
+## 2026-08-17 Single-Dispatch Vulkan Presentation Handoff
+
+- After the native frame-end join was removed, normal threaded presentation still used two worker
+  chunks per frame. `RenderToWindow()` called `Flush(frame->render_ready)`, which recorded and
+  dispatched the Vulkan submission; `PresentWindow::Present()` then recorded a second frame-queue
+  callback and called `DispatchWork()` again. That second dispatch repeated the descriptor
+  `on_dispatch` callback, scheduler queue push/pop, `queue_mutex`, `event_cv.notify_all()`, reserve
+  chunk acquisition/recycling, and worker execution-lock handoff without recording more GPU work.
+- `Scheduler::FlushWithCallback()` now records one typed command containing both operations. It
+  performs the exact existing timeline-tick preparation and `MasterSemaphore::SubmitWork()` first,
+  releases `submit_mutex`, then runs the supplied callback before the submitted chunk is recycled.
+  `PresentWindow` owns both the threaded combined route and the synchronous `Flush()` plus
+  `WaitWorker()` route, so callers cannot accidentally separate submission from presentation.
+- The ordering remains strict: the present callback cannot expose `frame->render_ready` before its
+  signal submission has reached `vkQueueSubmit`; the presentation thread's copy waits on that
+  binary semaphore; descriptor updates still flush on the producer before the combined chunk is
+  queued; and the chunk retains its submit marker so the worker allocates a fresh render command
+  buffer afterward. If the current 32 KiB command chunk lacks 56 bytes for the combined command,
+  the unchanged capacity fallback first dispatches prior work and records the combined operation
+  in a fresh chunk.
+- Both the worker-to-present frame notification and the present-to-render free-frame notification
+  now release their predicate mutex before `notify_one()`. The queue mutation remains protected,
+  and predicate testing under the same mutex prevents lost wakes, while the awakened thread no
+  longer immediately contends on a lock deliberately held by the notifier. The separate
+  queue-to-swapchain lock exchange in `PresentThread()` is ordering-sensitive and remains unchanged.
+- The final full `arm64-v8a` native rebuild compiled and ThinLTO-linked the test ELF and production
+  `libcitra-android.so` successfully in 1 minute 23 seconds. Linked AArch64 has one 56-byte
+  `FlushWithCallback` typed command whose `0x118`-byte execute body locks/submits/unlocks, then
+  locks/pushes/unlocks and tail-notifies. The capacity-fit threaded `Present()` path has one final
+  `Scheduler::DispatchWork()`; `WaitWorker()` remains only on its synchronous branch.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 1 minute
+  50 seconds. The APK contains only `arm64-v8a`, is 28,970,707 bytes, and has SHA-256
+  `43873337BB20AB212810E8536ECD275EF7469872875B98806E172532AD6745EA`.
+- This removes one complete CPU scheduler dispatch and two notify-under-lock handoffs from every
+  normal native threaded Vulkan frame. It should reduce scheduler CPU time, wakeup/lock traffic,
+  and presentation handoff latency, but no device, ADB, install, launch, game, FPS, battery,
+  wattage, temperature, or visual run was used, so no whole-game percentage is claimed.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake/Ninja cache while removing
+  2,471,604,766 logical bytes of Gradle staging, the ARM64 test ELF, and native helper executables.
+  Reported C: free space increased by 2,025,955,328 bytes to 88,974,700,544. The retained `.cxx`
+  cache is 2,782,171,675 bytes and `app/build` contains only the final APK.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -275,7 +275,6 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
         clear_color.float32[3] = 1.0f;
 
         DrawScreens(frame, layout, flipped);
-        scheduler.Flush(frame->render_ready);
         window.Present(frame);
         if ((secondaryWindowEnabled && isSecondaryWindow) || (!secondaryWindowEnabled)) {
             Core::PerfStats::game_frames_updated = false;

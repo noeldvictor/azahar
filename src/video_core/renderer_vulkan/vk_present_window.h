@@ -49,7 +49,7 @@ public:
     /// Recreates the render frame to match provided parameters.
     void RecreateFrame(Frame* frame, u32 width, u32 height);
 
-    /// Queues the provided frame for presentation.
+    /// Submits current render work and queues the provided frame for presentation.
     void Present(Frame* frame);
 
     /// This is called to notify the rendering backend of a surface change

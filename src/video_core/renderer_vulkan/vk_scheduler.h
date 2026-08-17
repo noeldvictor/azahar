@@ -34,6 +34,19 @@ public:
     /// Sends the current execution context to the GPU.
     void Flush(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr);
 
+    /// Sends the current execution context to the GPU, then executes a worker callback after the
+    /// queue submission. Keeping both operations in one command chunk avoids a second dispatch.
+    template <typename T>
+    void FlushWithCallback(vk::Semaphore signal, T&& post_submit) {
+        const u64 signal_value = PrepareSubmission();
+        Record([signal, signal_value, post_submit = std::forward<T>(post_submit), this](
+                   vk::CommandBuffer cmdbuf) {
+            ExecuteSubmission(cmdbuf, signal, nullptr, signal_value);
+            post_submit(cmdbuf);
+        });
+        DispatchSubmission(signal_value);
+    }
+
     /// Sends the current execution context to the GPU and waits for it to complete.
     void Finish(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr);
 
@@ -185,6 +198,13 @@ private:
     void WorkerThread(std::stop_token stop_token);
 
     void AllocateWorkerCommandBuffers();
+
+    [[nodiscard]] u64 PrepareSubmission();
+
+    void ExecuteSubmission(vk::CommandBuffer cmdbuf, vk::Semaphore signal_semaphore,
+                           vk::Semaphore wait_semaphore, u64 signal_value);
+
+    void DispatchSubmission(u64 signal_value);
 
     void SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore);
 
