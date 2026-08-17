@@ -174,6 +174,13 @@ history remains in registers; reset passthrough configurations skip redundant ar
 record the exact final history. This is a bounded DSP-thread instruction reduction. Whole-game
 speed and battery effects remain unmeasured until device testing is allowed.
 
+Linear HLE resampling now uses the same stereo-lane strategy. A saturated signed delta and the
+existing 24-bit phase are mapped exactly onto one baseline AdvSIMD `SQDMULH`, replacing two scalar
+64-bit multiplies, their duplicated clamp chains, and their shifts. Final ThinLTO shrinks the whole
+interpolation function from 680 to 636 bytes and contains one two-lane `SQDMULH` per output sample.
+This improves a sustained DSP path when linear interpolation is selected; it is not yet a measured
+whole-game FPS or battery-power claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

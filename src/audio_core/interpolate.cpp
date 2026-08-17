@@ -3,6 +3,10 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <cstring>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include "audio_core/interpolate.h"
 #include "common/assert.h"
 
@@ -12,6 +16,44 @@ namespace AudioCore::AudioInterp {
 // (This is not verified. This was chosen for minimal error.)
 constexpr u64 scale_factor = 1 << 24;
 constexpr u64 scale_mask = scale_factor - 1;
+
+#if defined(__aarch64__)
+namespace {
+
+int16x4_t LoadStereo(const std::array<s16, 2>& sample) {
+    static_assert(sizeof(sample) == sizeof(u32));
+    u32 packed;
+    std::memcpy(&packed, sample.data(), sizeof(packed));
+    return vcreate_s16(packed);
+}
+
+std::array<s16, 2> StoreStereo(int16x4_t sample) {
+    const u32 packed = vget_lane_u32(vreinterpret_u32_s16(sample), 0);
+    std::array<s16, 2> result;
+    std::memcpy(result.data(), &packed, sizeof(packed));
+    return result;
+}
+
+std::array<s16, 2> LinearSample(u64 fraction, const std::array<s16, 2>& x0,
+                                const std::array<s16, 2>& x1) {
+    const int16x4_t x0_vector = LoadStereo(x0);
+    const int16x4_t x1_vector = LoadStereo(x1);
+
+    // Saturate the stereo difference to the DSP's signed 16-bit range. Shifting the Q24
+    // fraction left by seven turns it into Q31, so SQDMULH computes the same truncated
+    // (fraction * delta) >> 24 result for both channels without widening to 64 bits.
+    const int16x4_t delta = vqmovn_s32(vsubl_s16(x1_vector, x0_vector));
+    const int32x2_t delta_wide = vget_low_s32(vmovl_s16(delta));
+    const int32x2_t fraction_q31 = vdup_n_s32(static_cast<s32>(fraction << 7));
+    const int32x2_t interpolated = vqdmulh_s32(delta_wide, fraction_q31);
+    const int32x2_t base = vget_low_s32(vmovl_s16(x0_vector));
+    const int32x2_t result = vadd_s32(base, interpolated);
+
+    return StoreStereo(vmovn_s32(vcombine_s32(result, vdup_n_s32(0))));
+}
+
+} // Anonymous namespace
+#endif
 
 /// Here we step over the input in steps of rate, until we consume all of the input.
 /// Three adjacent samples are passed to fn each step.
@@ -62,6 +104,9 @@ void Linear(State& state, StereoBuffer16& input, float rate, StereoFrame16& outp
     // Note on accuracy: Some values that this produces are +/- 1 from the actual firmware.
     StepOverSamples(state, input, rate, output, outputi,
                     [](u64 fraction, const auto& x0, const auto& x1, const auto& x2) {
+#if defined(__aarch64__)
+                        return LinearSample(fraction, x0, x1);
+#else
                         // This is a saturated subtraction. (Verified by black-box fuzzing.)
                         s64 delta0 = std::clamp<s64>(x1[0] - x0[0], -32768, 32767);
                         s64 delta1 = std::clamp<s64>(x1[1] - x0[1], -32768, 32767);
@@ -70,6 +115,7 @@ void Linear(State& state, StereoBuffer16& input, float rate, StereoFrame16& outp
                             static_cast<s16>(x0[0] + fraction * delta0 / scale_factor),
                             static_cast<s16>(x0[1] + fraction * delta1 / scale_factor),
                         };
+#endif
                     });
 }
 

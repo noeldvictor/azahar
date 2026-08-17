@@ -1089,6 +1089,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   duration, then record DSP-thread CPU time/placement, audio underruns, frametimes, battery power,
   temperature, thermal slope, stability, and output correctness.
 
+## 2026-08-17 AArch64 HLE Linear Interpolation
+
+- The HLE linear resampler runs once per output sample for every active source configured for
+  linear interpolation. Its independent left and right lanes still used duplicated signed
+  subtraction/clamp sequences, scalar 64-bit multiplies, and shifts in the final AArch64 binary.
+  Polyphase interpolation remains a separate TODO and currently falls back to this path.
+- The full relevant manual pages were visually checked rather than inferred from x86 code. Arm
+  Architecture Reference Manual DDI 0487 H.a section C7.2.289 (PDF pages 2663-2664) defines vector
+  `SQDMULH` as a corresponding-lane signed saturating doubling multiply that returns the truncated
+  high half. The AArch64 ASIMD tables list `SQDMULH` with latency/throughput 4/2 on Cortex-X3 issue
+  4.0 page 27, 4/1 on Cortex-A715 issue 5.0 page 29, 4/1 on Cortex-A710 issue 4.0 page 43, and
+  latency 4 with the documented `2,1` throughput notation on Cortex-A510 issue 6.0 page 36. These
+  are the actual X3/A715/A710/A510 classes in Snapdragon 8 Gen 2, and the implementation uses
+  baseline AdvSIMD rather than SVE. The PDFs remain outside Git and are indexed in
+  `docs/hardware/README.md`.
+- The DSP delta is first saturated to signed 16-bit exactly as before. The phase is always in
+  `[0, 2^24 - 1]`; shifting it left seven produces a positive Q31 multiplier no greater than
+  `0x7fffff80`. `SQDMULH(delta, phase << 7)` therefore equals the signed arithmetic form of
+  `(delta * phase) >> 24`, and its saturation case is unreachable for the bounded delta. For a
+  negative product, the old unsigned C++ promotion differs by `2^40` after the shift, which vanishes
+  under the final signed-16 narrowing, so every output bit remains identical. The non-AArch64
+  scalar path is unchanged.
+- Final release-style ThinLTO contains one `SSUBL`, one `SQXTN`, one `SSHLL`, and one two-lane
+  `SQDMULH` for both channels. The old binary emitted two scalar `SMULL`s, two scalar logical
+  shifts, four signed sample loads, and two duplicated four-instruction clamp chains. The complete
+  function shrank from 680 to 636 bytes (44 bytes, or 6.5%), while the deque traversal and sample
+  timing remain unchanged.
+- Focused Catch2 coverage compares output, output index, consumed input, history, and fractional
+  state with an independent scalar DSP reference across six rates, five boundary phases, partial
+  output frames, signed extremes, and both saturated-delta directions.
+- Command-line Git/SSH refreshed `upstream/master` at `3392c56ce` (`core: Fix another msvc compiler
+  bug`); this fork remains zero commits behind and no upstream merge was needed.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m5s, compiling and linking the focused test
+  source, the full ELF64/AArch64 Catch2 executable, and `libcitra-android.so`. The test executable
+  was not run because this host is x64 and current instructions forbid Thor/device use.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1m27s. The 28,965,971-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `74A107FA9EEBE2E39A3C04413BD774AD8C4D8AAA7168EB510EC7D07C38339DB0`.
+- No device, ADB, install, launch, or game was used. This is a verified per-sample DSP instruction
+  reduction, not a whole-game FPS or wattage measurement. A future allowed matched A/B should use a
+  title that selects linear resampling, with identical save, caches, renderer, resolution, driver,
+  layout, performance/fan mode, brightness, and duration, then record DSP-thread time/placement,
+  audio underruns, frametimes, battery power, temperature, thermal slope, and output correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
