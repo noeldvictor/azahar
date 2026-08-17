@@ -85,6 +85,11 @@ This fork has moved away from stock Azahar in visible ways:
   exact compaction, and 16-bit input keeps its required low-byte extraction. This removes 288,000
   logical bytes of copy traffic from a 400x240 YUV420 conversion or 384,000 bytes from YUV422/YUYV;
   the final AArch64 ThinLTO direct route is seven instructions and performs no data copy.
+- Zero-gap unrotated linear Y2R output now combines the tile-row gather with final RGBA8, RGB8,
+  RGB5A1, or RGB565 packing and writes guest memory directly. It bypasses both sides of the
+  intermediate 32-bit strip, removing another eight logical bytes per pixel, or 768,000 bytes for
+  a 400x240 conversion. Final ThinLTO keeps compact AdvSIMD loops with ordinary stores and no
+  `ST3`/`ST4`; rotated, tiled, and gapped CDMA output retains the established paths.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

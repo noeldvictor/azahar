@@ -2614,6 +2614,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   or visual run was used. This is a bounded video/camera memory-traffic and code-size win, not a
   measured whole-game speed or power claim.
 
+## 2026-08-17 Fused Zero-Gap Linear Y2R Output
+
+- The preceding unrotated-linear shortcut removed the identity tile remap, but the common zero-gap
+  route still wrote four-byte `0xRRGGBB00` pixels into a contiguous strip and immediately reread
+  them for final RGBA8, RGB8, RGB5A1, or RGB565 packing. The new route gathers each completed tile
+  row and packs directly into the guest destination. It removes one 32-bit staging store and one
+  32-bit staging load per pixel: eight logical bytes per pixel, or 768,000 bytes for 400x240.
+- This is exact only for `Rotation::None`, `BlockAlignment::Linear`, and `dst.gap == 0`. Every
+  rotated, Block8x8, or gapped-CDMA configuration retains the established arrangement and
+  `SendData()` path. All inputs for a strip have already been consumed before the direct output
+  begins, and the old implementation also committed guest output after each strip, so possible
+  cross-strip source/destination overlap keeps the same ordering. Address advancement and remaining
+  image size use the same `amount * bytes_per_pixel` values as the zero-gap old route.
+- RGBA8 loads each eight-pixel tile row as two Q vectors, ORs the requested alpha into the
+  intermediate words' known-zero byte, and uses two ordinary Q stores. RGB8 pairs two horizontally
+  separated tile rows in registers and applies three compile-time-proved adjacent-input `TBL2`
+  maps to produce 48 packed bytes; an odd final tile uses exact Q plus D table/store operations.
+  RGB5A1 and RGB565 use one D-form byte `LD4` for the only contiguous eight-pixel tile row, preserve
+  the existing high-bit truncation and alpha-bit rules, and finish with an ordinary Q store.
+- This layout follows the checked Thor core tables rather than assuming every structured access is
+  beneficial. Ordinary pair loads/stores are covered on Cortex-X3 page 23, Cortex-A715 page 26,
+  Cortex-A710 page 39, and Cortex-A510 page 32. The `TBL2` and byte `LD4` entries are on X3 page 34,
+  A715 page 37, A710 page 56, and A510 pages 46-47. The D-form `LD4` is retained because the next
+  horizontal tile row is not contiguous in memory; the output side uses no `ST3` or `ST4`.
+- Final production ThinLTO keeps four outlined format helpers at 188/304/208/192 bytes for
+  RGBA8/RGB8/RGB5A1/RGB565. Their repeated bodies are respectively 10 instructions per eight
+  pixels, 11 per sixteen, 15 per eight, and 13 per eight. Including the removed prior 32-byte row
+  writer, the corresponding old repeated bodies were 14 per eight, 20 per sixteen, 31 per sixteen,
+  and 29 per sixteen. The static repeated-instruction reductions are therefore 28.6%, 45.0%, 3.2%,
+  and 10.3%; they are not cycle, whole-game FPS, or wattage measurements. `PerformConversion()`
+  grows from `0x29e0` to `0x2aa8` (200 bytes) to select the fused route.
+- Independent Catch2 coverage checks all four formats; zero, odd, and even tile counts 0/1/2/3/5;
+  heights 0/1/2/7/8; alpha 0/0x80/0xff; one- and eight-pixel transfer units; sixteen channel-edge
+  values; exact address/image-size progression; and 32-byte guards. The production and test Y2R
+  objects compiled, and the complete ELF64/AArch64 Catch2 executable plus `libcitra-android.so`
+  linked with ThinLTO in 1 minute 32 seconds. The test name is present in the test ELF while the
+  hidden test wrapper is absent from the production library. The ARM64 tests were not run because
+  device execution remains excluded.
+- The final `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` recovery build passed
+  with JDK 17 in 2 minutes 53 seconds. The resulting package contains only `arm64-v8a`, is
+  28,969,511 bytes, and has SHA-256
+  `DDE1A7EEF6B6DD2A0C7415E1263C584C9C685A48A36958F9BF6DF7DB0A8468F2`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,497,952,233 logical bytes of native/JNI staging, the test/tools executables, mappings, symbols,
+  Kotlin/R8 output, and local Gradle state from the final build peak. Reported C: free space
+  increased by 2,058,395,648 bytes to 109,470,556,160. The retained `.cxx` cache is 2,786,752,349
+  bytes and `app/build` contains only the 28,969,511-byte APK. No device, ADB, install, launch,
+  game, FPS, battery, wattage, temperature, or visual run was used.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

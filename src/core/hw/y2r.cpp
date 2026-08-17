@@ -347,6 +347,10 @@ inline constexpr std::array<std::array<u8, 16>, 3> RGB8_OUTPUT_SHUFFLES_A64 = {
     MakeRGB8OutputShuffleA64<2>(),
 };
 
+inline constexpr std::array<u8, 8> RGB8_OUTPUT_LAST8_SHUFFLE_A64 = {
+    6, 7, 9, 10, 11, 13, 14, 15,
+};
+
 static_assert([] {
     for (u32 output_byte = 0; output_byte < 48; ++output_byte) {
         const u32 pixel = output_byte / 3;
@@ -354,6 +358,19 @@ static_assert([] {
         const u32 block = output_byte / 16;
         const u8 local_index = RGB8_OUTPUT_SHUFFLES_A64[block][output_byte % 16];
         if (local_index >= 32 || block * 16 + local_index != pixel * 4 + component + 1) {
+            return false;
+        }
+    }
+    return true;
+}());
+
+static_assert([] {
+    for (u32 lane = 0; lane < RGB8_OUTPUT_LAST8_SHUFFLE_A64.size(); ++lane) {
+        const u32 output_byte = 16 + lane;
+        const u32 pixel = output_byte / 3;
+        const u32 component = output_byte % 3;
+        const u32 source_byte = pixel * 4 + component + 1;
+        if (16 + RGB8_OUTPUT_LAST8_SHUFFLE_A64[lane] != source_byte) {
             return false;
         }
     }
@@ -497,6 +514,138 @@ static void SendData(Memory::MemorySystem& memory, const u32* input, ConversionB
         buf.address += buf.transfer_unit + buf.gap;
         buf.image_size -= buf.transfer_unit;
         amount_of_data -= output_unit;
+    }
+}
+
+// Zero-gap linear output does not need an intermediate contiguous RGB32 strip. Gather each final
+// row directly from the completed tiles and combine that gather with output-format packing.
+template <OutputFormat output_format>
+static void EncodeUnrotatedLinearOutput(const ImageTile tiles[], std::size_t num_tiles,
+                                        unsigned int height, u8* output, u8 alpha) {
+    constexpr std::size_t bytes_per_pixel = output_format == OutputFormat::RGBA8  ? 4
+                                            : output_format == OutputFormat::RGB8 ? 3
+                                                                                  : 2;
+
+#if CITRA_ARCH(arm64)
+    if constexpr (output_format == OutputFormat::RGBA8) {
+        const uint32x4_t alpha_words = vdupq_n_u32(alpha);
+        for (unsigned int y = 0; y < height; ++y) {
+            for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+                const u32* const input = tiles[tile].data() + y * 8;
+                vst1q_u8(output, vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input), alpha_words)));
+                vst1q_u8(output + 16,
+                         vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input + 4), alpha_words)));
+                output += 8 * bytes_per_pixel;
+            }
+        }
+    } else if constexpr (output_format == OutputFormat::RGB8) {
+        const uint8x16_t shuffle_0 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[0].data());
+        const uint8x16_t shuffle_1 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[1].data());
+        const uint8x16_t shuffle_2 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[2].data());
+        const uint8x8_t last_8_shuffle = vld1_u8(RGB8_OUTPUT_LAST8_SHUFFLE_A64.data());
+        for (unsigned int y = 0; y < height; ++y) {
+            std::size_t tile = 0;
+            for (; tile + 1 < num_tiles; tile += 2) {
+                const u8* const input_0_ptr =
+                    reinterpret_cast<const u8*>(tiles[tile].data() + y * 8);
+                const u8* const input_2_ptr =
+                    reinterpret_cast<const u8*>(tiles[tile + 1].data() + y * 8);
+                const uint8x16_t input_0 = vld1q_u8(input_0_ptr);
+                const uint8x16_t input_1 = vld1q_u8(input_0_ptr + 16);
+                const uint8x16_t input_2 = vld1q_u8(input_2_ptr);
+                const uint8x16_t input_3 = vld1q_u8(input_2_ptr + 16);
+                const uint8x16x2_t table_0 = {input_0, input_1};
+                const uint8x16x2_t table_1 = {input_1, input_2};
+                const uint8x16x2_t table_2 = {input_2, input_3};
+                vst1q_u8(output, vqtbl2q_u8(table_0, shuffle_0));
+                vst1q_u8(output + 16, vqtbl2q_u8(table_1, shuffle_1));
+                vst1q_u8(output + 32, vqtbl2q_u8(table_2, shuffle_2));
+                output += 16 * bytes_per_pixel;
+            }
+            if (tile < num_tiles) {
+                const u8* const input = reinterpret_cast<const u8*>(tiles[tile].data() + y * 8);
+                const uint8x16_t input_0 = vld1q_u8(input);
+                const uint8x16_t input_1 = vld1q_u8(input + 16);
+                const uint8x16x2_t table = {input_0, input_1};
+                vst1q_u8(output, vqtbl2q_u8(table, shuffle_0));
+                vst1_u8(output + 16, vqtbl1_u8(input_1, last_8_shuffle));
+                output += 8 * bytes_per_pixel;
+            }
+        }
+    } else {
+        const uint8x8_t red_mask = vdup_n_u8(0xF8);
+        const uint8x8_t green_mask = vdup_n_u8(output_format == OutputFormat::RGB565 ? 0xFC : 0xF8);
+        const uint8x8_t blue_alpha_mask = vdup_n_u8(0x3E);
+        const uint8x8_t alpha_bytes = vdup_n_u8(alpha);
+        for (unsigned int y = 0; y < height; ++y) {
+            for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+                const u8* const input = reinterpret_cast<const u8*>(tiles[tile].data() + y * 8);
+                const uint8x8x4_t components = vld4_u8(input);
+                const uint8x8_t red = vand_u8(components.val[3], red_mask);
+                const uint8x8_t green = vand_u8(components.val[2], green_mask);
+                uint8x8_t blue_alpha;
+                if constexpr (output_format == OutputFormat::RGB565) {
+                    blue_alpha = vshr_n_u8(components.val[1], 3);
+                } else {
+                    blue_alpha = vand_u8(vshr_n_u8(components.val[1], 2), blue_alpha_mask);
+                    blue_alpha = vsra_n_u8(blue_alpha, alpha_bytes, 7);
+                }
+                const uint16x8_t packed = vorrq_u16(
+                    vorrq_u16(vshll_n_u8(red, 8), vshll_n_u8(green, 3)), vmovl_u8(blue_alpha));
+                vst1q_u8(output, vreinterpretq_u8_u16(packed));
+                output += 8 * bytes_per_pixel;
+            }
+        }
+    }
+    return;
+#endif
+
+    for (unsigned int y = 0; y < height; ++y) {
+        for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+            EncodeRGBToOutputScalar<output_format>(tiles[tile].data() + y * 8, output, 8, alpha);
+            output += 8 * bytes_per_pixel;
+        }
+    }
+}
+
+template <OutputFormat output_format>
+CITRA_NO_INLINE static void SendUnrotatedLinearData(u8* output, const ImageTile tiles[],
+                                                    std::size_t num_tiles, unsigned int height,
+                                                    ConversionBuffer& buf, u8 alpha) {
+    constexpr std::size_t bytes_per_pixel = output_format == OutputFormat::RGBA8  ? 4
+                                            : output_format == OutputFormat::RGB8 ? 3
+                                                                                  : 2;
+    const std::size_t amount_of_data = num_tiles * 8 * height;
+    const std::size_t output_unit = buf.transfer_unit / bytes_per_pixel;
+    ASSERT(output_unit > 0 && buf.transfer_unit % bytes_per_pixel == 0);
+    ASSERT(amount_of_data % output_unit == 0);
+
+    EncodeUnrotatedLinearOutput<output_format>(tiles, num_tiles, height, output, alpha);
+    const u32 transferred = static_cast<u32>(amount_of_data * bytes_per_pixel);
+    buf.address += transferred;
+    buf.image_size -= transferred;
+}
+
+void Testing::SendUnrotatedLinearData(OutputFormat output_format, u8* output,
+                                      const ImageTile tiles[], std::size_t num_tiles,
+                                      unsigned int height, ConversionBuffer& buf, u8 alpha) {
+    switch (output_format) {
+    case OutputFormat::RGBA8:
+        ::HW::Y2R::SendUnrotatedLinearData<OutputFormat::RGBA8>(output, tiles, num_tiles, height,
+                                                                buf, alpha);
+        break;
+    case OutputFormat::RGB8:
+        ::HW::Y2R::SendUnrotatedLinearData<OutputFormat::RGB8>(output, tiles, num_tiles, height,
+                                                               buf, alpha);
+        break;
+    case OutputFormat::RGB5A1:
+        ::HW::Y2R::SendUnrotatedLinearData<OutputFormat::RGB5A1>(output, tiles, num_tiles, height,
+                                                                 buf, alpha);
+        break;
+    case OutputFormat::RGB565:
+        ::HW::Y2R::SendUnrotatedLinearData<OutputFormat::RGB565>(output, tiles, num_tiles, height,
+                                                                 buf, alpha);
+        break;
     }
 }
 
@@ -730,6 +879,37 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
         default:
             UNREACHABLE_MSG("Unknown Y2R input format {}", cvt.input_format);
             return;
+        }
+
+        if (cvt.rotation == Rotation::None && cvt.block_alignment == BlockAlignment::Linear &&
+            cvt.dst.gap == 0) {
+            u8* const direct_output = memory.GetPointer(cvt.dst.address);
+            switch (cvt.output_format) {
+            case OutputFormat::RGBA8:
+                SendUnrotatedLinearData<OutputFormat::RGBA8>(direct_output, tiles.get(), num_tiles,
+                                                             row_height, cvt.dst,
+                                                             static_cast<u8>(cvt.alpha));
+                break;
+            case OutputFormat::RGB8:
+                SendUnrotatedLinearData<OutputFormat::RGB8>(direct_output, tiles.get(), num_tiles,
+                                                            row_height, cvt.dst,
+                                                            static_cast<u8>(cvt.alpha));
+                break;
+            case OutputFormat::RGB5A1:
+                SendUnrotatedLinearData<OutputFormat::RGB5A1>(direct_output, tiles.get(), num_tiles,
+                                                              row_height, cvt.dst,
+                                                              static_cast<u8>(cvt.alpha));
+                break;
+            case OutputFormat::RGB565:
+                SendUnrotatedLinearData<OutputFormat::RGB565>(direct_output, tiles.get(), num_tiles,
+                                                              row_height, cvt.dst,
+                                                              static_cast<u8>(cvt.alpha));
+                break;
+            default:
+                UNREACHABLE_MSG("Unknown Y2R output format {}", cvt.output_format);
+                return;
+            }
+            continue;
         }
 
         u32* output_buffer = reinterpret_cast<u32*>(data_buffer.get());

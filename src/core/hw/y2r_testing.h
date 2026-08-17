@@ -38,4 +38,11 @@ const u8*
 PrepareInputData8(const u8* input, u8* compact_output, Service::Y2R::ConversionBuffer& buffer,
                   std::size_t amount_of_data);
 
+#if defined(__GNUC__)
+__attribute__((visibility("hidden")))
+#endif
+void SendUnrotatedLinearData(Service::Y2R::OutputFormat output_format, u8* output,
+                             const ImageTile tiles[], std::size_t num_tiles, unsigned int height,
+                             Service::Y2R::ConversionBuffer& buffer, u8 alpha);
+
 } // namespace HW::Y2R::Testing

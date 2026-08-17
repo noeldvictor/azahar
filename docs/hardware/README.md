@@ -58,6 +58,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   only the visible address/remaining-size state. Keep the staging buffer for gapped transfers and
   for 16-bit low-byte extraction. This removes a complete read-plus-write pass rather than spending
   NEON instructions on a copy that has no semantic work.
+- When unrotated linear Y2R also has zero output gap, fuse the tile-row gather with final packing
+  instead of materializing a contiguous RGB32 strip. Pair adjacent tile rows for RGB8 so three
+  `TBL2` operations produce 48 packed bytes; retain a separate exact Q/D-store tail for an odd tile.
+  RGBA8 can load, OR alpha, and store each eight-pixel row directly. RGB5A1/RGB565 legitimately use
+  one D-form byte `LD4` because the next horizontal tile row is 256 bytes away rather than adjacent,
+  then pack into an ordinary Q store. The relevant ordinary pair tables are X3 page 23, A715 page
+  26, A710 page 39, and A510 page 32; `TBL2` and byte `LD4` are covered on X3 page 34, A715 page 37,
+  A710 page 56, and A510 pages 46-47. This removes eight logical staging bytes per pixel while
+  preserving the gapped, rotated, and tiled fallbacks.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

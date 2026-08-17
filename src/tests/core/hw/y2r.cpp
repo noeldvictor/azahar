@@ -307,3 +307,72 @@ TEST_CASE("Y2R gapped 8-bit input retains exact CDMA compaction", "[core][hw][y2
         }
     }
 }
+
+TEST_CASE("Y2R zero-gap linear output packs tile rows directly", "[core][hw][y2r]") {
+    constexpr std::size_t GuardBytes = 32;
+    constexpr std::array formats{
+        OutputFormat::RGBA8,
+        OutputFormat::RGB8,
+        OutputFormat::RGB5A1,
+        OutputFormat::RGB565,
+    };
+    constexpr std::array<u8, 16> channel_edges{
+        0, 1, 7, 8, 31, 32, 63, 64, 127, 128, 247, 248, 249, 252, 254, 255,
+    };
+
+    for (const std::size_t num_tiles :
+         {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{5}}) {
+        std::vector<ImageTile> tiles(num_tiles);
+        for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+            for (std::size_t pixel = 0; pixel < tiles[tile].size(); ++pixel) {
+                const u32 red = channel_edges[(tile * 3 + pixel) % channel_edges.size()];
+                const u32 green = channel_edges[(tile * 7 + pixel * 5 + 3) % channel_edges.size()];
+                const u32 blue = channel_edges[(tile * 11 + pixel * 13 + 7) % channel_edges.size()];
+                tiles[tile][pixel] = red << 24 | green << 16 | blue << 8;
+            }
+        }
+
+        for (const unsigned int height : {0u, 1u, 2u, 7u, 8u}) {
+            const std::size_t pixel_count = num_tiles * 8 * height;
+            std::vector<u32> linear(pixel_count);
+            for (unsigned int y = 0; y < height; ++y) {
+                for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+                    for (unsigned int x = 0; x < 8; ++x) {
+                        linear[(y * num_tiles + tile) * 8 + x] = tiles[tile][y * 8 + x];
+                    }
+                }
+            }
+
+            for (const auto format : formats) {
+                const std::size_t bytes_per_pixel = OutputBytesPerPixel(format);
+                const std::size_t output_bytes = pixel_count * bytes_per_pixel;
+                for (const u8 alpha : {u8{0}, u8{0x80}, u8{0xFF}}) {
+                    std::vector<u8> expected(output_bytes + 2 * GuardBytes, 0xCD);
+                    EncodeOutputReference(format, linear.data(), expected.data() + GuardBytes,
+                                          pixel_count, alpha);
+
+                    for (const std::size_t transfer_pixels : {std::size_t{1}, std::size_t{8}}) {
+                        std::vector<u8> actual(output_bytes + 2 * GuardBytes, 0xCD);
+                        ConversionBuffer buffer{
+                            0x12340000,
+                            static_cast<u32>(output_bytes + 0x100),
+                            static_cast<u16>(transfer_pixels * bytes_per_pixel),
+                            0,
+                        };
+                        HW::Y2R::Testing::SendUnrotatedLinearData(
+                            format, actual.data() + GuardBytes, tiles.data(), num_tiles, height,
+                            buffer, alpha);
+
+                        INFO("format=" << static_cast<unsigned int>(format)
+                                       << " num_tiles=" << num_tiles << " height=" << height
+                                       << " alpha=" << static_cast<unsigned int>(alpha)
+                                       << " transfer_pixels=" << transfer_pixels);
+                        CHECK(actual == expected);
+                        CHECK(buffer.address == 0x12340000 + output_bytes);
+                        CHECK(buffer.image_size == 0x100);
+                    }
+                }
+            }
+        }
+    }
+}
