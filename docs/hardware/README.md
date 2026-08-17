@@ -28,6 +28,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   ZIP/narrow operations across a two-row band. Do not collapse the mapping into a four-table `TBL`:
   Cortex-A510 documents that form at latency 16 and throughput `1/9`. Preserve true vector `FDIV`
   and `FCVTZU`; reciprocal approximations or changed rounding are not equivalent depth math.
+- For converted linear RGB8, deinterleave each 48-byte BGR block with one Q-form `LD3` and assemble
+  opaque RGBA with ZIPs. In the reverse direction, split each 48-byte BGR output into three exact
+  adjacent-input `TBL2` maps rather than exposing all four RGBA input vectors to `TBL4`. X3,
+  A715, and A710 list `TBL2` at latency/throughput 2/2 versus 4/`2/3` for `TBL4`; A510 lists
+  8/`2/5` versus 16/`1/9`. The relevant Q-form `LD3` entries are on X3 page 34, A715 page 37,
+  A710 page 56, and A510 page 46.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

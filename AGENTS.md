@@ -75,6 +75,12 @@
   component order, bottom-up rows, padded stride, both swizzle directions, the scalar non-AArch64
   path, and the compile-time 24-byte shuffle proof. Final ThinLTO must be checked because
   Cortex-A510 documents these D-form byte stores at only `1/25` (`ST4`) and `1/17` (`ST3`).
+- Converted linear RGB8 copies process sixteen pixels per AArch64 vector body. Decode must preserve
+  packed BGR to RGBA order and opaque alpha while using one exact 48-byte `LD3` plus register ZIPs,
+  not four-register `TBL`. Encode must preserve RGBA to packed BGR order with three overlapping
+  adjacent-input `TBL2` operations whose compile-time indices stay below 32; do not widen them back
+  to `TBL3`/`TBL4`. Retain exact buffer-bound alignment, the scalar tail, the non-AArch64 path, the
+  37-pixel vector/tail/canary test, and final ThinLTO inspection.
 - Converted D24 Morton tiles must process sixteen depths per AArch64 two-row band while preserving
   little-endian 24-bit assembly, bottom-up rows, padded strides, exact `UCVTF`/`FDIV` decode, exact
   `FMUL`/`FCVTZU` encode truncation, and the scalar non-AArch64 path. Keep D-form `LD3`, one-table

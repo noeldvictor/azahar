@@ -1873,6 +1873,53 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   without a controlled Thor A/B. No device, ADB, install, launch, game run, or battery measurement
   was used for this slice.
 
+## 2026-08-17 AArch64 Linear RGB8 Table-Width Removal
+
+- Converted linear RGB8 upload/download still used four-register table lookup for every vector
+  conversion. Each sixteen-pixel decode loaded 48 packed BGR bytes, appended an opaque vector, and
+  issued four `TBL4` operations to write 64 RGBA bytes. Encode loaded 64 RGBA bytes and issued
+  three `TBL4` operations to pack 48 BGR bytes. This runs in the rasterizer-cache linear conversion
+  tables; non-converted copies remain `memcpy` and Morton surfaces keep their separate tile paths.
+- The complete relevant manual tables were checked in Cortex-X3 issue 4.0 pages 31-35,
+  Cortex-A715 issue 5.0 pages 34-38, Cortex-A710 issue 4.0 pages 52-56, and Cortex-A510 issue 6.0
+  pages 43-49. X3/A715/A710 list `TBL4` at latency 4 and throughput `2/3`, versus latency 2 and
+  throughput 2 for `TBL2`. A510 lists `TBL4` at latency 16 and throughput `1/9`, versus latency 8
+  and throughput `2/5` for `TBL2`; its Q-form byte `LD3` is latency 5, throughput `1/3`, and ZIPs
+  are latency 3. The PDFs remain external and uncommitted.
+- Decode now performs one exact Q-form `LD3` over the complete 48-byte source block. It reverses
+  BGR component order, inserts `0xFF` alpha, and emits sixteen RGBA pixels with the existing
+  ZIP/store helper. This removes all four `TBL4` operations, four 16-byte shuffle-mask
+  loads, and 64 bytes of mask data. It does not over-read the source or approximate any color math.
+- Encode proves that each 16-byte packed output block touches only two adjacent Q input vectors.
+  Three overlapping two-vector tables therefore retain the same four ordinary Q loads, three
+  ordinary Q stores, and twelve-instruction loop while changing all three lookups from `TBL4` to
+  `TBL2`. A compile-time proof checks every one of the 48 output indices against exact
+  `pixel * 4 + 2 - component` RGBA-to-BGR selection and guarantees every local index is below 32.
+- From the manuals' steady issue rates, the encode lookup-only budget falls from 4.5 to 1.5 cycles
+  per sixteen pixels on X3/A715/A710 and from 27 to 7.5 cycles on A510. Decode removes a four-`TBL4`
+  lookup budget of 6 cycles on the performance cores or 36 cycles on A510, replacing it with
+  structured load, simple ZIP, and store work on their corresponding pipelines. These are
+  instruction-class issue bounds, not measured loop latency, FPS, or watts.
+- Isolated Android-clang `-O3` codegen confirms decode contains `LD3`, ZIPs, and no `TBL`, while
+  encode contains three `TBL2` instructions and no `TBL3`/`TBL4` or extra loop instructions. The
+  two wrappers' `.text` plus shuffle data fall from 336 to 268 bytes; decode code shrinks from 120
+  to 116 bytes, encode stays 104 bytes, and shuffle data falls from 112 to 48 bytes.
+- The permanent 37-pixel Catch2 case checks both directions, exact BGR/RGBA component order, opaque
+  alpha, two vector iterations, a five-pixel scalar tail, and source/destination canaries. The
+  compile-time proof and full ELF64/AArch64 test executable linked successfully with production
+  ThinLTO in 1 minute 35 seconds; the final rebuild after strengthening the local-index proof passed
+  in 1 minute 10 seconds. Final linked `LinearCopy<..., RGB8, true>` bodies retain the exact intended
+  `LD3`/ZIP and three-`TBL2` loops. The ARM64 executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` then passed in 1 minute 27 seconds and produced an
+  ARM64-only 28,966,375-byte APK with SHA-256
+  `4490B56AB6749AB2D5B81B87246B56E8F3723571F181ED0CE573E023DEE294E0`. After verification,
+  2,463,355,063 logical bytes of disposable intermediates, test binaries, and shuffle-codegen
+  scratch were removed. C: free space increased by 2,018,582,528 bytes; the APK and active ARM64
+  CMake cache remain in the repository workspace.
+- No device, ADB, install, launch, game run, FPS test, or battery measurement was used. A future
+  allowed matched Thor A/B should record RGB8 linear conversion frequency and renderer-thread time
+  alongside frametimes, battery power, temperature, thermal slope, and visual correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

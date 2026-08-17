@@ -81,6 +81,8 @@ This fork has moved away from stock Azahar in visible ways:
 - Converted RGB5A1, RGB565, and RGBA4 texture copies now process sixteen pixels per AArch64 loop,
   including full Morton tiles and linear surfaces, instead of converting one packed pixel at a
   time. Decode uses ordinary RGBA stores rather than the Cortex-A510-hostile `ST4` form.
+- Converted linear RGB8 copies remove every four-register table lookup: decode uses one `LD3` plus
+  register ZIPs per sixteen pixels, while encode narrows each lookup to two adjacent input vectors.
 - IA8, RG8, I8, A8, and IA4 texture expansion now uses `ZIP` plus ordinary paired Q stores rather
   than D-form `ST4`. Native packed RGB8/D24 Morton output similarly replaces D-form `ST3` with
   exact two-table shuffles and ordinary stores, avoiding the A510's slow structured-store paths.
@@ -197,6 +199,14 @@ in the Cortex-A510 guide. The reverse path uses D-form `LD4` to deinterleave RGB
 to restore the two Morton rows. Exhaustive coverage checks every possible packed 16-bit value for
 all three formats, and odd-length linear tests protect the scalar tail and buffer canaries. This is
 a verified format-conversion CPU-work reduction, not yet a whole-game FPS or wattage result.
+
+Converted linear RGB8 traffic also uses a Thor-specific AdvSIMD shape. Decode deinterleaves the
+complete 48-byte BGR block with one Q-form `LD3`, then emits sixteen RGBA pixels with register ZIPs
+and opaque alpha instead of four `TBL4` operations. Encode keeps its four ordinary Q loads and
+three ordinary Q stores, but proves that each output block touches only two adjacent inputs and
+uses three `TBL2` operations. The encode loop therefore retains its instruction count while
+removing the most expensive table width on Cortex-A510. The permanent 37-pixel case covers two
+vector iterations, the scalar tail, both directions, component order, opaque alpha, and canaries.
 
 The remaining D-form structured stores in the AArch64 Morton codec are also removed. IA8, RG8,
 I8, A8, and IA4 expansion combines two rows at a time with `ZIP1`/`ZIP2` and paired Q stores.
