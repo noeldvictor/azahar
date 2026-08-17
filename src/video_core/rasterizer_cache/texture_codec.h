@@ -353,6 +353,40 @@ inline uint8x16_t RowsToMorton24A64(uint8x8_t first, uint8x8_t second) {
     return vqtbl1q_u8(rows, indices);
 }
 
+// Cortex-A510 executes a D-form byte ST3 only once every 17 cycles. Two TBL2 permutations plus
+// ordinary Q/D stores retain the exact packed 24-bit byte stream while avoiding that slow
+// store. TBL2 and ordinary stores are also competitive with ST3 on the X3, A715, and A710.
+inline constexpr std::array<std::array<u8, 16>, 2> RGB8_STORE_SHUFFLES_A64 = {{
+    {0, 8, 16, 1, 9, 17, 2, 10, 18, 3, 11, 19, 4, 12, 20, 5},
+    {13, 21, 6, 14, 22, 7, 15, 23, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+}};
+
+static_assert([] {
+    for (u32 output = 0; output < 24; ++output) {
+        const u32 pixel = output / 3;
+        const u32 component = output % 3;
+        const u8 expected_index = static_cast<u8>(component * 8 + pixel);
+        if (RGB8_STORE_SHUFFLES_A64[output / 16][output % 16] != expected_index) {
+            return false;
+        }
+    }
+    return true;
+}());
+
+inline void StoreRGB8RowA64(u8* dest, uint8x8_t component_0, uint8x8_t component_1,
+                            uint8x8_t component_2) {
+    const uint8x16x2_t table = {
+        vcombine_u8(component_0, component_1),
+        vcombine_u8(component_2, vdup_n_u8(0)),
+    };
+    const uint8x16_t first =
+        vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[0].data()));
+    const uint8x16_t second =
+        vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[1].data()));
+    vst1q_u8(dest, first);
+    vst1_u8(dest + 16, vget_low_u8(second));
+}
+
 // Avoid ST4 here. It is a complex, throughput-limited store on the Cortex-X3/A710 and is
 // especially expensive on the Cortex-A510 efficiency cores in Snapdragon 8 Gen 2. ZIP keeps the
 // interleave on the vector ALUs and lets the store pipelines consume ordinary contiguous vectors.
@@ -545,17 +579,10 @@ inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
                 StoreRGBA8RowsA64(first_row, second_row, component_2, component_1, component_0,
                                   opaque);
             } else {
-                uint8x8x3_t first;
-                first.val[0] = vget_low_u8(component_0);
-                first.val[1] = vget_low_u8(component_1);
-                first.val[2] = vget_low_u8(component_2);
-                vst3_u8(first_row, first);
-
-                uint8x8x3_t second;
-                second.val[0] = vget_high_u8(component_0);
-                second.val[1] = vget_high_u8(component_1);
-                second.val[2] = vget_high_u8(component_2);
-                vst3_u8(second_row, second);
+                StoreRGB8RowA64(first_row, vget_low_u8(component_0),
+                                vget_low_u8(component_1), vget_low_u8(component_2));
+                StoreRGB8RowA64(second_row, vget_high_u8(component_0),
+                                vget_high_u8(component_1), vget_high_u8(component_2));
             }
         } else {
             uint8x16_t component_0;
@@ -575,24 +602,18 @@ inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
                 component_2 = RowsToMorton24A64(first.val[2], second.val[2]);
             }
 
-            uint8x8x3_t left;
-            left.val[0] = vget_low_u8(component_0);
-            left.val[1] = vget_low_u8(component_1);
-            left.val[2] = vget_low_u8(component_2);
-            vst3_u8(tile_buffer + tile_offset, left);
-
-            uint8x8x3_t right;
-            right.val[0] = vget_high_u8(component_0);
-            right.val[1] = vget_high_u8(component_1);
-            right.val[2] = vget_high_u8(component_2);
-            vst3_u8(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel, right);
+            StoreRGB8RowA64(tile_buffer + tile_offset, vget_low_u8(component_0),
+                            vget_low_u8(component_1), vget_low_u8(component_2));
+            StoreRGB8RowA64(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel,
+                            vget_high_u8(component_0), vget_high_u8(component_1),
+                            vget_high_u8(component_2));
         }
     }
 }
 
 template <PixelFormat format>
-inline void StoreExpandedTextureRowA64(u8* dest, uint8x8_t low_component,
-                                       uint8x8_t high_component) {
+inline uint8x8x4_t ExpandTexturePixelsA64(uint8x8_t low_component,
+                                          uint8x8_t high_component) {
     const uint8x8_t zero = vdup_n_u8(0);
     const uint8x8_t opaque = vdup_n_u8(0xFF);
     uint8x8x4_t output;
@@ -627,7 +648,7 @@ inline void StoreExpandedTextureRowA64(u8* dest, uint8x8_t low_component,
         output.val[2] = intensity;
         output.val[3] = alpha;
     }
-    vst4_u8(dest, output);
+    return output;
 }
 
 template <PixelFormat format>
@@ -642,8 +663,14 @@ inline void MortonCopyTile8To32A64(u32 stride, const u8* tile_buffer, u8* linear
         const uint16x4x2_t rows = vuzp_u16(left, right);
         u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
         u8* const second_row = first_row - stride * sizeof(u32);
-        StoreExpandedTextureRowA64<format>(first_row, vreinterpret_u8_u16(rows.val[0]), {});
-        StoreExpandedTextureRowA64<format>(second_row, vreinterpret_u8_u16(rows.val[1]), {});
+        const uint8x8x4_t first =
+            ExpandTexturePixelsA64<format>(vreinterpret_u8_u16(rows.val[0]), {});
+        const uint8x8x4_t second =
+            ExpandTexturePixelsA64<format>(vreinterpret_u8_u16(rows.val[1]), {});
+        StoreRGBA8RowsA64(first_row, second_row, vcombine_u8(first.val[0], second.val[0]),
+                          vcombine_u8(first.val[1], second.val[1]),
+                          vcombine_u8(first.val[2], second.val[2]),
+                          vcombine_u8(first.val[3], second.val[3]));
     }
 }
 
@@ -661,10 +688,15 @@ inline void MortonCopyTile16To32A64(u32 stride, const u8* tile_buffer, u8* linea
         const uint8x8x2_t second_components = vuzp_u8(vget_low_u8(second), vget_high_u8(second));
         u8* const first_row = linear_buffer + (7 - y) * stride * sizeof(u32);
         u8* const second_row = first_row - stride * sizeof(u32);
-        StoreExpandedTextureRowA64<format>(first_row, first_components.val[0],
-                                           first_components.val[1]);
-        StoreExpandedTextureRowA64<format>(second_row, second_components.val[0],
-                                           second_components.val[1]);
+        const uint8x8x4_t first_pixels =
+            ExpandTexturePixelsA64<format>(first_components.val[0], first_components.val[1]);
+        const uint8x8x4_t second_pixels =
+            ExpandTexturePixelsA64<format>(second_components.val[0], second_components.val[1]);
+        StoreRGBA8RowsA64(first_row, second_row,
+                          vcombine_u8(first_pixels.val[0], second_pixels.val[0]),
+                          vcombine_u8(first_pixels.val[1], second_pixels.val[1]),
+                          vcombine_u8(first_pixels.val[2], second_pixels.val[2]),
+                          vcombine_u8(first_pixels.val[3], second_pixels.val[3]));
     }
 }
 

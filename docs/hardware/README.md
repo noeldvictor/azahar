@@ -15,13 +15,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 | `arm_cortex_x3_software_optimization_guide.pdf` | Cortex-X3 | 1.12 MiB | `3EC100F2BBCD4DE004E1730553A3276BB27ECA4B320471B177BBDB843B8761D9` | Prime-core pipelines; ordinary load tables on pages 18-19 and AdvSIMD shift, narrow, permute, structured-load, and structured-store tables on pages 27 and 31-36 |
 | `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 | 1.16 MiB | `D6D7A49F34528B79E1F8C8E0B02D59D3DA6011D719D3271D310A4D83EC8F6FA2` | Newer performance-core pair; ordinary load tables on pages 20-21 and corresponding AdvSIMD operation and memory tables on pages 29-30 and 34-39 |
 | `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 | 1.39 MiB | `096B9C2924BBFA4C5045D2C2F1C711D6E544C28F2F04ADAAD4B66B2E8C48CD6A` | Older performance-core pair; ordinary load tables on pages 28-29 and corresponding AdvSIMD operation and memory tables on pages 44 and 52-60 |
-| `arm_cortex_a510_software_optimization_guide.pdf` | Cortex-A510 | 1.22 MiB | `E80E25EFFBEE27FB95740420469846FA0B3211C5716757A464E5C32E63281D44` | Efficiency cores and shared vector resources; ordinary load tables on pages 23-24 and corresponding AdvSIMD operation and memory tables on pages 37 and 43-49, including the severe Q-form byte/halfword `ST4` throughput limit |
+| `arm_cortex_a510_software_optimization_guide.pdf` | Cortex-A510 | 1.22 MiB | `E80E25EFFBEE27FB95740420469846FA0B3211C5716757A464E5C32E63281D44` | Efficiency cores and shared vector resources; ordinary load tables on pages 23-24 and corresponding AdvSIMD operation and memory tables on pages 37 and 43-49, including D-form byte/halfword `ST3` at `1/17`, D-form `ST4` at `1/25`, and Q-form `ST4` at `1/50` throughput |
 
 ## Guidance already applied
 
 - Keep compatible render work inside render passes/GMEM and avoid unnecessary resolves or mid-pass dependencies.
 - Use Snapdragon Profiler to verify concurrent binning; do not infer it from source structure alone.
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
+- Prefer vector permutation plus ordinary contiguous stores over byte/halfword `ST3` or `ST4`
+  when the exact layout permits it; the A510 structured-store path is exceptionally slow.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 

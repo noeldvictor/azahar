@@ -1296,6 +1296,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   mode, brightness, and duration constant, then record texture-upload CPU time, frametimes, battery
   power, temperature, thermal slope, visual correctness, and stability.
 
+## 2026-08-17 AArch64 Morton Structured-Store Removal
+
+- A final audit of the AArch64 texture codec found two x86-shaped leftovers: native RGB8/D24
+  copies emitted D-form byte `ST3`, while IA8, RG8, I8, A8, and IA4 expansion emitted D-form byte
+  `ST4`. These instructions are concise in source but are a poor match for Thor's efficiency
+  cluster, so this slice targets them without changing formats, guest-visible math, or the scalar
+  fallback.
+- The decision comes from the checked Arm manuals, not a generic NEON assumption. The Cortex-X3
+  tables on PDF pages 32 and 35-36 list D-form byte/halfword `ST3` at `1/2`, `ST4` at `1/3`,
+  ordinary one-register `ST1` at `2/cycle`, and `ZIP` at `4/cycle`. The A715 tables on pages 35 and
+  38-39 list D-form `ST3`/`ST4` at `1/cycle`, ordinary `ST1` at `2/cycle`, and `ZIP` at `2/cycle`.
+  The A710 tables on pages 53 and 59-60 list `ST3` at `1/2`, `ST4` at `1/3`, ordinary `ST1` at
+  `2/cycle`, and `ZIP` at `2/cycle`. Most importantly, the A510 tables on pages 44 and 48-49 list
+  D-form byte/halfword `ST3` at only `1/17`, `ST4` at only `1/25`, and ordinary one-register `ST1`
+  at `1/cycle`. The external PDFs remain uncommitted and are indexed in
+  `docs/hardware/README.md`.
+- IA8/RG8/I8/A8/IA4 expansion now preserves the existing per-row component generation, combines
+  each two-row band, and reuses `StoreRGBA8RowsA64()`. Final code performs the exact interleave
+  with `ZIP1`/`ZIP2` and two paired Q stores per band. Native RGB8/D24 retains D-form `LD3` for
+  deinterleaving, then uses two exact two-register `TBL` permutations and ordinary Q/D stores for
+  each packed 24-byte row. A compile-time proof checks all 24 shuffle indices against
+  `component * 8 + pixel`.
+- Existing Catch2 cases cover native RGB8 and D24 in both swizzle directions and expanded IA8,
+  RG8, I8, A8, and IA4 decoding, including full tiles, bottom-up row placement, and padded linear
+  strides. The final ELF64/AArch64 test executable compiled and linked. It was not run because the
+  host is x64 and this work deliberately did not use the Thor.
+- Final ThinLTO inspection confirms that all edited symbols contain no `ST3` or `ST4` stores.
+  Expanded-format bodies contain `ZIP1`/`ZIP2` and paired Q stores. Packed RGB8/D24 bodies contain
+  the expected `LD3`, table permutations, and ordinary Q/D stores, with shuffle constants hoisted
+  outside the full-tile loop. IA8, RG8, I8, A8, and IA4 symbols shrink from 480, 480, 440, 440, and
+  504 bytes to 328, 324, 320, 308, and 344 bytes: reductions of 31.7%, 32.5%, 27.3%, 30.0%, and
+  31.7%. RGB8 decode/encode grows from 372/844 to 444/1,028 bytes, and D24 grows from 376/848 to
+  448/1,032 bytes, trading about 19-22% more code for removal of the A510's pathological stores.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 14 seconds after the final
+  compile-time proof was added. The resulting 28,964,139-byte APK contains only `arm64-v8a`
+  libraries and has SHA-256
+  `3707EC72ED8EF52A30B9C39E307B180EA2EAB0B158F1608BB6783476409A9BC7`.
+- After verification, only exact generated paths under `src/android/app` and the repo-local
+  temporary manual/codegen extracts were removed. The final APK and active ARM64 native cache were
+  retained; free C: space increased by 2,060,705,792 bytes (about 1.92 GiB). No source, external
+  manual, save, or unrelated file was touched.
+- No Thor, ADB, install, launch, game, FPS run, or battery measurement was used. This is a verified
+  removal of severe structured-store bottlenecks when these texture-copy paths execute, not a
+  whole-game speed or wattage result. A future allowed matched A/B must hold scene, save, caches,
+  renderer, resolution, driver, layout, performance/fan mode, brightness, and duration constant,
+  then record texture-upload CPU time, frametimes, battery power, temperature, thermal slope,
+  visual correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
