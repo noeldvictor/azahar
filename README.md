@@ -77,6 +77,8 @@ This fork has moved away from stock Azahar in visible ways:
   the expensive unchanged-data reduction and loop bookkeeping across two vectors.
 - Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
   an empty dispatch and worker wake after the old never-reset command counter became stale.
+- Routine Vulkan timeline-counter polling runs once per four submissions; explicit waits and
+  resource-pool pressure still refresh immediately, removing up to 75% of scheduled driver polls.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
@@ -157,6 +159,13 @@ descriptor dispatch callback, notify and wake the Vulkan worker, and traverse qu
 reserve locks without recording GPU work. `Empty()` now reads the authoritative linked-list head,
 which is set only after successful placement and cleared only after all commands execute. Actual
 command submission, condition-variable signaling, and scheduler lock ordering are unchanged.
+
+Timeline-semaphore completion polling is also rate-limited to every fourth routine submission,
+matching the command-buffer pool depth. The cached tick can only understate completed GPU work;
+resource-pool exhaustion and explicit waits still query immediately. This changes scheduled
+per-submit timeline-counter driver calls from four to one, leaving only three intermediate submits
+between routine queries. Garbage collection may be delayed conservatively, never advanced ahead of
+confirmed GPU completion.
 
 ## Thor Screenshot
 

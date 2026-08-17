@@ -903,6 +903,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Instrument range-call count and size plus changed/unchanged block rates, then record frametimes,
   process CPU time, battery power, temperature, thermal slope, stability, and visual correctness.
 
+## 2026-08-17 Vulkan Timeline-Poll Cadence
+
+- Every `Scheduler::SubmitExecution()` previously called `MasterSemaphoreTimeline::Refresh()`,
+  which enters the Vulkan driver through `vkGetSemaphoreCounterValueKHR`. The call occurred after
+  recording the submission command but before dispatching that command to the worker, so it could
+  only observe completion of older submissions. At one submission per rendered frame, this was a
+  routine host/driver crossing every frame even when no resource or CPU wait needed fresh progress.
+- Khronos documents timeline counters as monotonically increasing and explicitly warns that
+  [`vkGetSemaphoreCounterValue`](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#synchronization-semaphores-signaling)
+  may be immediately out of date while queue work is pending. Azahar already treats `gpu_tick` as
+  a conservative completion cache: `Refresh()` only advances it, `ResourcePool::CommitResource()`
+  refreshes immediately if its stale value cannot free an entry, and `Wait()` refreshes before a
+  blocking semaphore wait and again afterward. A stale-low value cannot authorize premature reuse.
+- Routine submit polling now calls `RefreshOnSubmit()` and queries only for signal ticks divisible
+  by four, matching the four-entry command-buffer pool. This leaves three intermediate submissions
+  without a routine query; it does not assume that any query observes all older pending work.
+  Resource-pool wrap still refreshes on demand; explicit waits are unchanged; rasterizer garbage
+  collection may retain sentenced surfaces until a later periodic or on-demand refresh instead of
+  destroying them before confirmed completion. The fence fallback's `Refresh()` is already a no-op.
+- Final ThinLTO emits `TST signal_tick, #3` plus a conditional branch around the virtual refresh.
+  Exactly three of every four scheduled submit polls are skipped, reducing that routine source of
+  timeline-counter driver calls by 75% (for example, 60 scheduled calls/second become 15 at 60
+  submissions/second). Actual total queries can be higher when waits or resource pressure demand
+  fresh state, so this is not a whole-renderer CPU, FPS, or wattage percentage.
+- New Catch2 coverage drives twelve sequential signal ticks through a fake master semaphore and
+  proves refresh counts of 0, 0, 0, 1 through each four-tick group. A fake four-entry resource pool
+  then keeps cached progress stale, fills every entry, wraps, refreshes immediately, and reuses only
+  an entry whose recorded tick is confirmed complete. The 443,799,000-byte test executable compiled
+  and linked as ELF64/AArch64 but was not run because the host is x64 and current instructions
+  forbid using the Thor.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m13s after the test dependency fix, and
+  `:app:assembleVanillaRelWithDebInfoLite` passed in 1m49s. The 28,966,695-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `4BC405EF1EB848E1E3841DB951B3F287A17264BBBB4DD43D2FEB7193AEB5E984`. No ADB, install, launch,
+  or device access occurred.
+- A future allowed A/B should instrument scheduled and on-demand refresh counts in an identical
+  Vulkan title/scene, save, caches, driver, resolution, layout, performance/fan mode, brightness,
+  and duration. Record driver-call counts, garbage-collection backlog, command-pool growth,
+  frametimes, process CPU time, battery power, temperature, thermal slope, stability, and rendering
+  correctness. Revert or shorten the cadence if pool growth or retained-surface memory increases
+  materially.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
