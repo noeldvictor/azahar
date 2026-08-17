@@ -46,8 +46,8 @@ AudioCore::StereoFrame16 ReferenceMix(
     return output;
 }
 
-void CheckMix(DspConfiguration::OutputFormat format) {
-    constexpr std::array<float, 3> gains{0.5f, 0.25f, 0.125f};
+void CheckMix(DspConfiguration::OutputFormat format,
+              const std::array<float, 3>& gains = {0.5f, 0.25f, 0.125f}) {
     constexpr std::array<s32, 12> values{
         -131072, -65536, -32769, -32768, -1, 0, 1, 32767, 32768, 65535, 65536, 131072,
     };
@@ -142,5 +142,11 @@ TEST_CASE("HLE mixer downmix matches scalar saturation", "[audio_core][hle][mixe
     }
     SECTION("Surround follows stereo") {
         CheckMix(DspConfiguration::OutputFormat::Surround);
+    }
+    SECTION("Mono skips signed-zero buses") {
+        CheckMix(DspConfiguration::OutputFormat::Mono, {0.5f, -0.0f, 0.0f});
+    }
+    SECTION("Stereo skips signed-zero buses") {
+        CheckMix(DspConfiguration::OutputFormat::Stereo, {0.5f, -0.0f, 0.0f});
     }
 }

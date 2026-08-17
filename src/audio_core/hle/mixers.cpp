@@ -266,8 +266,12 @@ void Mixers::MixCurrentFrame() {
     // TODO(SachinV): This is probably not accurate, based on symbols from FE:Fates,
     // state.intermediate_mixer_volume[0] represents the master volume
     for (std::size_t mix = 0; mix < 3; mix++) {
-        DownmixAndMixIntoCurrentFrame(state.intermediate_mixer_volume[mix],
-                                      state.intermediate_mix_buffer[mix]);
+        const float gain = state.intermediate_mixer_volume[mix];
+        // Integer mix samples multiplied by either sign of zero cannot affect the s16 output.
+        // Keep NaN on the arithmetic path so the existing conversion behavior remains unchanged.
+        if (gain != 0.0f) {
+            DownmixAndMixIntoCurrentFrame(gain, state.intermediate_mix_buffer[mix]);
+        }
     }
 
     // TODO(merry): Compressor. (We currently assume a disabled compressor.)

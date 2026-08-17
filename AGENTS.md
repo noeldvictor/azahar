@@ -86,6 +86,12 @@
   and ramped loops must remain the original 52 and 74 instructions per eight samples. Keep each
   nested `std::array` pointer within its own array object instead of relying on cross-subarray
   pointer arithmetic. Recheck final ThinLTO and the front/rear destination canaries after edits.
+- The final HLE mixer skips a 160-sample downmix only when that bus's frame-wide mixer volume
+  compares equal to exact signed zero. Preserve `current_frame` clearing, aux send/return copies,
+  saved intermediate buffers, and every nonzero or NaN volume's arithmetic path. Final AArch64
+  ThinLTO should retain one `FCMP`/`B.EQ` before the output-format dispatch in both `Mixers::Tick()`
+  and the outlined `MixCurrentFrame()`, while active stereo/mono loops remain 24/23 instructions
+  per four samples. Keep signed-zero Mono and Stereo regression coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

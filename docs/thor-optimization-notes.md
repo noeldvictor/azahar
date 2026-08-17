@@ -1542,6 +1542,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   then record DSP-thread time/placement, audio underruns, frametimes, battery power, temperature,
   thermal slope, output correctness, and stability.
 
+## 2026-08-17 HLE Zero-Volume Final-Mix Elision
+
+- `Mixers::MixCurrentFrame()` cleared the output and then unconditionally downmixed all three
+  160-sample intermediate buses. Repository evidence shows that this is sustained zero work in a
+  normal routing shape: MerryAudio explicitly configures `master_volume = 1.0` and both
+  `aux_return_volume` entries to `0.0`. Aux send/return still has to run because it exchanges DSP
+  data and updates saved intermediate state, but a zero-volume bus cannot contribute to the final
+  signed-16 frame.
+- The frame loop now compares each volume with zero before output-format dispatch. Both signs of
+  zero skip only the downmix; every finite nonzero and infinity continues to mix, and unordered
+  AArch64 `FCMP` makes NaN fall through to the existing arithmetic/conversion path. Integer input
+  samples multiplied by signed zero convert to integer zero, so omitting their saturated add is
+  exact. `current_frame.fill({})`, aux copies, intermediate buffers, configuration parsing, and
+  status behavior are unchanged on all architectures.
+- Final ThinLTO proves that production `Mixers::Tick()` contains one `FCMP S, #0.0` plus `B.EQ`
+  ahead of the existing format dispatch; the separately emitted `MixCurrentFrame()` has the same
+  lowering. The change adds eight bytes to each symbol (`Tick`: 588 to 596 bytes; outlined mixer:
+  384 to 392) while leaving active stereo and mono bodies exactly 24 and 23 instructions per four
+  samples. A skipped stereo bus avoids all 40 iterations, or 960 loop instructions; mono avoids
+  920. Each iteration otherwise reads four input Q vectors and 16 interleaved output bytes and
+  writes 16 output bytes, so either skip avoids 3,840 bytes of buffer traffic per bus/frame.
+- For MerryAudio's one-active/two-zero stereo shape, the three downmix bodies fall from 2,880 to
+  960 executed instructions, a 66.7% loop-work reduction, and traffic falls from 11,520 to 3,840
+  bytes, saving 7,680 bytes per audio frame. Predicate and outer-loop control remain, so these
+  figures deliberately describe the downmix bodies rather than the entire DSP frame.
+- Focused Catch2 sections compare Mono and Stereo output against the independent scalar reference
+  with `{0.5, -0.0, +0.0}` volumes, in addition to the existing all-active Mono/Stereo/Surround,
+  saturation-edge, and auxiliary-buffer coverage. The ARM64 native build passed and linked the
+  tests; the 444,502,472-byte test ELF was not executed on the x64 host because device use remains
+  forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 18 seconds. The resulting
+  28,966,503-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `7BC55E8E453CC2AA66D7E5EA452A840FC6A03067F18E77FC80AB71CAADE6666B`.
+- After verification, exact Gradle intermediates, downloaded JNI copies, mapping/debug-symbol
+  output, and the ARM64 test executable were removed. The APK and active ARM64 CMake cache were
+  retained; free C: space increased by 2,027,388,928 bytes (about 1.89 GiB). No source, manual,
+  save, or unrelated file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. This is an exact
+  linked zero-work elimination with direct fixture evidence, not a whole-game speed or wattage
+  claim. A future allowed matched A/B must hold title, scene, save, caches, renderer, resolution,
+  driver, layout, performance/fan mode, brightness, and duration constant, then record DSP-thread
+  time/placement, audio underruns, frametimes, battery power, temperature, thermal slope, output
+  correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

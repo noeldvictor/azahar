@@ -244,6 +244,15 @@ The containing function grows from 832 to 1,244 bytes for the two specialized lo
 verify exact front output and untouched rear buffers for steady and ramped routing; whole-game FPS
 and battery effects still require a matched Thor run.
 
+The final HLE mixer also bypasses a bus's complete 160-sample downmix when its frame-wide volume is
+exact `+0` or `-0`. NaN and every nonzero volume retain the original arithmetic, while aux exchange,
+intermediate state, and output clearing remain unchanged. Final ThinLTO adds only `FCMP`/`B.EQ` per
+bus and preserves the active loops. A skipped stereo bus avoids 960 loop instructions and 3,840
+bytes of buffer traffic; a skipped mono bus avoids 920 and the same traffic. The MerryAudio fixture
+uses one audible master bus plus two zero-volume aux returns, so that representative shape removes
+66.7% of final stereo downmix-loop instructions and 7,680 bytes per audio frame. These are path-local
+code-generation results, not measured whole-game or battery gains.
+
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
 `SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one
