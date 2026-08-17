@@ -160,6 +160,12 @@
   exact Q24-to-Q31 `phase << 7` mapping, truncation rather than rounding, and the scalar
   non-AArch64 path. Do not replace it with `SQRDMULH`, float interpolation, or time-lane
   vectorization. Recheck final ThinLTO whenever this math or its deque traversal changes.
+- Exact `1.0f` HLE Linear resampling may route through the None copy loop only while `fposition` is
+  Q24-aligned. Preserve both gates: a fractional starting phase still requires interpolation, and
+  every non-unity rate must retain the original phase progression. The routed path must leave
+  output fill, deque consumption, history, and final `fposition` byte-for-byte identical to Linear;
+  final AArch64 ThinLTO should tail-branch to None before `SQDMULH` rather than duplicating a second
+  copy loop inside Linear.
 - HLE resampler traversal treats history as a virtual prefix: `V(0) = xn2`, `V(1) = xn1`, and
   `V(j) = input[j - 2]` for `j >= 2`. Keep the input index monotonic, cache the adjacent sample
   window, consume exactly that many real deque samples, and preserve `xn2`, `xn1`, `fposition`, and

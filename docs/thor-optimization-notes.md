@@ -2010,6 +2010,45 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   allowed matched Thor A/B should instrument ADPCM-decoded samples and DSP-thread time while
   holding the normal title, scene, renderer, driver, display, thermal, and power controls fixed.
 
+## 2026-08-17 Exact-Unity HLE Linear Resampler Bypass
+
+- HLE Linear resampling still entered its full stereo AdvSIMD interpolation body when the requested
+  rate was exactly `1.0f` and the Q24 phase had no fractional bits. In that state the step is one
+  complete input sample, every subsequent fraction remains zero, and the existing saturated linear
+  formula returns `x0` exactly. Running delta formation, Q24-to-Q31 conversion, `SQDMULH`, and result
+  repacking cannot change the output.
+- Linear now checks both necessary conditions once per call and tail-routes this case through the
+  existing None implementation. None uses the same `StepOverSamples()` traversal and therefore
+  preserves output fill, monotonic deque-window advancement, consumed input, `xn2`/`xn1`, and final
+  `fposition`. A fractional starting phase, including exact-unity calls restored from such a state,
+  and every non-unity rate retain the unchanged Linear path.
+- The first inlined experiment duplicated a complete copy loop into both template instances and was
+  rejected after production ThinLTO grew None and Linear by 216 bytes each without improving None's
+  repeated loop. The retained implementation shares the already optimized loop: None stays 368
+  bytes and Linear grows from 408 to 448 bytes for its two predicates and tail route.
+- Final AArch64 disassembly shows the rate compare and low-24-bit phase test before a tail branch to
+  None. The general path still contains the exact `SSUBL`/`SQXTN`/`SSHLL`/`SQDMULH` sequence. For
+  every sample on the routed path, the copied output body omits two `FMOV`, `UBFIZ`, `DUP`, `SSUBL`,
+  `SQXTN`, `SSHLL`, `SQDMULH`, `SADDW`, and `UZP1`: ten interpolation/packing instructions per
+  output, amortized against one small dispatch per resampler call. This is stage elimination proven
+  from the exact Q24 arithmetic and linked code rather than an instruction-latency estimate.
+- Existing independent scalar-reference Catch2 coverage exercises None and Linear across rates
+  `0.25`, `0.5`, `0.9999`, `1.0`, `1.25`, and `2.75`; five starting fractions including zero;
+  partial/full output positions; tiny inputs; and exact state/input/output comparison. The complete
+  ELF64/AArch64 test executable and production shared library compiled and linked successfully in
+  54 seconds. The ARM64 executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 19 seconds and produced an ARM64-only
+  28,966,763-byte APK with SHA-256
+  `FEE9145F766D7279D10E3B5E012A8B0DF1E14A8A11AEBE50AB3FA69C58659048`. After verification,
+  2,457,557,368 logical bytes of the native test executable and disposable package intermediates
+  were removed. C: free space increased by 2,019,803,136 bytes; the APK and active ARM64 CMake
+  cache remain in the repository workspace.
+- This reduces HLE DSP-thread work only for exact-unity, aligned Linear sources. It is not a
+  whole-game FPS or battery-watt measurement, and no device, ADB, install, launch, game run, or
+  battery measurement was used. A future allowed matched Thor A/B should instrument how many
+  sources take the route and record DSP-thread time/placement, underruns, frametimes, battery power,
+  temperature, and thermal slope with title, scene, renderer, driver, display, and fan mode fixed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

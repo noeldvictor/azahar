@@ -104,6 +104,8 @@ This fork has moved away from stock Azahar in visible ways:
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
 - HLE GC-ADPCM decode loads each compressed byte once for its two recurrent samples and uses
   native signed bitfield extraction instead of two indexed nibble-table loads.
+- Exact aligned 1x HLE linear resampling routes through the existing sample-copy loop, avoiding the
+  otherwise redundant NEON interpolation and packing sequence for every output sample.
 - SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
   Android's LP64 ABI. A spill-free AArch64 NEON loop cuts the repeatedly used correlation body by
   20% versus the prior linked code while preserving the rolling-normalizer arithmetic.
@@ -353,10 +355,13 @@ existing 24-bit phase are mapped exactly onto one baseline AdvSIMD `SQDMULH`, re
 64-bit multiplies, their duplicated clamp chains, and their shifts. The shared None/Linear stepping
 path also keeps the two history samples as a virtual prefix instead of inserting them into the
 deque. Reused positions perform no deque sample lookup; a normal one-sample advance performs one
-sequential load instead of recomputing and loading two deque entries. Final ThinLTO keeps the exact
-two-lane `SQDMULH`, shrinks Linear from 636 to 408 bytes, and shrinks None from 560 to 368 bytes.
-These are sustained DSP bookkeeping and instruction reductions, not yet measured whole-game FPS
-or battery-power gains.
+sequential load instead of recomputing and loading two deque entries. When the requested rate is
+exactly `1.0f` and the Q24 phase is aligned, Linear now tail-routes to that existing None loop:
+zero-fraction linear interpolation is exactly the copied `x0` sample, so this removes ten NEON
+interpolation/packing instructions per output without duplicating the copy loop. A fractional phase
+or any other rate keeps the unchanged `SQDMULH` path. Final ThinLTO keeps None at 368 bytes and
+changes Linear from 408 to 448 bytes for the two-gate dispatch. These are sustained DSP bookkeeping
+and instruction reductions, not yet measured whole-game FPS or battery-power gains.
 
 ## Vulkan Worker-Power Updates
 

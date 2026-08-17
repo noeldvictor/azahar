@@ -119,6 +119,13 @@ void None(State& state, StereoBuffer16& input, float rate, StereoFrame16& output
 
 void Linear(State& state, StereoBuffer16& input, float rate, StereoFrame16& output,
             std::size_t& outputi) {
+    // At an aligned unity rate every interpolation fraction remains zero, so Linear returns x0
+    // exactly. Reuse None's lean copy loop instead of running the NEON interpolation sequence.
+    if (rate == 1.0f && (state.fposition & scale_mask) == 0) {
+        None(state, input, rate, output, outputi);
+        return;
+    }
+
     // Note on accuracy: Some values that this produces are +/- 1 from the actual firmware.
     StepOverSamples(state, input, rate, output, outputi,
                     [](u64 fraction, const auto& x0, const auto& x1) {
