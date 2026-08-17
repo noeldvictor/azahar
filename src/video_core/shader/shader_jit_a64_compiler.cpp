@@ -1321,18 +1321,21 @@ void JitShader::Compile_Log2(Label subroutine) {
     // range. Coefficients for the minimax polynomial.
     // f(x) computes approximately log2(x) / (x - 1).
     // f(x) = c4 + x * (c3 + x * (c2 + x * (c1 + x * c0)).
-    oaknut::Label c0;
-    // align(16);
-    l(c0);
+    // Keep all five coefficients in one aligned 32-byte block. The positive-input path can load
+    // them into two vector registers with one LDP instead of materializing two literal addresses.
+    oaknut::Label polynomial_constants;
+    align(16);
+    l(polynomial_constants);
+    // SRC2: c0, c1, c2, c3
     dw(0x3d74552f);
-
-    // align(16);
-    oaknut::Label c14;
-    l(c14);
     dw(0xbeee7397);
     dw(0x3fbd96dd);
     dw(0xc02153f6);
+    // VSCRATCH2: c4, padding
     dw(0x4038d96c);
+    dw(0);
+    dw(0);
+    dw(0);
 
     // align(16);
     oaknut::Label negative_infinity_vector;
@@ -1389,25 +1392,22 @@ void JitShader::Compile_Log2(Label subroutine) {
     UCVTF(VSCRATCH1.toS(), VSCRATCH1.toS());
     // VSCRATCH1 now contains the exponent of the input.
 
-    ADR(XSCRATCH0, c0);
-    LDR(XSCRATCH0.toW(), XSCRATCH0);
-    MOV(VSCRATCH0.Selem()[0], XSCRATCH0.toW());
+    const QReg C03 = SRC2;
+    const QReg C4 = VSCRATCH2;
+    ADR(XSCRATCH0, polynomial_constants);
+    LDP(C03, C4, XSCRATCH0);
 
     // Complete computation of polynomial
-    // Load C1,C2,C3,C4 into a single scratch register
-    const QReg C14 = SRC2;
-    ADR(XSCRATCH0, c14);
-    LDR(C14, XSCRATCH0);
+    FMUL(VSCRATCH0.toS(), SRC1.toS(), C03.Selem()[0]);
+    FMLA(VSCRATCH0.toS(), ONE.toS(), C03.Selem()[1]);
     FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), SRC1.toS());
-    FMLA(VSCRATCH0.toS(), ONE.toS(), C14.Selem()[0]);
+    FMLA(VSCRATCH0.toS(), ONE.toS(), C03.Selem()[2]);
     FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), SRC1.toS());
-    FMLA(VSCRATCH0.toS(), ONE.toS(), C14.Selem()[1]);
-    FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), SRC1.toS());
-    FMLA(VSCRATCH0.toS(), ONE.toS(), C14.Selem()[2]);
+    FMLA(VSCRATCH0.toS(), ONE.toS(), C03.Selem()[3]);
     FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), SRC1.toS());
 
     FSUB(SRC1.toS(), SRC1.toS(), ONE.toS());
-    FMLA(VSCRATCH0.toS(), ONE.toS(), C14.Selem()[3]);
+    FMLA(VSCRATCH0.toS(), ONE.toS(), C4.Selem()[0]);
 
     FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), SRC1.toS());
     FADD(VSCRATCH1.toS(), VSCRATCH0.toS(), VSCRATCH1.toS());

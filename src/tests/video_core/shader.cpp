@@ -293,6 +293,10 @@ SHADER_TEST_CASE("LG2", "[video_core][shader]") {
     REQUIRE(std::isnan(shader.Run(NAN).x));
     REQUIRE(std::isnan(shader.Run(-1.f).x));
     REQUIRE(std::isinf(shader.Run(0.f).x));
+    REQUIRE(shader.Run(0.5f).x == Catch::Approx(-1.f));
+    REQUIRE(shader.Run(1.f).x == Catch::Approx(0.f));
+    REQUIRE(shader.Run(1.5f).x == Catch::Approx(0.5849625007f));
+    REQUIRE(shader.Run(2.f).x == Catch::Approx(1.f));
     REQUIRE(shader.Run(4.f).x == Catch::Approx(2.f));
     REQUIRE(shader.Run(64.f).x == Catch::Approx(6.f));
     REQUIRE(shader.Run(1.e24f).x == Catch::Approx(79.7262742773f));
