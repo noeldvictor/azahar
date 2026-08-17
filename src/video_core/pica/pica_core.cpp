@@ -4,12 +4,14 @@
 
 #include "common/arch.h"
 #include "common/archives.h"
+#include "common/common_funcs.h"
 #include "common/microprofile.h"
 #include "common/scope_exit.h"
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/memory.h"
 #include "video_core/debug_utils/debug_utils.h"
+#include "video_core/pica/command_list_utils.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/pica/vertex_loader.h"
 #include "video_core/rasterizer_interface.h"
@@ -213,6 +215,42 @@ static constexpr std::array<u32, 16> ExpandBitsToBytes = {
     0xff000000, 0xff0000ff, 0xff00ff00, 0xff00ffff, 0xffff0000, 0xffff00ff, 0xffffff00, 0xffffffff,
 };
 
+#if CITRA_ARCH(arm64)
+CITRA_NO_INLINE static bool ProcessNormalCommandBatch(PicaCore::CommandList& cmd_list,
+                                                      RegsInternal& regs, DirtyRegs& dirty_regs,
+                                                      DelayGenerator& delay_generator, u32& index,
+                                                      bool& skip_fast_path, u32 batch_limit) {
+    u32 run = 0;
+
+#pragma clang loop unroll(disable)
+    while (run < batch_limit && index + 1 < cmd_list.length) {
+        const u32 value = cmd_list.head[index];
+        const CommandHeader header{cmd_list.head[index + 1]};
+
+        if (header.extra_data_length != 0 || header.cmd_id >= RegsInternal::NUM_REGS ||
+            reg_impl_flags_lut[header.cmd_id].NeedsSpecialHandling()) {
+            skip_fast_path = true;
+            break;
+        }
+
+        const u32 id = header.cmd_id;
+        const u32 write_mask = ExpandBitsToBytes[header.parameter_mask];
+        regs.reg_array[id] = (regs.reg_array[id] & ~write_mask) | (value & write_mask);
+        dirty_regs.Set(id);
+        delay_generator.AddCommands(1);
+        ++run;
+        index += 2;
+    }
+
+    if (run == 0) {
+        return false;
+    }
+
+    cmd_list.current_index = index;
+    return true;
+}
+#endif
+
 /**
  * This is the main loop for processing GPU command lists. On Azahar, it's the most
  * CPU expensive function (excluding the inner Draw calls) due to applications submitting
@@ -285,6 +323,88 @@ void PicaCore::ProcessCmdList(PAddr list, u32 size, bool ignore_list) [[hot]] {
             if (!skip_fast_path) {
                 constexpr u32 batch_size = 4;
                 u32 index = cmd_list.current_index;
+
+#if CITRA_ARCH(arm64)
+                // The common case is four ordinary [value, header] pairs. Preflight all four with
+                // one deinterleaving load, then keep the existing partial/special path as fallback.
+                // This avoids the scalar path's repeated per-command bounds branches and stack
+                // staging while retaining its exact register-write order for duplicate IDs.
+                if (cmd_list.length - index >= batch_size * 2) {
+                    const uint32x4x2_t words = vld2q_u32(cmd_list.head + index);
+                    const uint32x4_t headers = words.val[1];
+                    const uint32x4_t ids = vandq_u32(headers, vdupq_n_u32(0xFFFFu));
+
+                    if (CommandListUtils::ArePlainHeaders(headers, RegsInternal::NUM_REGS))
+                        [[likely]] {
+                        const u32 id0 = vgetq_lane_u32(ids, 0);
+                        const u32 id1 = vgetq_lane_u32(ids, 1);
+                        const u32 id2 = vgetq_lane_u32(ids, 2);
+                        const u32 id3 = vgetq_lane_u32(ids, 3);
+                        const bool needs_special = reg_impl_flags_lut[id0].NeedsSpecialHandling() |
+                                                   reg_impl_flags_lut[id1].NeedsSpecialHandling() |
+                                                   reg_impl_flags_lut[id2].NeedsSpecialHandling() |
+                                                   reg_impl_flags_lut[id3].NeedsSpecialHandling();
+
+                        if (!needs_special) [[likely]] {
+                            const uint32x4_t write_masks =
+                                CommandListUtils::ExpandWriteMasks(headers);
+                            delay_generator.AddCommands(batch_size);
+
+                            if (id1 == id0 + 1 && id2 == id0 + 2 && id3 == id0 + 3) {
+                                const uint32x4_t old_values =
+                                    vld1q_u32(regs.internal.reg_array.data() + id0);
+                                const uint32x4_t new_values = CommandListUtils::ApplyWriteMasks(
+                                    old_values, words.val[0], write_masks);
+                                vst1q_u32(regs.internal.reg_array.data() + id0, new_values);
+                                const u32 dirty_word = id0 >> 6;
+                                const u32 dirty_bit = id0 & 0x3F;
+                                dirty_regs.qwords[dirty_word] |= 0xFULL << dirty_bit;
+                                if (dirty_bit > 60) [[unlikely]] {
+                                    dirty_regs.qwords[dirty_word + 1] |= 0xFULL >> (64 - dirty_bit);
+                                }
+                            } else {
+                                const auto write_lane = [&]<int Lane>(u32 id) {
+                                    const u32 write_mask = vgetq_lane_u32(write_masks, Lane);
+                                    const u32 value = vgetq_lane_u32(words.val[0], Lane);
+                                    u32& reg = regs.internal.reg_array[id];
+                                    reg = (reg & ~write_mask) | (value & write_mask);
+                                };
+                                write_lane.template operator()<0>(id0);
+                                write_lane.template operator()<1>(id1);
+                                write_lane.template operator()<2>(id2);
+                                write_lane.template operator()<3>(id3);
+
+                                const u32 dirty_word = id0 >> 6;
+                                if ((id1 >> 6) == dirty_word && (id2 >> 6) == dirty_word &&
+                                    (id3 >> 6) == dirty_word) [[likely]] {
+                                    dirty_regs.qwords[dirty_word] |=
+                                        (1ULL << (id0 & 0x3F)) | (1ULL << (id1 & 0x3F)) |
+                                        (1ULL << (id2 & 0x3F)) | (1ULL << (id3 & 0x3F));
+                                } else {
+                                    dirty_regs.Set(id0);
+                                    dirty_regs.Set(id1);
+                                    dirty_regs.Set(id2);
+                                    dirty_regs.Set(id3);
+                                }
+                            }
+
+                            cmd_list.current_index = index + batch_size * 2;
+                            continue;
+                        }
+                    }
+                }
+#endif
+
+#if CITRA_ARCH(arm64)
+                // Keep the partial/special batch out of this hottest function. That path remains
+                // exactly ordered but is reached only when the all-four preflight above rejects.
+                const u32 remaining_pairs = (cmd_list.length - index) / 2;
+                const u32 fallback_batch_size = std::min(batch_size, remaining_pairs);
+                if (ProcessNormalCommandBatch(cmd_list, regs.internal, dirty_regs, delay_generator,
+                                              index, skip_fast_path, fallback_batch_size)) {
+                    continue;
+                }
+#else
                 u32 ids[batch_size], values[batch_size], masks[batch_size];
                 u32 run = 0;
 
@@ -321,6 +441,7 @@ void PicaCore::ProcessCmdList(PAddr list, u32 size, bool ignore_list) [[hot]] {
                     // Continue from the while loop in case we reached the end of the list.
                     continue;
                 }
+#endif
             }
         }
         // Slow path, command needs special handling.
