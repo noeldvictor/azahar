@@ -1175,8 +1175,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and canaries must remain untouched. That is 512 direct decoder cases / 8,192 pixels in addition
   to the existing complete padded-tile tests.
 - Command-line Git/SSH refreshed `upstream/master` at `3392c56ce` (`core: Fix another msvc compiler
-  bug`); this fork remains zero commits behind and 73 commits ahead, so no upstream merge was
-  needed.
+  bug`); this fork remains zero commits behind, so no upstream merge was needed.
 - `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the source plus the 444,079,176-byte
   ELF64/AArch64 Catch2 executable. `:app:assembleVanillaRelWithDebInfoLite` then passed in 1m59s.
   The 28,964,919-byte APK contains only `arm64-v8a` native libraries and has SHA-256
