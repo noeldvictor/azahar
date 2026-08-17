@@ -57,7 +57,10 @@
   normally runs for each presented frame. Any Android per-game cache manager must key persistent
   data by title ID, report sizes, separate Vulkan/OpenGL shader and future preprocessed-texture
   caches from texture dumps, and never label or delete the user's custom/downloaded texture pack as
-  disposable cache. Require explicit confirmation for every destructive per-game action.
+  disposable cache. The current long-press **Manage Cached Data** dialog accounts for the exact
+  per-title files removed by the existing Vulkan/OpenGL shader-cache actions, performs filesystem
+  size queries off the UI thread, and requires explicit confirmation before either deletion. Keep
+  size accounting and deletion coverage aligned when cache paths change.
 - Vulkan guest-texture and final-presentation samplers deliberately keep anisotropy disabled with
   `maxAnisotropy = 1.0f`. PICA exposes nearest/linear and mip filtering but no anisotropy control,
   and the OpenGL path does not add it. Preserve exact guest filter semantics and deterministic

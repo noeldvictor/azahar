@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <array>
 #include <codecvt>
 #include <thread>
 #include <dlfcn.h>
@@ -124,6 +125,53 @@ void ApplyAndroidGameProfile(u64 program_id) {
     if (resolution_factor == 0 || resolution_factor > 2) {
         Settings::values.resolution_factor = 2;
     }
+}
+
+u64 GetOpenGLShaderCacheSize(u64 title_id) {
+    const std::string& shader_dir = FileUtil::GetUserPath(FileUtil::UserPath::ShaderDir);
+    u64 size = 0;
+    for (const std::string_view cache_type : {"separable", "conventional"}) {
+        const std::string path =
+            fmt::format("{}opengl/precompiled/{}/{:016X}.bin", shader_dir, cache_type, title_id);
+        if (FileUtil::Exists(path)) {
+            size += FileUtil::GetSize(path);
+        }
+    }
+
+    const std::string transferable_path =
+        fmt::format("{}opengl/transferable/{:016X}.bin", shader_dir, title_id);
+    if (FileUtil::Exists(transferable_path)) {
+        size += FileUtil::GetSize(transferable_path);
+    }
+    return size;
+}
+
+u64 GetVulkanShaderCacheSize(u64 title_id) {
+    const std::string& shader_dir = FileUtil::GetUserPath(FileUtil::UserPath::ShaderDir);
+    u64 size = 0;
+    for (const std::string_view cache_type : {"vs", "fs", "gs", "pl"}) {
+        const std::string path =
+            fmt::format("{}vulkan/transferable/{:016X}_{}.vkch", shader_dir, title_id, cache_type);
+        if (FileUtil::Exists(path)) {
+            size += FileUtil::GetSize(path);
+        }
+    }
+
+    const std::string title_prefix = fmt::format("{:016X}", title_id);
+    FileUtil::ForeachDirectoryEntry(nullptr, fmt::format("{}vulkan/pipeline", shader_dir),
+                                    [&size, &title_prefix]([[maybe_unused]] u64* num_entries_out,
+                                                           const std::string& directory,
+                                                           const std::string& virtual_name) {
+                                        if (!virtual_name.starts_with(title_prefix)) {
+                                            return true;
+                                        }
+                                        const std::string path = directory + DIR_SEP + virtual_name;
+                                        if (!FileUtil::IsDirectory(path)) {
+                                            size += FileUtil::GetSize(path);
+                                        }
+                                        return true;
+                                    });
+    return size;
 }
 
 std::string inserted_cartridge;
@@ -1265,6 +1313,16 @@ jboolean Java_org_citra_citra_1emu_NativeLibrary_nativeFileExists(JNIEnv* env, j
                                                                   jstring j_path) {
     const auto path = GetJString(env, j_path);
     return FileUtil::Exists(path);
+}
+
+jlong Java_org_citra_citra_1emu_NativeLibrary_getOpenGLShaderCacheSize(JNIEnv* env, jobject obj,
+                                                                       jlong title_id) {
+    return static_cast<jlong>(GetOpenGLShaderCacheSize(static_cast<u64>(title_id)));
+}
+
+jlong Java_org_citra_citra_1emu_NativeLibrary_getVulkanShaderCacheSize(JNIEnv* env, jobject obj,
+                                                                       jlong title_id) {
+    return static_cast<jlong>(GetVulkanShaderCacheSize(static_cast<u64>(title_id)));
 }
 
 void Java_org_citra_citra_1emu_NativeLibrary_deleteOpenGLShaderCache(JNIEnv* env, jobject obj,

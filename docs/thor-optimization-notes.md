@@ -2964,6 +2964,30 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   layout, performance/fan mode, brightness, and duration fixed before assigning a whole-game or
   wattage benefit.
 
+## 2026-08-17 Per-Game Cached-Data Manager
+
+- Android's game long-press sheet now exposes **Manage Cached Data** instead of a backend picker
+  labeled only as shader-cache deletion. The manager is keyed by the selected title ID and reports
+  separate human-readable Vulkan and OpenGL shader-cache totals before offering either action.
+- Native size accounting covers the same persistent per-title files as the existing deletion
+  paths: OpenGL separable/conventional precompiled binaries and its transferable binary; Vulkan
+  vertex, fragment, geometry, and pipeline transferable files plus matching pipeline-cache files.
+  Filesystem work runs on `Dispatchers.IO`, not the Android UI thread.
+- Each backend opens a second confirmation naming the game, backend, and measured size and warns
+  that the next run may stutter while the cache rebuilds. Downloaded custom textures remain user
+  content managed through **Open › Textures Folder** and are not included in or deleted by this
+  manager.
+- The dialog explains the distinct lifetime and cost models: a texture-filter result stays in its
+  rasterizer surface's scaled GPU image until guest invalidation or upload and clears with the game
+  session, while screen-filter Anime4K processes the changing final presentation each frame. This
+  avoids promising a disk cache whose hashing, I/O, synchronization, VRAM duplication, and stale
+  invalidation costs have not shown a Thor power or speed benefit.
+- The release-style ARM64 build passed in 1 minute 37 seconds. The 28,975,784-byte, v2-signed,
+  ARM64-only test APK installed on USB Thor `c3ca0370`. In the live library UI, long-pressing
+  7th Dragon III exposed the manager and it reported a 1.41 MB Vulkan cache and 225 kB OpenGLES
+  cache. The dialog was canceled, Azahar was force-stopped, and the three temporary UI hierarchy
+  dumps were removed. No game was launched and no cache or custom texture was deleted.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
@@ -2995,18 +3019,18 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
    latent hardware paths as a gameplay optimization; AES/SHA content paths were already hardware
    accelerated and crypto setup is not currently a sustained-game-FPS premise.
 
-7. Per-game cached-data manager
+7. Future preprocessed-texture cache evidence
 
    Texture-filter results already live in the owning rasterizer surface's scaled GPU image until a
    guest write invalidates or uploads the region, so a separate disk cache would add hashing, I/O,
    synchronization, and storage without evidence of a power win. The final screen Anime4K filter
    is different and normally runs once per presented frame because its input changes each frame.
 
-   Android's long-press game sheet already deletes Vulkan or OpenGL shader cache by title ID. Turn
-   that into a discoverable per-game manager that reports sizes and keeps shader cache, future
-   preprocessed/decoded texture cache, texture dumps, and downloaded custom-texture packs visibly
-   separate. Cache deletion should be individually confirmed; downloaded packs are user content,
-   not disposable cache, and must have a separately labeled uninstall action.
+   The per-game manager now reports and deletes the real persistent Vulkan/OpenGL shader caches.
+   Add a preprocessed/decoded texture-cache category only after a prototype demonstrates a warm-run
+   time or energy win greater than hashing, storage I/O, synchronization, invalidation, and extra
+   storage/VRAM costs on Thor. Keep texture dumps and downloaded packs visibly separate; a future
+   pack-uninstall action must be labeled as deletion of user content, not cache cleanup.
 
 ## Benchmark Checklist
 

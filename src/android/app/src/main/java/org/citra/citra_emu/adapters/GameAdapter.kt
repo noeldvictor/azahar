@@ -16,6 +16,7 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.SystemClock
 import android.text.TextUtils
+import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -444,6 +445,98 @@ class GameAdapter(
         popup.show()
     }
 
+    private fun showDeleteShaderCacheConfirmation(
+        context: Context,
+        game: Game,
+        isVulkan: Boolean,
+        cacheSize: Long
+    ) {
+        val backend = context.getString(if (isVulkan) R.string.vulkan else R.string.opengles)
+        val readableSize = Formatter.formatFileSize(context, cacheSize)
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.delete_shader_cache)
+            .setMessage(
+                context.getString(
+                    R.string.delete_shader_cache_confirm,
+                    backend,
+                    game.title,
+                    readableSize
+                )
+            )
+            .setPositiveButton(R.string.delete_shader_cache) { _, _ ->
+                val progressToast = Toast.makeText(
+                    CitraApplication.appContext,
+                    R.string.deleting_shader_cache,
+                    Toast.LENGTH_LONG
+                )
+                progressToast.show()
+
+                activity.lifecycleScope.launch(Dispatchers.IO) {
+                    if (isVulkan) {
+                        NativeLibrary.deleteVulkanShaderCache(game.titleId)
+                    } else {
+                        NativeLibrary.deleteOpenGLShaderCache(game.titleId)
+                    }
+
+                    activity.runOnUiThread {
+                        progressToast.cancel()
+                        Toast.makeText(
+                            CitraApplication.appContext,
+                            context.getString(R.string.shader_cache_deleted_backend, backend),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showCachedDataManager(context: Context, game: Game) {
+        activity.lifecycleScope.launch(Dispatchers.IO) {
+            val vulkanSize = NativeLibrary.getVulkanShaderCacheSize(game.titleId)
+            val openGLSize = NativeLibrary.getOpenGLShaderCacheSize(game.titleId)
+
+            activity.runOnUiThread {
+                val managerView = LayoutInflater.from(context).inflate(
+                    R.layout.dialog_manage_cached_data,
+                    null
+                )
+                val vulkanButton = managerView.findViewById<MaterialButton>(
+                    R.id.manage_vulkan_shader_cache
+                )
+                val openGLButton = managerView.findViewById<MaterialButton>(
+                    R.id.manage_opengl_shader_cache
+                )
+                vulkanButton.text = context.getString(
+                    R.string.shader_cache_entry,
+                    context.getString(R.string.vulkan),
+                    Formatter.formatFileSize(context, vulkanSize)
+                )
+                openGLButton.text = context.getString(
+                    R.string.shader_cache_entry,
+                    context.getString(R.string.opengles),
+                    Formatter.formatFileSize(context, openGLSize)
+                )
+
+                val dialog = MaterialAlertDialogBuilder(context)
+                    .setTitle(context.getString(R.string.manage_cached_data_title, game.title))
+                    .setView(managerView)
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .create()
+                vulkanButton.setOnClickListener {
+                    dialog.dismiss()
+                    showDeleteShaderCacheConfirmation(context, game, true, vulkanSize)
+                }
+                openGLButton.setOnClickListener {
+                    dialog.dismiss()
+                    showDeleteShaderCacheConfirmation(context, game, false, openGLSize)
+                }
+                dialog.show()
+            }
+        }
+    }
+
     private fun showAboutGameDialog(
         context: Context,
         game: Game,
@@ -631,62 +724,8 @@ class GameAdapter(
             showUninstallContextMenu(it, game, bottomSheetDialog)
         }
 
-        bottomSheetView.findViewById<MaterialButton>(R.id.delete_cache).setOnClickListener {
-            val options =
-                arrayOf(context.getString(R.string.vulkan), context.getString(R.string.opengles))
-            var selectedIndex = -1
-            val dialog = MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.delete_cache_select_backend)
-                .setSingleChoiceItems(options, -1) { dialog, which ->
-                    selectedIndex = which
-                }
-                .setPositiveButton(android.R.string.ok) { _, _ ->
-                    val progToast = Toast.makeText(
-                        CitraApplication.appContext,
-                        R.string.deleting_shader_cache,
-                        Toast.LENGTH_LONG
-                    )
-                    progToast.show()
-
-                    activity.lifecycleScope.launch(Dispatchers.IO) {
-                        when (selectedIndex) {
-                            0 -> {
-                                NativeLibrary.deleteVulkanShaderCache(game.titleId)
-                            }
-
-                            1 -> {
-                                NativeLibrary.deleteOpenGLShaderCache(game.titleId)
-                            }
-                        }
-
-                        activity.runOnUiThread {
-                            progToast.cancel()
-                            Toast.makeText(
-                                CitraApplication.appContext,
-                                R.string.shader_cache_deleted,
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                }
-                .setNegativeButton(android.R.string.cancel) { dialog, _ ->
-                    dialog.dismiss()
-                }
-                .create()
-
-            dialog.setOnShowListener {
-                val positiveButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
-
-                positiveButton.isEnabled = false
-
-                val listView = dialog.listView
-                listView.setOnItemClickListener { _, _, position, _ ->
-                    selectedIndex = position
-                    positiveButton.isEnabled = true
-                }
-            }
-
-            dialog.show()
+        bottomSheetView.findViewById<MaterialButton>(R.id.manage_cache).setOnClickListener {
+            showCachedDataManager(context, game)
         }
 
         val bottomSheetBehavior = bottomSheetDialog.getBehavior()

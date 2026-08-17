@@ -62,8 +62,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Texture-filter results are retained in each rasterizer surface's scaled GPU image and recomputed
   only when the guest invalidates or uploads that texture region. Screen-filter Anime4K remains a
   per-present pass because it filters the finished, changing 3DS screens rather than reusable game
-  textures. The long-press game sheet already deletes Vulkan or OpenGL shader cache per title;
-  unified size reporting and future preprocessed-texture cache controls remain planned QoL work.
+  textures. Long-press a game and choose **Manage Cached Data** to see that title's separate Vulkan
+  and OpenGL shader-cache sizes or delete either cache after an explicit confirmation. Downloaded
+  custom-texture packs remain separate user content and are never presented as disposable cache.
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.

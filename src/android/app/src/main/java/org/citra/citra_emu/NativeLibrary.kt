@@ -260,6 +260,8 @@ object NativeLibrary {
 
     external fun nativeFileExists(path: String): Boolean
 
+    external fun getOpenGLShaderCacheSize(titleId: Long): Long
+    external fun getVulkanShaderCacheSize(titleId: Long): Long
     external fun deleteOpenGLShaderCache(titleId: Long)
     external fun deleteVulkanShaderCache(titleId: Long)
 
