@@ -23,6 +23,7 @@ TimeStretcher::TimeStretcher() : sound_touch(std::make_unique<soundtouch::SoundT
     sound_touch->setSampleRate(native_sample_rate);
     sound_touch->setPitch(1.0);
     sound_touch->setTempo(1.0);
+    ASSERT(sound_touch->setSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY, 1));
 }
 
 TimeStretcher::~TimeStretcher() = default;

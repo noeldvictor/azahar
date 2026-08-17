@@ -1776,6 +1776,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   DSP/audio-thread time, audio underruns, frametimes, battery power, temperature, thermal slope,
   output correctness, and stability.
 
+## 2026-08-17 SoundTouch Pure-Tempo Rate-Transposer Bypass
+
+- Azahar's `TimeStretcher` changes only tempo; it explicitly holds pitch and playback rate at
+  exact `1.0`. SoundTouch's own algorithm documentation says tempo control is implemented purely
+  by time stretching, while rate transposition exists for playback-rate and pitch changes.
+  Nevertheless, the generic crossover-safe `putSamples()` path sent unity-rate input through
+  RateTransposer before TDStretch: a 64-tap anti-alias FIR at cutoff 0.5, linear interpolation at
+  rate 1.0, and several intermediate FIFO transfers. See the upstream
+  [SoundTouch algorithm description](https://soundtouch.surina.net/README.html#about-algorithms).
+- A new default-off `SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY` restores the documented pure-tempo
+  topology only for clients that opt in before processing. Azahar enables it in the
+  `TimeStretcher` constructor. Explicit topology changes are rejected once input/output accounting
+  or TDStretch buffers are live; leaving exact unity effective rate automatically disables it.
+  Default generic SoundTouch rate/pitch crossover behavior is unchanged, while `clear()` and
+  `flush()` retain the setting for Azahar's continuing pure-tempo stream. Initial latency now
+  excludes the unused transposer's 32-sample FIR delay.
+- Final ARM64 ThinLTO shows the enabled `SoundTouch::putSamples()` branch loading the setting flag
+  and tail-calling `TDStretch::putSamples` directly. It executes no call to RateTransposer,
+  `FIRFilter::evaluateFilterStereo`, or `InterpolateLinearInteger::transposeStereo`. The disabled
+  branch retains all existing generic behavior.
+- In steady state this removes the already optimized FIR's 68 core instructions and 384 bytes of
+  logical input reads per output stereo frame, plus the unity interpolator's 32-instruction loop,
+  eight sample bytes read, and four bytes written. Removing the following FIFO transfer saves
+  another four-byte read/write. The initial RateTransposer input copy is replaced by TDStretch's
+  direct input copy, so the net path-local reduction is about 100 DSP instructions, 396 logical
+  read bytes, and 12 intermediate write bytes per stereo frame. These are instruction/load counts,
+  not estimates of physical DRAM traffic.
+- Permanent Catch2 coverage feeds 24,000 deterministic signed-16 stereo frames at tempos 0.72,
+  0.93, and 1.08 through chunk sizes from one to 1,024 frames. With x86 extensions disabled for a
+  portable host reference, the bypass output matches a standalone TDStretch stage byte-for-byte
+  after every chunk. It also checks TDStretch input backlog, reduced latency, flush, clear,
+  setting persistence, rejection of explicit mid-stream topology changes, and automatic disable at
+  rate 1.01.
+- A separate optimized Windows verifier passed the same differential checks. Its five-round,
+  order-alternated 192,000-frame microbenchmark measured median generic SoundTouch processing at
+  48.70 ms before and 38.97 ms with the bypass, or 1.250x isolated throughput. This x64 result
+  validates that material work disappeared but is not a Thor, game, FPS, or wattage measurement.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the production path, permanent
+  test, and ThinLTO library after lifecycle hardening in 1 minute 2 seconds. The ARM64 test
+  executable was not run on this x64 host because device use remains forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` then produced an ARM64-only APK successfully. Final
+  package: `app-vanilla-relWithDebInfoLite.apk`, 28,966,067 bytes, SHA-256
+  `8721FB2078B65E0BF03E342E44026E35F80E89DF78D7D90350EDF658AE9436EF`.
+- Post-verification cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while
+  deleting the temporary native verifier/objects, 445 MB ARM64 test ELF, Gradle intermediates,
+  downloaded JNI staging, mapping, native-symbol, and other reproducible package trees. The build
+  tree fell from 2,041,610,960 to 28,966,543 bytes, the retained CMake tree fell from 3,236,646,241
+  to 2,786,013,944 bytes, and reported C: free space rose by 2,034,778,112 bytes.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. A future allowed
+  Thor A/B should hold title, scene, save, caches, renderer, resolution, driver, layout,
+  performance/fan mode, brightness, audio backend, speed limit, and duration constant, then record
+  DSP/audio-thread time, audio underruns, frametimes, battery power, temperature, thermal slope,
+  output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

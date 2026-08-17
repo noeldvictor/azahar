@@ -20,6 +20,14 @@
   two `LD2`, four `SMULL`/`SMLAL`, two shifts, two vector adds, and one loop branch per eight stereo
   frames before the `ADDV` reduction. Re-run the 16/256/1024-frame differential coverage after
   changing the correlation math or compiler hints.
+- Azahar's `TimeStretcher` is a pure-tempo SoundTouch client: pitch and rate remain exact unity, so
+  it must enable `SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY` before any samples enter the pipeline.
+  Keep the setting default-off for generic SoundTouch clients, reject explicit mid-stream changes,
+  preserve it across `clear()`/`flush()`, and automatically disable it on the first non-unity
+  effective rate so dynamic rate/pitch crossover behavior cannot silently change. The bypass must
+  report TDStretch-only latency and tail-call `TDStretch::putSamples` without the AA FIR,
+  interpolator, or RateTransposer FIFO path. Retain byte-exact 0.72/0.93/1.08 tempo coverage,
+  awkward chunk boundaries, flush/clear checks, and the non-unity auto-disable assertion.
 - Ask the user before making a materially different product, source-policy, or UX choice when the repository and existing requirements do not settle it. Keep moving with safe, reversible assumptions when the choice does not materially change the result.
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.

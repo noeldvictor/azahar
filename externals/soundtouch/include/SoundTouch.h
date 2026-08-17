@@ -164,6 +164,12 @@ namespace soundtouch
 ///   tempo/pitch/rate/samplerate settings.
 #define SETTING_INITIAL_LATENCY             8
 
+/// Bypass the rate transposer while the effective rate is exactly 1.0, so pure-tempo clients use
+/// only the time-stretch stage. This is opt-in because changing rate or pitch across 1.0 while a
+/// stream is active can otherwise click. Enable before processing starts; leaving unity rate
+/// automatically disables the bypass.
+#define SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY 9
+
 
 class SoundTouch : public FIFOProcessor
 {
@@ -185,6 +191,9 @@ private:
 
     /// Flag: Has sample rate been set?
     bool  bSrateSet;
+
+    /// Opt-in pure-tempo path that omits the inactive unity-rate transposer.
+    bool bypassRateTransposerAtUnity;
 
     /// Accumulator for how many samples in total will be expected as output vs. samples put in,
     /// considering current processing settings.

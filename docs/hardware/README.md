@@ -50,6 +50,10 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   accumulators in caller-saved NEON registers, then reduces with `ADDV`; higher automatic
   interleaving spills a callee-saved vector register without improving work per frame. Preserve
   the rolling normalizer's per-sample shift semantics and confirm final ThinLTO remains spill-free.
+- Prefer eliminating an inactive DSP stage over optimizing its instructions. Azahar changes
+  SoundTouch tempo only, so exact unity pitch/rate requires no anti-alias FIR or interpolation.
+  The opt-in path must enter TDStretch directly before stream processing; keep generic crossover
+  behavior unchanged and confirm final linked code does not call RateTransposer on that branch.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,

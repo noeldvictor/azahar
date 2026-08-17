@@ -9,7 +9,9 @@
 #include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "FIRFilter.h"
+#include "SoundTouch.h"
 #include "TDStretch.h"
+#include "cpu_detect.h"
 
 namespace {
 
@@ -57,6 +59,12 @@ public:
         return overlapLength;
     }
 
+    void PrepareTempoOnly(int sample_rate, double tempo) {
+        setChannels(2);
+        setParameters(sample_rate);
+        setTempo(tempo);
+    }
+
     int DividerBits() const {
         return overlapDividerBitsNorm;
     }
@@ -71,6 +79,10 @@ public:
 
     double CrossCorrAccumulate(const short* mixing, const short* compare, double& norm) {
         return calcCrossCorrAccumulate(mixing, compare, norm);
+    }
+
+    std::uint32_t InputSamples() const {
+        return inputBuffer.numSamples();
     }
 
     void SetMidBuffer(const std::vector<short>& samples) {
@@ -121,6 +133,15 @@ std::int64_t CalculateNormalizerDelta(const short* mixing, int sample_count, int
         delta += (sample * sample) >> divider_bits;
     }
     return delta;
+}
+
+template <typename Processor>
+void DrainSamples(Processor& processor, std::vector<short>& destination) {
+    std::array<short, 2 * 257> buffer{};
+    while (processor.numSamples() != 0) {
+        const auto received = processor.receiveSamples(buffer.data(), 257);
+        destination.insert(destination.end(), buffer.begin(), buffer.begin() + 2 * received);
+    }
 }
 
 } // namespace
@@ -284,5 +305,76 @@ TEST_CASE("SoundTouch WSOLA correlation matches bounded 32-bit scalar arithmetic
             REQUIRE(running_norm == static_cast<double>(expected_running_norm));
             REQUIRE(actual == expected_value);
         }
+    }
+}
+
+TEST_CASE("SoundTouch pure-tempo bypass matches the TDStretch stage byte-for-byte",
+          "[audio_core][soundtouch]") {
+    constexpr int sample_rate = 48000;
+    constexpr std::array<double, 3> tempos{0.72, 0.93, 1.08};
+    constexpr std::array<int, 7> chunk_sizes{1, 17, 159, 160, 257, 511, 1024};
+    constexpr int input_frames = 24000;
+
+    std::vector<short> input(2 * input_frames);
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        const int word = static_cast<int>((i * 4051 + i * i * 29 + 7919) % 65536);
+        input[i] = static_cast<short>(word - 32768);
+    }
+
+    for (const double tempo : tempos) {
+        // Make the host test use the same generic TDStretch implementation as Android AArch64.
+        disableExtensions(~uint{0});
+        soundtouch::SoundTouch actual;
+        disableExtensions(0);
+
+        actual.setChannels(2);
+        actual.setSampleRate(sample_rate);
+        actual.setPitch(1.0);
+        actual.setRate(1.0);
+        actual.setTempo(tempo);
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 0);
+        const int transposer_latency = actual.getSetting(SETTING_INITIAL_LATENCY);
+        REQUIRE(actual.setSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY, 1));
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 1);
+        REQUIRE(actual.getSetting(SETTING_INITIAL_LATENCY) < transposer_latency);
+
+        TDStretchHarness reference;
+        reference.PrepareTempoOnly(sample_rate, tempo);
+
+        std::vector<short> actual_output;
+        std::vector<short> reference_output;
+        int consumed = 0;
+        int chunk = 0;
+        while (consumed < input_frames) {
+            const int frames =
+                std::min(chunk_sizes[chunk % chunk_sizes.size()], input_frames - consumed);
+            actual.putSamples(input.data() + 2 * consumed, frames);
+            reference.putSamples(input.data() + 2 * consumed, frames);
+            DrainSamples(actual, actual_output);
+            DrainSamples(reference, reference_output);
+            REQUIRE(actual_output == reference_output);
+            consumed += frames;
+            ++chunk;
+        }
+
+        CAPTURE(tempo, actual_output.size(), actual.numUnprocessedSamples());
+        REQUIRE(!actual_output.empty());
+        REQUIRE(actual.numUnprocessedSamples() == reference.InputSamples());
+        REQUIRE_FALSE(actual.setSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY, 0));
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 1);
+
+        const std::size_t output_before_flush = actual_output.size();
+        actual.flush();
+        DrainSamples(actual, actual_output);
+        REQUIRE(actual_output.size() >= output_before_flush);
+        REQUIRE(actual.numUnprocessedSamples() == 0);
+        actual.clear();
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 1);
+        REQUIRE(actual.setSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY, 0));
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 0);
+        REQUIRE(actual.setSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY, 1));
+
+        actual.setRate(1.01);
+        REQUIRE(actual.getSetting(SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY) == 0);
     }
 }

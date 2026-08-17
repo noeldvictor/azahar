@@ -96,6 +96,7 @@ SoundTouch::SoundTouch()
     setOutPipe(pTDStretch);
 
     rate = tempo = 0;
+    bypassRateTransposerAtUnity = false;
 
     virtualPitch =
     virtualRate =
@@ -223,6 +224,13 @@ void SoundTouch::calcEffectiveRateAndTempo()
     tempo = virtualTempo / virtualPitch;
     rate = virtualPitch * virtualRate;
 
+    // The bypass is safe only for clients that hold pitch and rate at unity for the whole stream.
+    // Disable it permanently on the first non-unity effective rate to preserve crossover behavior.
+    if (rate != 1.0)
+    {
+        bypassRateTransposerAtUnity = false;
+    }
+
     if (!TEST_FLOAT_EQUAL(rate,oldRate)) pRateTransposer->setRate(rate);
     if (!TEST_FLOAT_EQUAL(tempo, oldTempo)) pTDStretch->setTempo(tempo);
 
@@ -289,6 +297,15 @@ void SoundTouch::putSamples(const SAMPLETYPE *samples, uint nSamples)
     // processing setting
     samplesExpectedOut += (double)nSamples / ((double)rate * (double)tempo);
 
+    if (bypassRateTransposerAtUnity)
+    {
+        // Azahar changes tempo only. At unity rate the anti-alias FIR and interpolator cannot
+        // prevent aliasing because there is no resampling, so feed WSOLA directly.
+        assert(rate == 1.0);
+        assert(output == pTDStretch);
+        pTDStretch->putSamples(samples, nSamples);
+        return;
+    }
 #ifndef SOUNDTOUCH_PREVENT_CLICK_AT_RATE_CROSSOVER
     if (rate <= 1.0f)
     {
@@ -387,6 +404,31 @@ bool SoundTouch::setSetting(int settingId, int value)
             pTDStretch->setParameters(sampleRate, sequenceMs, seekWindowMs, value);
             return true;
 
+        case SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY:
+        {
+            const bool enabled = value != 0;
+            if (enabled == bypassRateTransposerAtUnity)
+            {
+                return true;
+            }
+
+            // Changing the topology during a live stream could reorder buffered data. Rate/pitch
+            // changes still auto-disable the bypass in calcEffectiveRateAndTempo().
+            if ((samplesExpectedOut != 0.0) || (samplesOutput != 0) || (numSamples() != 0) ||
+                (numUnprocessedSamples() != 0))
+            {
+                return false;
+            }
+
+            if (enabled && (rate != 1.0))
+            {
+                return false;
+            }
+
+            bypassRateTransposerAtUnity = enabled;
+            return true;
+        }
+
         default :
             return false;
     }
@@ -424,6 +466,9 @@ int SoundTouch::getSetting(int settingId) const
             pTDStretch->getParameters(nullptr, nullptr, nullptr, &temp);
             return temp;
 
+        case SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY:
+            return (uint)bypassRateTransposerAtUnity;
+
         case SETTING_NOMINAL_INPUT_SEQUENCE :
         {
             int size = pTDStretch->getInputSampleReq();
@@ -453,6 +498,12 @@ int SoundTouch::getSetting(int settingId) const
         case SETTING_INITIAL_LATENCY:
         {
             double latency = pTDStretch->getLatency();
+
+            if (bypassRateTransposerAtUnity)
+            {
+                return (int)(latency + 0.5);
+            }
+
             int latency_tr = pRateTransposer->getLatency();
 
 #ifndef SOUNDTOUCH_PREVENT_CLICK_AT_RATE_CROSSOVER

@@ -102,6 +102,9 @@ This fork has moved away from stock Azahar in visible ways:
 - SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
   Android's LP64 ABI. A spill-free AArch64 NEON loop cuts the repeatedly used correlation body by
   20% versus the prior linked code while preserving the rolling-normalizer arithmetic.
+- Azahar's pure-tempo SoundTouch stream bypasses the inactive unity-rate resampler, removing a
+  needless 64-tap anti-alias FIR, scalar interpolator, and intermediate FIFO traffic from every
+  time-stretched audio block. Generic SoundTouch rate/pitch crossover behavior remains opt-in-safe.
 - The HLE DSP keeps its temporary quadraphonic mixes channel-planar, eliminating structured
   `LD4`/`ST4` transposes from source accumulation and final downmix and turning enabled auxiliary
   bus exchange into contiguous copies.
@@ -232,6 +235,18 @@ overlap that removes 256 and 192 inner-loop instructions, respectively. Permanen
 coverage preserves paired correlation rounding, per-sample rolling-normalizer rounding, signed
 results, and 16/256/1024-frame configurations. These are path-local code-generation results, not
 measured game FPS or battery watts.
+
+Azahar changes SoundTouch tempo only: pitch and playback rate stay exactly `1.0`. SoundTouch's
+generic crossover-safe pipeline nevertheless ran every input through the unity-rate 64-tap
+anti-alias filter, linear interpolator, and intermediate FIFOs before WSOLA. The fork now opts into
+a pure-tempo path before processing begins. It tail-calls TDStretch directly, automatically turns
+itself off if effective rate ever leaves unity, and leaves default vendored SoundTouch behavior
+unchanged for other clients. Steady-state ARM64 work removed per stereo frame is about 68 FIR plus
+32 interpolation instructions, 396 bytes of logical DSP reads, and 12 bytes of intermediate
+writes. A five-round order-alternated x64 microbenchmark improved the isolated SoundTouch pipeline
+from a 48.70 ms median to 38.97 ms for 192,000 frames (1.250x); permanent tests match the standalone
+TDStretch stage byte-for-byte across three tempos, awkward chunks, flush, and clear. This is a
+host mechanism benchmark and static ARM64 reduction, not a whole-game Thor speed or wattage claim.
 
 SoundTouch's 64-tap anti-alias FIR also carried a hidden x86/Windows assumption: its documented
 32-bit accumulator was C++ `long`, which is 64-bit on Android AArch64. Making the width explicit
