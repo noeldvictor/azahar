@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <memory>
+#include "common/arch.h"
 #include "common/assert.h"
 #include "common/color.h"
 #include "common/common_types.h"
@@ -14,7 +16,12 @@
 #include "core/core.h"
 #include "core/hle/service/cam/y2r_u.h"
 #include "core/hw/y2r.h"
+#include "core/hw/y2r_testing.h"
 #include "core/memory.h"
+
+#if CITRA_ARCH(arm64)
+#include <arm_neon.h>
+#endif
 
 namespace HW::Y2R {
 
@@ -22,13 +29,13 @@ using namespace Service::Y2R;
 
 static const std::size_t MAX_TILES = 1024 / 8;
 static const std::size_t TILE_SIZE = 8 * 8;
-using ImageTile = std::array<u32, TILE_SIZE>;
+using ImageTile = Testing::ImageTile;
 
 /// Converts a image strip from the source YUV format into individual 8x8 RGB32 tiles.
 template <InputFormat input_format>
-static void ConvertYUVToRGB(const u8* input_Y, const u8* input_U, const u8* input_V,
-                            ImageTile output[], unsigned int width, unsigned int height,
-                            const CoefficientSet& coefficients) {
+static void ConvertYUVToRGBScalar(const u8* input_Y, const u8* input_U, const u8* input_V,
+                                  ImageTile output[], unsigned int width, unsigned int height,
+                                  const CoefficientSet& coefficients) {
 
     for (unsigned int y = 0; y < height; ++y) {
         for (unsigned int x = 0; x < width; ++x) {
@@ -74,6 +81,152 @@ static void ConvertYUVToRGB(const u8* input_Y, const u8* input_U, const u8* inpu
                    ((u32)std::clamp(g >> 5, 0, 0xFF) << 16) |
                    ((u32)std::clamp(b >> 5, 0, 0xFF) << 8);
         }
+    }
+}
+
+#if CITRA_ARCH(arm64)
+
+static uint8x8_t DuplicateLowFourBytes(uint8x8_t values) {
+    return vzip_u8(values, values).val[0];
+}
+
+static uint8x8_t LoadAndDuplicateChroma(const u8* input) {
+    u32 packed;
+    std::memcpy(&packed, input, sizeof(packed));
+    return DuplicateLowFourBytes(vreinterpret_u8_u32(vdup_n_u32(packed)));
+}
+
+static uint8x8_t NarrowYUVChannel(int32x4_t low, int32x4_t high, s16 offset) {
+    const int32x4_t rounding = vdupq_n_s32(static_cast<s32>(offset) + 0x18);
+    low = vaddq_s32(vshrq_n_s32(low, 3), rounding);
+    high = vaddq_s32(vshrq_n_s32(high, 3), rounding);
+
+    const uint16x4_t low_u16 = vqmovun_s32(vshrq_n_s32(low, 5));
+    const uint16x4_t high_u16 = vqmovun_s32(vshrq_n_s32(high, 5));
+    return vqmovn_u16(vcombine_u16(low_u16, high_u16));
+}
+
+static void ConvertYUVBandA64(uint8x8_t y_bytes, uint8x8_t u_bytes, uint8x8_t v_bytes, u32* output,
+                              const CoefficientSet& coefficients) {
+    const int16x8_t y = vreinterpretq_s16_u16(vmovl_u8(y_bytes));
+    const int16x8_t u = vreinterpretq_s16_u16(vmovl_u8(u_bytes));
+    const int16x8_t v = vreinterpretq_s16_u16(vmovl_u8(v_bytes));
+
+    const int16x4_t y_low = vget_low_s16(y);
+    const int16x4_t y_high = vget_high_s16(y);
+    const int16x4_t u_low = vget_low_s16(u);
+    const int16x4_t u_high = vget_high_s16(u);
+    const int16x4_t v_low = vget_low_s16(v);
+    const int16x4_t v_high = vget_high_s16(v);
+
+    const int32x4_t cy_low = vmull_n_s16(y_low, coefficients[0]);
+    const int32x4_t cy_high = vmull_n_s16(y_high, coefficients[0]);
+
+    const int32x4_t red_low = vmlal_n_s16(cy_low, v_low, coefficients[1]);
+    const int32x4_t red_high = vmlal_n_s16(cy_high, v_high, coefficients[1]);
+
+    int32x4_t green_low = vmlsl_n_s16(cy_low, v_low, coefficients[2]);
+    int32x4_t green_high = vmlsl_n_s16(cy_high, v_high, coefficients[2]);
+    green_low = vmlsl_n_s16(green_low, u_low, coefficients[3]);
+    green_high = vmlsl_n_s16(green_high, u_high, coefficients[3]);
+
+    const int32x4_t blue_low = vmlal_n_s16(cy_low, u_low, coefficients[4]);
+    const int32x4_t blue_high = vmlal_n_s16(cy_high, u_high, coefficients[4]);
+
+    const uint8x8_t red = NarrowYUVChannel(red_low, red_high, coefficients[5]);
+    const uint8x8_t green = NarrowYUVChannel(green_low, green_high, coefficients[6]);
+    const uint8x8_t blue = NarrowYUVChannel(blue_low, blue_high, coefficients[7]);
+
+    // ImageTile stores numeric 0xRRGGBB00 words. Arrange their little-endian bytes as
+    // [0, B, G, R] with ZIPs and contiguous vector stores, avoiding D-form byte ST4 on A510.
+    const uint8x8_t zero = vdup_n_u8(0);
+    const uint8x8x2_t zero_blue = vzip_u8(zero, blue);
+    const uint8x8x2_t green_red = vzip_u8(green, red);
+    const uint8x16_t zero_blue_q = vcombine_u8(zero_blue.val[0], zero_blue.val[1]);
+    const uint8x16_t green_red_q = vcombine_u8(green_red.val[0], green_red.val[1]);
+    const uint16x8x2_t pixels =
+        vzipq_u16(vreinterpretq_u16_u8(zero_blue_q), vreinterpretq_u16_u8(green_red_q));
+    vst1q_u32(output, vreinterpretq_u32_u16(pixels.val[0]));
+    vst1q_u32(output + 4, vreinterpretq_u32_u16(pixels.val[1]));
+}
+
+template <InputFormat input_format>
+static void ConvertYUVToRGBOnAArch64(const u8* input_Y, const u8* input_U, const u8* input_V,
+                                     ImageTile output[], unsigned int width, unsigned int height,
+                                     const CoefficientSet& coefficients) {
+    for (unsigned int y = 0; y < height; ++y) {
+        for (unsigned int x = 0; x < width; x += 8) {
+            uint8x8_t y_bytes;
+            uint8x8_t u_bytes;
+            uint8x8_t v_bytes;
+            if constexpr (input_format == InputFormat::YUV422_Indiv8 ||
+                          input_format == InputFormat::YUV422_Indiv16) {
+                y_bytes = vld1_u8(input_Y + y * width + x);
+                const std::size_t chroma_offset = y * (width / 2) + x / 2;
+                u_bytes = LoadAndDuplicateChroma(input_U + chroma_offset);
+                v_bytes = LoadAndDuplicateChroma(input_V + chroma_offset);
+            } else if constexpr (input_format == InputFormat::YUV420_Indiv8 ||
+                                 input_format == InputFormat::YUV420_Indiv16) {
+                y_bytes = vld1_u8(input_Y + y * width + x);
+                const std::size_t chroma_offset = (y / 2) * (width / 2) + x / 2;
+                u_bytes = LoadAndDuplicateChroma(input_U + chroma_offset);
+                v_bytes = LoadAndDuplicateChroma(input_V + chroma_offset);
+            } else if constexpr (input_format == InputFormat::YUYV422_Interleaved) {
+                const uint8x8x2_t y_chroma = vld2_u8(input_Y + (y * width + x) * 2);
+                y_bytes = y_chroma.val[0];
+                const uint8x8x2_t u_v = vuzp_u8(y_chroma.val[1], y_chroma.val[1]);
+                u_bytes = DuplicateLowFourBytes(u_v.val[0]);
+                v_bytes = DuplicateLowFourBytes(u_v.val[1]);
+            } else {
+                UNREACHABLE_MSG("Unknown Y2R input format {}", input_format);
+                return;
+            }
+
+            ConvertYUVBandA64(y_bytes, u_bytes, v_bytes, output[x / 8].data() + y * 8,
+                              coefficients);
+        }
+    }
+}
+
+#endif
+
+template <InputFormat input_format>
+static void ConvertYUVToRGB(const u8* input_Y, const u8* input_U, const u8* input_V,
+                            ImageTile output[], unsigned int width, unsigned int height,
+                            const CoefficientSet& coefficients) {
+#if CITRA_ARCH(arm64)
+    ConvertYUVToRGBOnAArch64<input_format>(input_Y, input_U, input_V, output, width, height,
+                                           coefficients);
+#else
+    ConvertYUVToRGBScalar<input_format>(input_Y, input_U, input_V, output, width, height,
+                                        coefficients);
+#endif
+}
+
+void Testing::ConvertYUVToRGB(InputFormat input_format, const u8* input_Y, const u8* input_U,
+                              const u8* input_V, ImageTile output[], unsigned int width,
+                              unsigned int height, const CoefficientSet& coefficients) {
+    switch (input_format) {
+    case InputFormat::YUV422_Indiv8:
+        ::HW::Y2R::ConvertYUVToRGB<InputFormat::YUV422_Indiv8>(input_Y, input_U, input_V, output,
+                                                               width, height, coefficients);
+        break;
+    case InputFormat::YUV420_Indiv8:
+        ::HW::Y2R::ConvertYUVToRGB<InputFormat::YUV420_Indiv8>(input_Y, input_U, input_V, output,
+                                                               width, height, coefficients);
+        break;
+    case InputFormat::YUV422_Indiv16:
+        ::HW::Y2R::ConvertYUVToRGB<InputFormat::YUV422_Indiv16>(input_Y, input_U, input_V, output,
+                                                                width, height, coefficients);
+        break;
+    case InputFormat::YUV420_Indiv16:
+        ::HW::Y2R::ConvertYUVToRGB<InputFormat::YUV420_Indiv16>(input_Y, input_U, input_V, output,
+                                                                width, height, coefficients);
+        break;
+    case InputFormat::YUYV422_Interleaved:
+        ::HW::Y2R::ConvertYUVToRGB<InputFormat::YUYV422_Interleaved>(
+            input_Y, input_U, input_V, output, width, height, coefficients);
+        break;
     }
 }
 

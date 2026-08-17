@@ -466,6 +466,7 @@ add_library(citra_core STATIC EXCLUDE_FROM_ALL
     hw/unique_data.h
     hw/y2r.cpp
     hw/y2r.h
+    hw/y2r_testing.h
     loader/3dsx.cpp
     loader/3dsx.h
     loader/artic.cpp

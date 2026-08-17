@@ -66,6 +66,11 @@ This fork has moved away from stock Azahar in visible ways:
   restoring runtime-gated CRC32 and PMULL implementations. Only specialized objects receive the
   optional ISA flags; the rest of the Android binary remains baseline AArch64. Existing AES/SHA
   acceleration is unchanged by this repair.
+- The emulated 3DS Y2R video/camera block converts eight pixels at a time on AArch64 with exact
+  widening AdvSIMD fixed-point math. All five planar and interleaved YUV formats retain the scalar
+  result and tile layout; non-AArch64 builds retain the scalar implementation. Isolated release
+  codegen removes 77.4%-82.6% of the repeated instructions, but this is a path-local result rather
+  than a whole-game FPS or battery claim.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

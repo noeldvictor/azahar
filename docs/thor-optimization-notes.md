@@ -2436,6 +2436,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Pointing Dynarmic fastmem at the existing storage without that aliasing would be incorrect; this
   remains a separately scoped VM architecture project rather than an unsafe shortcut.
 
+## 2026-08-17 AArch64 Y2R Fixed-Point Conversion
+
+- The emulated 3DS Y2R hardware converts video/camera strips from four planar 4:2:2/4:2:0 formats
+  and interleaved YUYV into tiled `0xRRGGBB00` output. The Android AArch64 release object still ran
+  the complete fixed-point matrix, shifts, clamp, and tile address calculation once per pixel. Its
+  planar repeated loop was 36 instructions per pixel; the interleaved loop was 46 per pixel and
+  only partially packed two lanes with vector operations.
+- The AArch64 path now loads eight luma and four subsampled chroma values per band, duplicates the
+  chroma lanes with ZIPs, and evaluates eight pixels with exact signed widening
+  `SMULL`/`SMLAL`/`SMLSL`. It preserves `(value >> 3) + offset + 0x18`, the following `>> 5`, and
+  clamp to `[0,255]`, then uses saturating narrows and register ZIPs to write the original tile
+  words. Interleaved YUYV uses one D-form `LD2`; output avoids the Cortex-A510's slow D-form byte
+  `ST4`. Non-AArch64 builds keep the original scalar path.
+- The choice is grounded in the checked Thor core manuals: widening multiply/accumulate is listed
+  on Cortex-X3 pages 27-28, A715 page 29, A710 page 43, and A510 page 36; ZIP/narrow operations are
+  on X3 pages 31-32, A715 pages 34-35, A710 pages 52-53, and A510 pages 43-44. Every coefficient
+  product and worst-case three-term channel sum fits signed 32 bits, including `s16` coefficient
+  extremes, so no wider or approximate arithmetic is required.
+- Independent Catch2 coverage checks all five input formats, widths 8/16/24, heights 1/2/7/8, six
+  normal/mixed/extreme coefficient sets, deterministic lane-varying inputs, and untouched tile-row
+  canaries against the original scalar formula. The ARM64 test translation unit and test ELF link
+  successfully; the executable was not run because device execution is excluded for this review.
+- Isolated optimized AArch64 codegen reduces the planar repeated work from 288 instructions for
+  eight pixels to 65, or 77.4%, and the interleaved work from 368 to 64, or 82.6%. That corresponds
+  to 4.43x and 5.75x less instruction-count work respectively, not measured cycle-speed ratios.
+  The full ThinLTO library retains 30 `SMULL`/`SMULL2`, 20 `SMLAL`/`SMLAL2`, 20
+  `SMLSL`/`SMLSL2`, 30 `SQXTUN`/`SQXTUN2`, and 15 `UQXTN` instances across the five format loops.
+  The test-only 1,996-byte conversion entry point is hidden: it remains in the test ELF but is
+  garbage-collected from `libcitra-android.so`, reducing the latter's debug-bearing file by 25,504
+  bytes without changing the production converter.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed twice, including the final hidden-test-entry
+  relink; both the test executable and production shared library linked with ThinLTO. A subsequent
+  clean portable-SDK graph compiled all 2,196 native actions and assembled the APK, although the
+  first Gradle invocation then rejected its configuration cache because the build script calls
+  command-line Git. The required incremental rerun with `--no-configuration-cache` passed cleanly
+  in 33 seconds. The ARM64-only APK is 28,969,635 bytes with SHA-256
+  `801E86EA3F3848C8BE362CE150D77806299082B583E05A4F83820E6657275922`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,505,957,707 logical bytes of the test ELF, APK staging/mappings/symbols, Gradle intermediates,
+  and temporary baseline/codegen objects. Reported C: free space increased by 2,076,962,816 bytes.
+  Three Gradle HTML reports remain file-handle locked after stopping the daemons and total only
+  669,766 bytes. No device, ADB, install, launch, game, FPS, wattage, battery,
+  or temperature measurement was used. The gain applies when titles exercise Y2R video/camera
+  conversion and must not be added to unrelated dispatch, texture, audio, or Eco Turbo percentages.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

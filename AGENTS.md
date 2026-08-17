@@ -236,8 +236,20 @@
   state, resampler history, filter history, and saved-frame behavior. Final AArch64 ThinLTO should
   have no 640-byte `memset` on the steady full-frame path while retaining the empty and partial
   clears.
+- AArch64 Y2R conversion deliberately processes eight pixels per AdvSIMD band for all five input
+  formats. Preserve planar 4:2:2/4:2:0 horizontal chroma duplication, interleaved YUYV ordering,
+  signed 32-bit widening products, both arithmetic-shift stages, offsets, saturation, numeric
+  `0xRRGGBB00` output, 8x8 tile placement, and the scalar non-AArch64 path. Final ThinLTO must retain
+  `SMULL`/`SMLAL`/`SMLSL`, `SQXTUN`/`UQXTN`, and register ZIP packing in each format path; do not
+  replace the packed output with D-form byte `ST4`. Keep all-format, width/height, coefficient-edge,
+  and untouched-row canary coverage. The test-only conversion entry point must remain hidden so it
+  is garbage-collected from production shared libraries.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
+- Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
+  command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
+  after native and APK tasks succeed. Use `--no-configuration-cache`; the ordinary Gradle build
+  cache and active native CMake/Ninja cache remain useful.
 - The Thor may enumerate through both USB (`c3ca0370`) and wireless ADB. Use `adb -s c3ca0370` for deterministic installs and tests when both transports are present. Strip the large native test executable into a temporary file before pushing it to `/data/local/tmp`, and remove both temporary copies immediately after the run.
 - Do not commit generated Gradle, CMake, or APK output.
 - Thor GPU driver UX should stay simple: keep the guided driver picker with visible per-driver download buttons, recommendation notes, recent Turnip rollback choices, manual ZIP fallback, and system-driver fallback working. The guide fetches K11MCH1 AdrenoToolsDrivers release assets at runtime and must validate `meta.json` before installing.

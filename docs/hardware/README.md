@@ -131,6 +131,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 - A native-endian shared-memory view should use one pointer per channel rather than flattening
   nested arrays across subobject boundaries. Keep an explicit endian-converting fallback for other
   hosts, and inspect linked AArch64 to prove those pointers load once before the vector loop.
+- For the fixed-point Y2R video/camera block, widen eight unsigned byte samples to signed halfwords,
+  then use `SMULL`/`SMLAL`/`SMLSL` into signed 32-bit lanes before the original arithmetic shifts
+  and saturating narrows. The widening multiply tables are on X3 pages 27-28, A715 page 29, A710
+  page 43, and A510 page 36; ZIP and narrowing tables are on X3 pages 31-32, A715 pages 34-35,
+  A710 pages 52-53, and A510 pages 43-44. Duplicate subsampled chroma in registers and pack exact
+  `0xRRGGBB00` words with ZIPs plus contiguous stores, avoiding the A510's `1/25` D-form byte `ST4`.
+  Validate all coefficient extremes and inspect final ThinLTO because this equivalence depends on
+  the two signed shift stages and saturating to `[0,255]` only at the output.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 - Optional ARM crypto instructions follow the same heterogeneous-core rule. Crypto++ compiles CRC32
