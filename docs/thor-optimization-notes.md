@@ -741,6 +741,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Record command counts, ordinary-four hit rate, frametimes, process CPU time, battery power,
   temperature, thermal slope, stability, and rendering correctness.
 
+## 2026-08-17 AArch64 PICA EX2 Literal Packing
+
+- The AArch64 PICA vertex-shader JIT's `EX2` approximation previously executed eight independent
+  `ADR` plus scalar `LDR` pairs to materialize its input clamps, `0.5`, and five polynomial
+  coefficients every time the helper ran. The constants are compile-time literals and already
+  have a fixed lifetime, so repeated address generation was unnecessary.
+- This change follows the actual Snapdragon CPU-core guides. Cortex-X3 issue 4.0 table 3-6 gives
+  `ADR` latency 1 and throughput 4 instructions/cycle; table 3-13 gives Q-form `LDP` latency 6 and
+  throughput 3/2. Cortex-A715 issue 5.0 tables 3-6 and 3-13 give `ADR` latency 1/throughput 2 and
+  Q-form `LDP` latency 6/throughput 3/2. Cortex-A710 issue 4.0 tables 3-11 and 3-23 give `ADR`
+  latency 1/throughput 4 and Q-form `LDP` latency 6/throughput 3/2. Cortex-A510 issue 6.0 tables
+  3-10 and 3-23 give `ADR` latency 1/throughput 2 and Q-form `LDP` latency 3/throughput 1. The
+  cited instruction tables are on PDF pages 18/23, 20/26, 27/39, and 22/32 respectively. The
+  manuals stay in the external research library indexed by `docs/hardware/README.md`; temporary
+  rendered review pages are not retained.
+- The eight unchanged 32-bit words now occupy one 16-byte-aligned 32-byte block. One `ADR` and one
+  Q-form `LDP` place them in two vector registers; one lane `DUP` supplies `0.5`. Polynomial
+  coefficients remain in their loaded lanes and are added with `FMLA` whose multiplicand is exact
+  `1.0`. Multiplication by `1.0` is exact for these finite coefficients, so each fused operation
+  has the same one addition-rounding step as the former `FADD`; the Horner multiplication and
+  addition order, clamps, exponent reconstruction, and NaN branch are unchanged.
+- Constant setup therefore falls from 16 executed instructions (eight `ADR` plus eight scalar
+  `LDR`) to 3 (`ADR`, Q `LDP`, and lane `DUP`), 13 fewer instructions per helper execution. A
+  shader that otherwise needs no constant `1.0` adds one `FMOV` at entry, making the net reduction
+  12 instructions for one `EX2`; shaders that already need `ONE`, and subsequent `EX2` helpers,
+  retain the full 13-instruction reduction. Alignment can affect emitted padding, so this is an
+  executed-instruction count rather than an exact code-byte claim.
+- Focused Catch2 coverage now adds fractional negative and positive inputs around the polynomial
+  range (`-1`, `-0.5`, `0.5`, and `1.5`) to the existing NaN, clamp, zero, integer-power, and
+  high-magnitude cases. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m15s, compiling and
+  linking the complete AArch64 test executable and `libcitra-android.so`; the executable was not
+  run because the host is x64 and the current instruction forbids using the Thor.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2m03s. The 28,967,111-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `F43CFD5C41900F957380EE4AA4D65135C848D351792C7D26F071132511BD516F`. No ADB, install,
+  launch, or device access occurred. The instruction reduction is not a whole-game speed or
+  battery-watt claim.
+- A future allowed A/B should use an `EX2`-heavy vertex-shader scene with identical title, save,
+  caches, renderer, driver, resolution, display layout, performance/fan mode, brightness, and
+  duration. Record helper hit counts, frametimes, process CPU time, battery power, temperature,
+  thermal slope, stability, and visual correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
@@ -764,6 +806,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 5. Compatibility-cost toggles
 
    `simulate_3ds_gpu_timings` improves correctness but can cost performance in some games. `delay_game_render_thread_us` is available for dynamic-framerate edge cases. These should be per-title profile toggles, not global Thor defaults.
+
+6. Crypto feature-dispatch audit
+
+   The Android build detects ARMv8 and NEON headers and already enables the AES-oriented Crypto++
+   path, but its configure result leaves CRC32 and PMULL disabled. Profile actual 3DS crypto and
+   checksum workloads, verify compiler/runtime feature gating, and add focused vectors before
+   enabling anything else; crypto setup is not currently a sustained-game-FPS premise.
 
 ## Benchmark Checklist
 

@@ -71,6 +71,8 @@ This fork has moved away from stock Azahar in visible ways:
   from every ordinary output write.
 - The hottest PICA command-list parser has an AArch64 four-pair `LD2` path that validates ordinary
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
+- The AArch64 PICA `EX2` helper loads all eight exact approximation constants with one paired
+  128-bit load instead of eight separate address/load pairs.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
@@ -105,12 +107,16 @@ sequences, build evidence, limitations, and the required benchmark controls are 
 
 ## AArch64 PICA Updates
 
-The PICA vertex-shader JIT now attacks three common AArch64 lowering costs: baseline Armv8-A
+The PICA vertex-shader JIT now attacks four common AArch64 lowering costs: baseline Armv8-A
 AdvSIMD `TBL` handles arbitrary source swizzles, `ST1` lane stores handle partial destination masks
 without reading untouched lanes, and a cached output-bank pointer removes repeated bank loads and
-address generation. These are exact generated-instruction and memory-traffic reductions validated
-by ARM64 compilation and focused regression sources. Whole-game FPS and battery-watt effects still
-require a controlled Thor A/B and are not estimated from static counts.
+address generation. Its `EX2` approximation also packs eight exact constants into two Q registers:
+constant setup falls from eight `ADR` plus eight scalar `LDR` instructions to one `ADR`, one `LDP`,
+and one lane `DUP`. That is 13 fewer instructions inside each helper execution, or a net 12 for an
+otherwise minimal one-`EX2` shader after its required one-time `1.0` register initialization. These
+are exact generated-instruction and memory-traffic reductions validated by ARM64 compilation and
+focused regression sources. Whole-game FPS and battery-watt effects still require a controlled
+Thor A/B and are not estimated from static counts.
 
 The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
 `LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;
