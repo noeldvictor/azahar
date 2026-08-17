@@ -85,6 +85,10 @@
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its paired-load lowering.
 - The AArch64 PICA `LG2` positive-input helper similarly keeps its five exact coefficient words in one aligned two-Q-register block. Preserve its `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value vectors and branches.
+- The AArch64 PICA `CMP` helper combines X/Y only when both lanes use the same operation. Preserve
+  the ordered `FCMEQ`/`FCMGT`/`FCMGE` masks, inverted-equality implementation of `NotEqual` so NaN
+  remains unordered/true, sign-bit extraction for lanes zero and one, and the unchanged scalar path
+  for mixed operators. Keep all six operators covered against the interpreter on real ARM64.
 - The AArch64 PICA source-swizzle planner must preserve exact four-lane selector composition. Its
   26 primitive `EXT`/`REV64`/`ZIP`/`UZP`/`TRN`/`DUP`/lane-move operations cover exactly one
   identity, 26 one-operation, and 122 two-operation selectors; the remaining 107 selectors retain

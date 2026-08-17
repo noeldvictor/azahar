@@ -219,7 +219,7 @@ function grows by 92 bytes. Every valid-prefix length and every 16-bit lookup va
 first-match behavior, passes the focused test on the Thor. Hardware-accelerated vertex draws bypass
 this fallback, so this is not a whole-game FPS or wattage claim.
 
-The PICA vertex-shader JIT now attacks six common AArch64 lowering costs. Source swizzles use
+The PICA vertex-shader JIT now attacks seven common AArch64 lowering costs. Source swizzles use
 register-only AdvSIMD permutations where possible, `ST1` lane stores handle partial destination
 masks without reading untouched lanes, and a cached output-bank pointer removes repeated bank
 loads and address generation. Its `EX2` approximation also packs eight exact constants into two Q registers:
@@ -229,6 +229,13 @@ otherwise minimal one-`EX2` shader after its required one-time `1.0` register in
 are exact generated-instruction and memory-traffic reductions validated by ARM64 compilation and
 focused regression sources. Whole-game FPS and battery-watt effects still require a controlled
 Thor A/B and are not estimated from static counts.
+
+When both PICA `CMP` condition lanes request the same operation, the JIT now compares X and Y with
+one AdvSIMD `FCMEQ`, `FCMGT`, or `FCMGE` and extracts both result bits from the mask. Five ordered
+operators fall from six generated instructions to four; `NotEqual` uses a fifth mask inversion so
+unordered/NaN inputs remain true. Mixed operations keep the scalar path. Both the interpreter and
+JIT versions of the focused PICA state test pass on the real Thor; this is a shader-path instruction
+reduction, not a measured whole-game speed or watt claim.
 
 The source-swizzle planner exhaustively composes `EXT`, `REV64`, `ZIP`, `UZP`, `TRN`, `DUP`, and
 lane moves. One identity, 26 one-operation, and 122 two-operation selectors avoid the old 16-byte

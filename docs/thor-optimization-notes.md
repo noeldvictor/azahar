@@ -3003,6 +3003,42 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   476-byte metadata and the active 2,785,959,354-byte ARM64 RelWithDebInfo CMake/Ninja cache remain;
   the final C: free-space check reported 87,739,273,216 bytes.
 
+## 2026-08-17 AArch64 PICA Matching-Lane Compare
+
+- PICA `CMP` writes two conditional-code booleans from the X and Y components. The old AArch64 JIT
+  always emitted two scalar `FCMP`/`CSET` pairs plus two lane moves: six instructions after source
+  swizzling, even when both lanes selected the same comparison operation.
+- Matching operations now use one vector `FCMEQ`, `FCMGT`, or `FCMGE`, move the low 64-bit mask to
+  a general register, and extract lane-zero and lane-one sign bits. Equal, less/less-equal, and
+  greater/greater-equal therefore use four instructions; `NotEqual` uses five because it inverts
+  the equality mask. Mixed operators retain the old scalar path.
+- This preserves PICA's prior ordered comparison behavior. An unordered/NaN operand produces false
+  for equality and ordered relational operations; inverted equality makes `NotEqual` true. New
+  regression coverage exercises all six operations with less, greater, equal, and NaN inputs in
+  both the interpreter and AArch64 JIT.
+- The checked Cortex-X3, A715, A710, and A510 manuals list AdvSIMD floating compares on pages 28,
+  30, 46, and 39 respectively. The operation is available across all Thor core classes rather than
+  relying on an optional X3-only extension. Documented compare latency is two cycles on X3/A715/A710
+  and three on A510.
+- A clean 2,199-action ARM64 native build passed and linked the test ELF and production library.
+  Over Wi-Fi ADB `192.168.1.33:5555`, AYN Thor ran the exact `PICA State Access` interpreter and JIT
+  cases with 39/39 assertions passing in each. A broader `[shader]` run had 49 of 50 cases pass and
+  exposed the existing unrelated `LG2 - ShaderJitTest` mismatch; this change's focused suites pass.
+  The stripped device test binary was removed from both host and Thor immediately afterward.
+- Commit `2e26caa9f` was pushed before the final build. The release-style
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build passed in three minutes.
+  The ARM64-only, v2-signed APK is 28,975,540 bytes, reports
+  `2e26caa9f-vanilla-thor`, and has SHA-256
+  `3BA2EFB83034ECF1770F5F27E7C1D26CD9D28846EE1FBD909C68EC409167B903`.
+- The APK installed successfully over `org.azahar_emu.azahar.debug` on the same Wi-Fi Thor and
+  reports `primaryCpuAbi=arm64-v8a`. The device was AC-powered at 52% battery; Azahar was
+  force-stopped before and after installation, and no app UI or game was launched. This is a local
+  generated-instruction reduction, not a measured whole-game FPS or battery-watt improvement.
+- Post-verification cleanup removed 2,022,138,323 logical bytes of Gradle/native staging, test
+  output, and rendered manual-page PNGs. `app/build` now contains only the 28,975,540-byte APK and
+  its 476-byte metadata; the 3,229,579,753-byte active ARM64 RelWithDebInfo CMake/Ninja cache is
+  retained. C: reported 87,276,048,384 bytes free after cleanup.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
