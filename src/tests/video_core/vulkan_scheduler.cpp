@@ -13,7 +13,7 @@ class CountingMasterSemaphore final : public Vulkan::MasterSemaphore {
 public:
     void Refresh() override {
         ++refresh_count;
-        gpu_tick.store(refresh_target, std::memory_order_release);
+        AdvanceGpuTick(refresh_target);
     }
 
     void Wait(u64) override {}
@@ -22,6 +22,10 @@ public:
 
     void SetRefreshTarget(u64 tick) {
         refresh_target = tick;
+    }
+
+    void AdvanceCompletionForTest(u64 tick) {
+        AdvanceGpuTick(tick);
     }
 
     u32 refresh_count{};
@@ -58,6 +62,17 @@ TEST_CASE("Vulkan submit progress polling uses a bounded cadence", "[video_core]
         REQUIRE(semaphore.refresh_count ==
                 expected_tick / Vulkan::MasterSemaphore::SUBMISSION_REFRESH_INTERVAL);
     }
+}
+
+TEST_CASE("Vulkan cached GPU progress never regresses", "[video_core][vulkan]") {
+    CountingMasterSemaphore semaphore;
+
+    semaphore.AdvanceCompletionForTest(7);
+    REQUIRE(semaphore.KnownGpuTick() == 7);
+    semaphore.AdvanceCompletionForTest(3);
+    REQUIRE(semaphore.KnownGpuTick() == 7);
+    semaphore.AdvanceCompletionForTest(9);
+    REQUIRE(semaphore.KnownGpuTick() == 9);
 }
 
 TEST_CASE("Vulkan resource pools refresh stale progress on demand", "[video_core][vulkan]") {

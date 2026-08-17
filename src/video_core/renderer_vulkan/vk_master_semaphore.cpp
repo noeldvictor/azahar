@@ -24,16 +24,8 @@ MasterSemaphoreTimeline::MasterSemaphoreTimeline(const Instance& instance_) : in
 MasterSemaphoreTimeline::~MasterSemaphoreTimeline() = default;
 
 void MasterSemaphoreTimeline::Refresh() {
-    u64 this_tick{};
-    u64 counter{};
-    do {
-        this_tick = gpu_tick.load(std::memory_order_acquire);
-        counter = instance.GetDevice().getSemaphoreCounterValueKHR(*semaphore);
-        if (counter < this_tick) {
-            return;
-        }
-    } while (!gpu_tick.compare_exchange_weak(this_tick, counter, std::memory_order_release,
-                                             std::memory_order_relaxed));
+    const u64 counter = instance.GetDevice().getSemaphoreCounterValueKHR(*semaphore);
+    AdvanceGpuTick(counter);
 }
 
 void MasterSemaphoreTimeline::Wait(u64 tick) {
@@ -179,7 +171,7 @@ void MasterSemaphoreFence::WaitThread(std::stop_token token) {
         }
 
         device.resetFences(fence);
-        gpu_tick.store(signal_value);
+        AdvanceGpuTick(signal_value);
 
         std::scoped_lock lock{free_mutex};
         free_queue.push_back(fence);

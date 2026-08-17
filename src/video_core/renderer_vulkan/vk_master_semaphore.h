@@ -22,11 +22,11 @@ public:
     virtual ~MasterSemaphore() = default;
 
     [[nodiscard]] u64 CurrentTick() const noexcept {
-        return current_tick.load(std::memory_order_acquire);
+        return current_tick.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] u64 KnownGpuTick() const noexcept {
-        return gpu_tick.load(std::memory_order_acquire);
+        return gpu_tick.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] bool IsFree(u64 tick) const noexcept {
@@ -34,7 +34,7 @@ public:
     }
 
     [[nodiscard]] u64 NextTick() noexcept {
-        return current_tick.fetch_add(1, std::memory_order_release);
+        return current_tick.fetch_add(1, std::memory_order_relaxed);
     }
 
     /// Periodically refreshes cached GPU progress after a submission is recorded. Resource-pool
@@ -57,6 +57,15 @@ public:
                             u64 signal_value) = 0;
 
 protected:
+    /// Advances the numerical completion cache without publishing other memory through it.
+    void AdvanceGpuTick(u64 tick) noexcept {
+        u64 known_tick = gpu_tick.load(std::memory_order_relaxed);
+        while (known_tick < tick &&
+               !gpu_tick.compare_exchange_weak(known_tick, tick, std::memory_order_relaxed,
+                                               std::memory_order_relaxed)) {
+        }
+    }
+
     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
     std::atomic<u64> current_tick{1}; ///< Current logical tick.
 };
