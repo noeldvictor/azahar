@@ -22,6 +22,9 @@ constexpr oaknut::XReg Xhalt{27};
 constexpr oaknut::XReg Xticks{26};
 constexpr oaknut::XReg Xfastmem{25};
 constexpr oaknut::XReg Xpagetable{24};
+// A32 keeps its architectural NZCV value live here for the duration of Run().
+constexpr oaknut::XReg Xnzcv{23};
+constexpr oaknut::WReg Wnzcv{23};
 
 constexpr oaknut::XReg Xscratch0{16}, Xscratch1{17}, Xscratch2{30};
 constexpr oaknut::WReg Wscratch0{16}, Wscratch1{17}, Wscratch2{30};
@@ -49,6 +52,7 @@ constexpr auto Rscratch1() {
 }
 
 constexpr std::initializer_list<int> GPR_ORDER{19, 20, 21, 22, 23, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8};
+constexpr std::initializer_list<int> GPR_ORDER_CACHED_NZCV{19, 20, 21, 22, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8};
 constexpr std::initializer_list<int> FPR_ORDER{8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31};
 
 using RegisterList = u64;
@@ -71,6 +75,8 @@ constexpr RegisterList ToRegList(oaknut::Reg reg) {
 
 constexpr RegisterList ABI_CALLEE_SAVE = 0x0000ff00'7ff80000;
 constexpr RegisterList ABI_CALLER_SAVE = 0xffffffff'4000ffff;
+static_assert((ABI_CALLEE_SAVE & ToRegList(Xnzcv)) != 0);
+static_assert((ABI_CALLER_SAVE & ToRegList(Xnzcv)) == 0);
 
 void ABI_PushRegisters(oaknut::CodeGenerator& code, RegisterList rl, size_t stack_space);
 void ABI_PopRegisters(oaknut::CodeGenerator& code, RegisterList rl, size_t stack_space);

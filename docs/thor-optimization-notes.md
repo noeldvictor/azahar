@@ -450,6 +450,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   resolution, layout, brightness, fan/performance mode, and run duration, recording FPS,
   frametimes, process CPU time, battery power, temperature, and thermal slope.
 
+## 2026-08-16 Dynarmic A32 ARM64 NZCV Register Cache
+
+- Dynarmic's A32 ARM64 backend kept the guest ARM11 N/Z/C/V flags in
+  `A32JitState::cpsr_nzcv`. A flag-producing block wrote that word to memory, while the
+  next conditional block, carry consumer, or conditional select loaded it again. This
+  made the architectural-state structure part of ordinary linked-block execution even
+  though AArch64 has enough callee-saved registers to keep the four bits live.
+- A32 now reserves callee-saved `W23` for the packed guest NZCV value. The run and step
+  preludes load it once, linked blocks consume and replace it directly, and the common
+  exit stores it once. The A64 frontend keeps its original memory representation and its
+  complete 21-register allocator order; only A32 trades one allocator register for the
+  persistent flag cache.
+- Generated callback relocations and generic host-function calls store `W23` before the
+  host call and reload it afterward. This preserves the old observable behavior for
+  SVC, exception, coprocessor, slow-memory, timer, and hook callbacks: a callback sees
+  current guest flags and may update them before guest execution resumes. `X23` is both
+  compile-time-checked as AAPCS64 callee-saved and excluded from the A32 allocator.
+- Exact emitted-sequence accounting for a `SUBS`/conditional-branch loop changes the
+  NZCV path from `STR + LDR + MSR + B` to `MOV + MSR + B`: four instructions to three
+  (25% fewer) and eight bytes of per-iteration flag-state traffic to zero. An NZ-only
+  update that preserves C/V followed by a condition falls from seven instructions and
+  three state-memory operations to four instructions and no state-memory operations
+  (42.9% fewer instructions). A carry read falls from two instructions to one, and a
+  conditional select falls from three instructions to two.
+- The entry/exit cost is one four-byte load and one four-byte store per `Run()` or
+  `Step()`, rather than per guest block. Host callbacks deliberately add a store/load
+  pair for coherence. The new hidden `SUBS`/`BNE` benchmark makes the register-pressure
+  tradeoff and the removed cross-block traffic repeatable against the parent revision;
+  it must be measured before deciding whether the reserved register is a net win in
+  real game code.
+- The focused regression compiles a sequence that sets Z/C, enters SVC, verifies the
+  callback sees those flags, replaces them with N, and then verifies subsequent MI/EQ
+  guest conditions use the callback's replacement. The complete ARM64 Dynarmic test
+  executable and `libcitra-android.so` compiled and linked. The release-style
+  `:app:assembleVanillaRelWithDebInfoLite` build also passed; its 28,965,311-byte APK
+  contains only `arm64-v8a` native libraries and has SHA-256
+  `09F52B9EC343F62F9E8B3E0EB04402C3537741E73335E7117285D58848F13728`. Per the active
+  no-device restriction, neither executable was run on the Thor.
+- This is a broad generated-code and memory-traffic reduction, not yet an emulator FPS
+  or battery-watt result. A future allowed A/B should compare the parent and candidate
+  revisions with the focused benchmark plus identical game scenes, and must capture
+  frametimes, process CPU time, battery power, temperature, thermal slope, and visual
+  correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

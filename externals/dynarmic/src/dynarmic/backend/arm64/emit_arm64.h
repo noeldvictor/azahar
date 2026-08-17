@@ -152,7 +152,8 @@ struct EmitConfig {
     void (*emit_terminal)(oaknut::CodeGenerator& code, EmitContext& ctx);
     void (*emit_check_memory_abort)(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst, oaknut::Label& end);
 
-    // State offsets
+    // State cache and offsets
+    bool cache_nzcv_in_host_register;
     size_t state_nzcv_offset;
     size_t state_fpsr_offset;
     size_t state_exclusive_state_offset;

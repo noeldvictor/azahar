@@ -20,6 +20,18 @@ namespace Dynarmic::Backend::Arm64 {
 
 using namespace oaknut::util;
 
+static void SpillCachedNZCV(oaknut::CodeGenerator& code, const EmitContext& ctx) {
+    if (ctx.conf.cache_nzcv_in_host_register) {
+        code.STR(Wnzcv, Xstate, ctx.conf.state_nzcv_offset);
+    }
+}
+
+static void ReloadCachedNZCV(oaknut::CodeGenerator& code, const EmitContext& ctx) {
+    if (ctx.conf.cache_nzcv_in_host_register) {
+        code.LDR(Wnzcv, Xstate, ctx.conf.state_nzcv_offset);
+    }
+}
+
 template<>
 void EmitIR<IR::Opcode::Void>(oaknut::CodeGenerator&, EmitContext&, IR::Inst*) {}
 
@@ -41,7 +53,9 @@ void EmitIR<IR::Opcode::CallHostFunction>(oaknut::CodeGenerator& code, EmitConte
 
     ctx.reg_alloc.PrepareForCall(args[1], args[2], args[3]);
     code.MOV(Xscratch0, args[0].GetImmediateU64());
+    SpillCachedNZCV(code, ctx);
     code.BLR(Xscratch0);
+    ReloadCachedNZCV(code, ctx);
 }
 
 template<>
@@ -199,7 +213,10 @@ EmittedBlockInfo EmitArm64(oaknut::CodeGenerator& code, IR::Block block, const E
     EmittedBlockInfo ebi;
 
     FpsrManager fpsr_manager{code, conf.state_fpsr_offset};
-    RegAlloc reg_alloc{code, fpsr_manager, GPR_ORDER, FPR_ORDER};
+    const auto gpr_order = conf.cache_nzcv_in_host_register
+                             ? std::vector<int>(GPR_ORDER_CACHED_NZCV)
+                             : std::vector<int>(GPR_ORDER);
+    RegAlloc reg_alloc{code, fpsr_manager, gpr_order, FPR_ORDER};
     EmitContext ctx{block, reg_alloc, conf, ebi, fpsr_manager, fastmem_manager, {}};
 
     ebi.entry_point = code.xptr<CodePtr>();
@@ -268,8 +285,19 @@ EmittedBlockInfo EmitArm64(oaknut::CodeGenerator& code, IR::Block block, const E
 }
 
 void EmitRelocation(oaknut::CodeGenerator& code, EmitContext& ctx, LinkTarget link_target) {
+    // A callback may inspect or update JIT state. Keep the cached A32 flags coherent at every
+    // generated-code/host boundary; linked-block and dispatcher branches stay entirely in JIT code.
+    const bool is_host_call = link_target != LinkTarget::ReturnToDispatcher
+                           && link_target != LinkTarget::FastDispatch
+                           && link_target != LinkTarget::ReturnFromRunCode;
+    if (is_host_call) {
+        SpillCachedNZCV(code, ctx);
+    }
     ctx.ebi.relocations.emplace_back(Relocation{code.xptr<CodePtr>() - ctx.ebi.entry_point, link_target});
     code.NOP();
+    if (is_host_call) {
+        ReloadCachedNZCV(code, ctx);
+    }
 }
 
 void EmitBlockLinkRelocation(oaknut::CodeGenerator& code, EmitContext& ctx, const IR::LocationDescriptor& descriptor, BlockRelocationType type) {

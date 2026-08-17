@@ -28,6 +28,14 @@ void ConfigureDispatchLoop(ArmTestEnv& env) {
     };
 }
 
+void ConfigureNZCVLoop(ArmTestEnv& env) {
+    env.code_mem = {
+        0xe2500001,  // SUBS R0, R0, #1
+        0x1afffffd,  // BNE -#12
+        0xeafffffe,  // B .
+    };
+}
+
 u32 RunDispatchLoop(A32::Jit& jit, ArmTestEnv& env) {
     jit.Regs()[0] = 0;
     jit.Regs()[1] = 0;
@@ -35,6 +43,14 @@ u32 RunDispatchLoop(A32::Jit& jit, ArmTestEnv& env) {
     env.ticks_left = ticks_per_sample;
     jit.Run();
     return jit.Regs()[1];
+}
+
+u32 RunNZCVLoop(A32::Jit& jit, ArmTestEnv& env) {
+    jit.Regs()[0] = ticks_per_sample / 2;
+    jit.Regs()[15] = 0;
+    env.ticks_left = ticks_per_sample;
+    jit.Run();
+    return jit.Regs()[0];
 }
 
 }  // namespace
@@ -75,5 +91,19 @@ TEST_CASE("A32 FastDispatch microbenchmark", "[.benchmark][A32][arm]") {
 
     BENCHMARK("A32 C++ dispatcher (fourth)") {
         return RunDispatchLoop(slow_jit, slow_env);
+    };
+}
+
+TEST_CASE("A32 ARM64 NZCV cache microbenchmark", "[.benchmark][A32][arm]") {
+    ArmTestEnv env;
+    ConfigureNZCVLoop(env);
+    A32::Jit jit{A32::UserConfig{&env}};
+    jit.SetCpsr(0x000001d0);  // User mode
+
+    // Each iteration writes NZCV in SUBS and immediately consumes it in BNE.
+    REQUIRE(RunNZCVLoop(jit, env) == 0);
+
+    BENCHMARK("A32 flag-producing conditional loop") {
+        return RunNZCVLoop(jit, env);
     };
 }

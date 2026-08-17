@@ -246,6 +246,7 @@ void A32AddressSpace::EmitPrelude() {
         code.MOV(X19, X0);
         code.MOV(Xstate, X1);
         code.MOV(Xhalt, X2);
+        code.LDR(Wnzcv, Xstate, offsetof(A32JitState, cpsr_nzcv));
         if (conf.page_table) {
             code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.page_table));
         }
@@ -285,6 +286,7 @@ void A32AddressSpace::EmitPrelude() {
         code.MOV(X19, X0);
         code.MOV(Xstate, X1);
         code.MOV(Xhalt, X2);
+        code.LDR(Wnzcv, Xstate, offsetof(A32JitState, cpsr_nzcv));
         if (conf.page_table) {
             code.MOV(Xpagetable, mcl::bit_cast<u64>(conf.page_table));
         }
@@ -362,8 +364,7 @@ void A32AddressSpace::EmitPrelude() {
             code.B(LE, return_from_run_code);
         }
 
-        static_assert(offsetof(A32JitState, regs) + 16 * sizeof(u32) ==
-                      offsetof(A32JitState, upper_location_descriptor));
+        static_assert(offsetof(A32JitState, regs) + 16 * sizeof(u32) == offsetof(A32JitState, upper_location_descriptor));
         code.LDUR(X20, Xstate, offsetof(A32JitState, regs) + 15 * sizeof(u32));
 
         // Mix the upper descriptor into the PC and discard the always-zero alignment bit.
@@ -400,6 +401,8 @@ void A32AddressSpace::EmitPrelude() {
     prelude_info.return_from_run_code = code.xptr<void*>();
     {
         code.l(return_from_run_code);
+
+        code.STR(Wnzcv, Xstate, offsetof(A32JitState, cpsr_nzcv));
 
         if (conf.enable_cycle_counting) {
             code.LDR(X1, SP, offsetof(StackLayout, cycles_to_run));
@@ -470,6 +473,7 @@ EmitConfig A32AddressSpace::GetEmitConfig() {
         .emit_terminal = EmitA32Terminal,
         .emit_check_memory_abort = EmitA32CheckMemoryAbort,
 
+        .cache_nzcv_in_host_register = true,
         .state_nzcv_offset = offsetof(A32JitState, cpsr_nzcv),
         .state_fpsr_offset = offsetof(A32JitState, fpsr),
         .state_exclusive_state_offset = offsetof(A32JitState, exclusive_state),

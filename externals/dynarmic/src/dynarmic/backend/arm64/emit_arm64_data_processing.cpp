@@ -211,8 +211,12 @@ void EmitIR<IR::Opcode::ConditionalSelect32>(oaknut::CodeGenerator& code, EmitCo
 
     // TODO: FSEL for fprs
 
-    code.LDR(Wscratch0, Xstate, ctx.conf.state_nzcv_offset);
-    code.MSR(oaknut::SystemReg::NZCV, Xscratch0);
+    if (ctx.conf.cache_nzcv_in_host_register) {
+        code.MSR(oaknut::SystemReg::NZCV, Xnzcv);
+    } else {
+        code.LDR(Wscratch0, Xstate, ctx.conf.state_nzcv_offset);
+        code.MSR(oaknut::SystemReg::NZCV, Xscratch0);
+    }
     code.CSEL(Wresult, Wthen, Welse, static_cast<oaknut::Cond>(cond));
 }
 
@@ -228,8 +232,12 @@ void EmitIR<IR::Opcode::ConditionalSelect64>(oaknut::CodeGenerator& code, EmitCo
 
     // TODO: FSEL for fprs
 
-    code.LDR(Wscratch0, Xstate, ctx.conf.state_nzcv_offset);
-    code.MSR(oaknut::SystemReg::NZCV, Xscratch0);
+    if (ctx.conf.cache_nzcv_in_host_register) {
+        code.MSR(oaknut::SystemReg::NZCV, Xnzcv);
+    } else {
+        code.LDR(Wscratch0, Xstate, ctx.conf.state_nzcv_offset);
+        code.MSR(oaknut::SystemReg::NZCV, Xscratch0);
+    }
     code.CSEL(Xresult, Xthen, Xelse, static_cast<oaknut::Cond>(cond));
 }
 

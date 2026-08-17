@@ -580,6 +580,7 @@ EmitConfig A64AddressSpace::GetEmitConfig() {
         .emit_terminal = EmitA64Terminal,
         .emit_check_memory_abort = EmitA64CheckMemoryAbort,
 
+        .cache_nzcv_in_host_register = false,
         .state_nzcv_offset = offsetof(A64JitState, cpsr_nzcv),
         .state_fpsr_offset = offsetof(A64JitState, fpsr),
         .state_exclusive_state_offset = offsetof(A64JitState, exclusive_state),
