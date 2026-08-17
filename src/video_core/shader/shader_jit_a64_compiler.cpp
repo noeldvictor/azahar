@@ -993,6 +993,42 @@ void JitShader::Compile_CMP(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
     Compile_SwizzleSrc(instr, 2, instr.common.src2, SRC2);
 
+    if (op_x == op_y) {
+        // Compare X and Y together when both conditional-code lanes use the same operation. The
+        // result lanes are either all-zero or all-one, so their sign bits are the required bools.
+        // This also preserves the scalar ordered-comparison behavior for NaNs; only NotEqual needs
+        // the equality mask inverted so unordered inputs remain true.
+        switch (op_x) {
+        case Op::Equal:
+            FCMEQ(VSCRATCH0.S4(), SRC1.S4(), SRC2.S4());
+            break;
+        case Op::NotEqual:
+            FCMEQ(VSCRATCH0.S4(), SRC1.S4(), SRC2.S4());
+            MVN(VSCRATCH0.B16(), VSCRATCH0.B16());
+            break;
+        case Op::LessThan:
+            FCMGT(VSCRATCH0.S4(), SRC2.S4(), SRC1.S4());
+            break;
+        case Op::LessEqual:
+            FCMGE(VSCRATCH0.S4(), SRC2.S4(), SRC1.S4());
+            break;
+        case Op::GreaterThan:
+            FCMGT(VSCRATCH0.S4(), SRC1.S4(), SRC2.S4());
+            break;
+        case Op::GreaterEqual:
+            FCMGE(VSCRATCH0.S4(), SRC1.S4(), SRC2.S4());
+            break;
+        default:
+            UNREACHABLE_MSG("Unknown compare mode: {}", static_cast<u32>(op_x));
+            break;
+        }
+
+        MOV(XSCRATCH0, VSCRATCH0.Delem()[0]);
+        UBFX(COND0, XSCRATCH0, 31, 1);
+        LSR(COND1, XSCRATCH0, 63);
+        return;
+    }
+
     static constexpr Cond cmp[] = {Cond::EQ, Cond::NE, Cond::LT, Cond::LE, Cond::GT, Cond::GE};
 
     // Compare X-component
