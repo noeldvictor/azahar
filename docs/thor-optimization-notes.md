@@ -165,10 +165,11 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Final ARM64 ThinLTO code contains exactly four block-decoder calls per full tile and no calls back
   to the old per-pixel sampler.
 - The ETC1 upload wrapper shrank from 688 to 408 bytes (40.7%); the ETC1A4 wrapper shrank from 448
-  to 396 bytes (11.6%). More importantly, both changed from 64 decoder calls to four. The new block
-  helpers are 312 bytes for ETC1 and 348 bytes for ETC1A4, while the original 356-byte sampler is
-  unchanged. This is an algorithmic invariant-hoisting win on every host architecture, including
-  the Thor's AArch64 cores, rather than a guest-semantics shortcut.
+  to 396 bytes (11.6%). More importantly, both changed from 64 decoder calls to four. At this
+  checkpoint the scalar block helpers were 312 bytes for ETC1 and 348 bytes for ETC1A4, while the
+  original 356-byte sampler was unchanged. This is an algorithmic invariant-hoisting win on every
+  host architecture, including the Thor's AArch64 cores, rather than a guest-semantics shortcut;
+  the later AArch64 SIMD follow-up is recorded below.
 - Temporary host differential harnesses checked 100,000 arbitrary raw blocks in both ETC1 and
   ETC1A4 modes (1.6 million pixels per format) and then 10,000 complete padded-stride tiles per
   format. Every byte matched the old sampler, including all flip/differential combinations,
@@ -1132,6 +1133,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   title that selects linear resampling, with identical save, caches, renderer, resolution, driver,
   layout, performance/fan mode, brightness, and duration, then record DSP-thread time/placement,
   audio underruns, frametimes, battery power, temperature, thermal slope, and output correctness.
+
+## 2026-08-17 AArch64 ETC1 Block SIMD
+
+- The block-level ETC1 change removed repeated setup, but final release AArch64 code still decoded
+  all 16 pixels with a scalar nested loop. Each pixel performed variable selector/sign shifts,
+  modifier and base-color table choices, three adds, three duplicated clamps, and four byte stores.
+  The approximately 37-instruction pixel body ran 16 times per block, and an 8x8 PICA tile contains
+  four blocks. This was the clearest remaining x86-originated scalar texture-upload gap.
+- The complete relevant manual pages were visually checked. Arm Architecture Reference Manual DDI
+  0487 H.a sections C7.2.309, C7.2.339, C7.2.390, and C7.2.403 (PDF pages 2717, 2801, 2911, and
+  2938) define the exact vector operations used here: `SQXTUN` saturates signed lanes into narrower
+  unsigned lanes, `TBL` performs byte lookup, signed per-lane `USHL` counts select left or
+  truncating right shifts, and `ZIP1` interleaves the lower halves of two vectors. These are
+  baseline AdvSIMD instructions and do not assume SVE.
+- The Snapdragon 8 Gen 2 core manuals support the choice across the heterogeneous CPU. Cortex-X3
+  issue 4.0 pages 27/31/32 list latency/throughput of 2/2 for `USHL`, 4/2 for `SQXTUN`, 2/2 for a
+  one-table `TBL`, and 2/4 for `ZIP`. Cortex-A715 issue 5.0 pages 30/34/35 and Cortex-A710 issue 4.0
+  pages 44/52/53 list 2/1, 4/1, 2/2, and 2/2 respectively. Cortex-A510 issue 6.0 pages 37/43/44
+  list latencies 3, 4, 4, and 3 with the guide's `2,1` execution-throughput notation. The A510's
+  table lookup is slower, but one 16-byte lookup still replaces 16 scalar alpha-nibble extractions.
+  The external PDFs remain uncommitted and are indexed in `docs/hardware/README.md`.
+- AArch64 now decodes each block as two compile-time eight-pixel bands. Lane shifts gather ETC's
+  column-major selector and negation bit `4 * x + y` into row-major order. A vector flip mask
+  selects horizontal `x / 2` subblocks or whole-band `y / 2` subblocks without per-lane scalar
+  setup. Modifier selection, sign, base-color selection, and signed addition stay in 16-bit lanes;
+  six `SQXTUN` instructions reproduce the old `[0,255]` clamps for RGB. ETC1A4 splits all 16 alpha
+  nibbles, reorders them once with `TBL`, and duplicates each nibble with `SLI`. A ZIP network then
+  writes the complete RGBA block with four 16-byte stores, replacing 64 scalar byte stores. The
+  non-AArch64 scalar decoder is unchanged.
+- Final ThinLTO contains no pixel loop and no lane-by-lane mask construction. The ETC1 function has
+  114 straight-line instructions after its unchanged decoder-constructor call; ETC1A4 has 123.
+  Static helper sizes grow from 312/348 bytes to 516/560 bytes because the two bands are unrolled,
+  but the old roughly 600 dynamically executed pixel-body instructions are gone. Linked code shows
+  the intended `USHL`, `SQXTUN`, `ZIP`, and four Q stores; ETC1A4 additionally shows exactly one
+  `TBL` and one `SLI`.
+- Permanent Catch2 coverage now generates 128 deterministic raw blocks with all flip/differential
+  combinations, all modifier-table indices, structured selector/sign extremes, random base colors,
+  and alpha extremes. Each block is checked as ETC1 and ETC1A4 with both `+24` and `-24` output
+  stride against the independent scalar sampler, comparing the whole guarded buffer so row padding
+  and canaries must remain untouched. That is 512 direct decoder cases / 8,192 pixels in addition
+  to the existing complete padded-tile tests.
+- Command-line Git/SSH refreshed `upstream/master` at `3392c56ce` (`core: Fix another msvc compiler
+  bug`); this fork remains zero commits behind and 73 commits ahead, so no upstream merge was
+  needed.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the source plus the 444,079,176-byte
+  ELF64/AArch64 Catch2 executable. `:app:assembleVanillaRelWithDebInfoLite` then passed in 1m59s.
+  The 28,964,919-byte APK contains only `arm64-v8a` native libraries and has SHA-256
+  `172CFB1B162F118869DCA8360B576AF1AC89BB7B7C0A3CA024EBF17DBE90D5B5`.
+- No device, ADB, install, launch, or game was used, and the AArch64 test executable was not run on
+  this x64 host. This is a large instruction and store-count reduction when ETC blocks are decoded,
+  not yet a whole-game FPS or wattage measurement. A future allowed matched A/B should use an
+  ETC-heavy texture-streaming scene with identical save, caches, renderer, resolution, driver,
+  layout, performance/fan mode, brightness, and duration, then record texture-upload CPU time,
+  frametimes, battery power, temperature, thermal slope, visual correctness, and stability.
 
 ## High-Value Optimization Places
 

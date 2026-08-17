@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include "common/bit_field.h"
 #include "common/color.h"
 #include "common/common_types.h"
@@ -24,6 +27,46 @@ constexpr std::array<std::array<u8, 2>, 8> etc1_modifier_table = {{
     {33, 106},
     {47, 183},
 }};
+
+#if defined(__aarch64__)
+
+// ETC1 stores selector bits down columns, while the decoded image is written across rows. These
+// signed shifts gather two rows of four pixels into consecutive AdvSIMD lanes.
+constexpr std::array<s16, 8> etc1_selector_shifts_01 = {0, -4, -8, -12, -1, -5, -9, -13};
+constexpr std::array<s16, 8> etc1_selector_shifts_23 = {-2, -6, -10, -14, -3, -7, -11, -15};
+constexpr std::array<u16, 8> etc1_horizontal_subblocks = {0, 0, 0xFFFF, 0xFFFF,
+                                                          0, 0, 0xFFFF, 0xFFFF};
+constexpr std::array<u8, 16> etc1_column_to_row = {0, 4, 8,  12, 1, 5, 9,  13,
+                                                   2, 6, 10, 14, 3, 7, 11, 15};
+
+void StoreETC1RowPair(u8* first_row, std::ptrdiff_t output_stride, uint8x8_t red, uint8x8_t green,
+                      uint8x8_t blue, uint8x8_t alpha) {
+    const uint8x8x2_t red_green = vzip_u8(red, green);
+    const uint8x8x2_t blue_alpha = vzip_u8(blue, alpha);
+
+    const uint16x4x2_t first =
+        vzip_u16(vreinterpret_u16_u8(red_green.val[0]), vreinterpret_u16_u8(blue_alpha.val[0]));
+    const uint16x4x2_t second =
+        vzip_u16(vreinterpret_u16_u8(red_green.val[1]), vreinterpret_u16_u8(blue_alpha.val[1]));
+
+    vst1q_u8(first_row,
+             vcombine_u8(vreinterpret_u8_u16(first.val[0]), vreinterpret_u8_u16(first.val[1])));
+    vst1q_u8(first_row + output_stride,
+             vcombine_u8(vreinterpret_u8_u16(second.val[0]), vreinterpret_u8_u16(second.val[1])));
+}
+
+uint8x16_t ExpandETC1Alpha(u64 alpha) {
+    const uint8x8_t packed = vreinterpret_u8_u64(vcreate_u64(alpha));
+    uint8x8_t low = vand_u8(packed, vdup_n_u8(0x0F));
+    uint8x8_t high = vshr_n_u8(packed, 4);
+    const uint8x8x2_t nibbles = vzip_u8(low, high);
+    const uint8x16_t column_major = vcombine_u8(nibbles.val[0], nibbles.val[1]);
+    uint8x16_t row_major = vqtbl1q_u8(column_major, vld1q_u8(etc1_column_to_row.data()));
+    row_major = vsliq_n_u8(row_major, row_major, 4);
+    return row_major;
+}
+
+#endif
 
 union ETC1Tile {
     u64 raw;
@@ -128,10 +171,9 @@ public:
             const int green = static_cast<int>(tile.differential.g);
             const int blue = static_cast<int>(tile.differential.b);
             base_colors[0] = ConvertDifferential(red, green, blue);
-            base_colors[1] =
-                ConvertDifferential(red + static_cast<int>(tile.differential.dr),
-                                    green + static_cast<int>(tile.differential.dg),
-                                    blue + static_cast<int>(tile.differential.db));
+            base_colors[1] = ConvertDifferential(red + static_cast<int>(tile.differential.dr),
+                                                 green + static_cast<int>(tile.differential.dg),
+                                                 blue + static_cast<int>(tile.differential.db));
         } else {
             base_colors[0] = {
                 Common::Color::Convert4To8(static_cast<u8>(tile.separate.r1)),
@@ -151,8 +193,7 @@ public:
         const unsigned int subblock = flip ? y / 2 : x / 2;
         Common::Vec3<int> color = base_colors[subblock];
 
-        int modifier =
-            etc1_modifier_table[table_indices[subblock]][tile.GetTableSubIndex(texel)];
+        int modifier = etc1_modifier_table[table_indices[subblock]][tile.GetTableSubIndex(texel)];
         if (tile.GetNegationFlag(texel)) {
             modifier = -modifier;
         }
@@ -162,6 +203,73 @@ public:
         color.b() = std::clamp(color.b() + modifier, 0, 255);
         return color.Cast<u8>();
     }
+
+#if defined(__aarch64__)
+    template <bool has_alpha>
+    void Decode(u64 alpha, u8* output, std::ptrdiff_t output_stride) const {
+        const uint16x8_t selector_bits =
+            vdupq_n_u16(static_cast<u16>(tile.table_subindexes.Value()));
+        const uint16x8_t negation_bits = vdupq_n_u16(static_cast<u16>(tile.negation_flags.Value()));
+        const uint16x8_t one = vdupq_n_u16(1);
+        const uint16x8_t horizontal_subblocks = vld1q_u16(etc1_horizontal_subblocks.data());
+        const uint16x8_t flip_mask = vdupq_n_u16(static_cast<u16>(-static_cast<s16>(flip)));
+        const uint16x8_t first_subblocks = vbicq_u16(horizontal_subblocks, flip_mask);
+        const uint16x8_t second_subblocks = vorrq_u16(horizontal_subblocks, flip_mask);
+
+        const int16x8_t red_0 = vdupq_n_s16(static_cast<s16>(base_colors[0].r()));
+        const int16x8_t green_0 = vdupq_n_s16(static_cast<s16>(base_colors[0].g()));
+        const int16x8_t blue_0 = vdupq_n_s16(static_cast<s16>(base_colors[0].b()));
+        const int16x8_t red_1 = vdupq_n_s16(static_cast<s16>(base_colors[1].r()));
+        const int16x8_t green_1 = vdupq_n_s16(static_cast<s16>(base_colors[1].g()));
+        const int16x8_t blue_1 = vdupq_n_s16(static_cast<s16>(base_colors[1].b()));
+
+        const auto& modifier_0 = etc1_modifier_table[table_indices[0]];
+        const auto& modifier_1 = etc1_modifier_table[table_indices[1]];
+        const int16x8_t modifier_0_low = vdupq_n_s16(modifier_0[0]);
+        const int16x8_t modifier_0_high = vdupq_n_s16(modifier_0[1]);
+        const int16x8_t modifier_1_low = vdupq_n_s16(modifier_1[0]);
+        const int16x8_t modifier_1_high = vdupq_n_s16(modifier_1[1]);
+
+        uint8x16_t alpha_pixels;
+        if constexpr (has_alpha) {
+            alpha_pixels = ExpandETC1Alpha(alpha);
+        } else {
+            alpha_pixels = vdupq_n_u8(0xFF);
+        }
+
+        const auto decode_band = [&]<u32 Band>() {
+            static_assert(Band < 2);
+            constexpr const auto& shift_values =
+                Band == 0 ? etc1_selector_shifts_01 : etc1_selector_shifts_23;
+            const int16x8_t shifts = vld1q_s16(shift_values.data());
+            const uint16x8_t selector_mask =
+                vceqq_u16(vandq_u16(vshlq_u16(selector_bits, shifts), one), one);
+            const uint16x8_t negation_mask =
+                vceqq_u16(vandq_u16(vshlq_u16(negation_bits, shifts), one), one);
+            const uint16x8_t subblock_mask = Band == 0 ? first_subblocks : second_subblocks;
+
+            const int16x8_t modifier_low = vbslq_s16(subblock_mask, modifier_1_low, modifier_0_low);
+            const int16x8_t modifier_high =
+                vbslq_s16(subblock_mask, modifier_1_high, modifier_0_high);
+            int16x8_t modifier = vbslq_s16(selector_mask, modifier_high, modifier_low);
+            modifier = vbslq_s16(negation_mask, vnegq_s16(modifier), modifier);
+
+            const int16x8_t red_base = vbslq_s16(subblock_mask, red_1, red_0);
+            const int16x8_t green_base = vbslq_s16(subblock_mask, green_1, green_0);
+            const int16x8_t blue_base = vbslq_s16(subblock_mask, blue_1, blue_0);
+            const uint8x8_t red = vqmovun_s16(vaddq_s16(red_base, modifier));
+            const uint8x8_t green = vqmovun_s16(vaddq_s16(green_base, modifier));
+            const uint8x8_t blue = vqmovun_s16(vaddq_s16(blue_base, modifier));
+            const uint8x8_t alpha_band =
+                Band == 0 ? vget_low_u8(alpha_pixels) : vget_high_u8(alpha_pixels);
+
+            StoreETC1RowPair(output + Band * 2 * output_stride, output_stride, red, green, blue,
+                             alpha_band);
+        };
+        decode_band.template operator()<0>();
+        decode_band.template operator()<1>();
+    }
+#endif
 
 private:
     static Common::Vec3<int> ConvertDifferential(int red, int green, int blue) {
@@ -179,9 +287,11 @@ private:
 };
 
 template <bool has_alpha>
-void DecodeETC1SubtileImpl(u64 value, u64 alpha, u8* output,
-                           std::ptrdiff_t output_stride) {
+void DecodeETC1SubtileImpl(u64 value, u64 alpha, u8* output, std::ptrdiff_t output_stride) {
     const ETC1Decoder decoder{value};
+#if defined(__aarch64__)
+    decoder.Decode<has_alpha>(alpha, output, output_stride);
+#else
     u8* row = output;
     for (unsigned int y = 0; y < 4; ++y) {
         for (unsigned int x = 0; x < 4; ++x) {
@@ -199,6 +309,7 @@ void DecodeETC1SubtileImpl(u64 value, u64 alpha, u8* output,
         }
         row += output_stride;
     }
+#endif
 }
 
 } // anonymous namespace

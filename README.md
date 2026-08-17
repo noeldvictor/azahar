@@ -75,6 +75,9 @@ This fork has moved away from stock Azahar in visible ways:
   paired-Q blocks, replacing repeated scalar address/load sequences with 128-bit paired loads.
 - Repeated PICA program-code and swizzle uploads scan eight words per AArch64 NEON block, sharing
   the expensive unchanged-data reduction and loop bookkeeping across two vectors.
+- ETC1 and ETC1A4 texture uploads decode each 4x4 block as two eight-pixel AArch64 AdvSIMD bands.
+  Native variable shifts gather the column-major selector bits, saturating narrows clamp RGB, one
+  table lookup expands ETC1A4 alpha, and four Q stores write the completed block.
 - Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
   an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Routine Vulkan timeline-counter polling runs once per four submissions; explicit waits and
@@ -149,6 +152,14 @@ The two vector masks share one unchanged-data `UMAXV`; changed data uses paired 
 returns the exact highest changed lane for dirty-hash and biggest-range tracking. In the final
 ThinLTO binary, an eight-word unchanged block falls from 42 to 25 executed loop instructions. The
 existing four-word NEON tail and scalar remainder preserve short and odd-length behavior.
+
+ETC1 and ETC1A4 block uploads now replace the remaining 16-iteration AArch64 pixel loop with two
+eight-pixel AdvSIMD bands. Final ThinLTO uses `USHL` to gather selectors and sign bits, `SQXTUN` to
+perform the old signed add plus `[0,255]` clamp, a single `TBL`/`SLI` pair for ETC1A4 alpha, and
+four 16-byte stores for the whole 4x4 RGBA block. The scalar non-AArch64 decoder is unchanged, and
+focused coverage preserves flip/differential modes, selector/sign extremes, alpha nibble order,
+padding, and positive or negative output stride. This is a texture-upload CPU-work reduction; its
+whole-game speed and battery effect still needs a controlled Thor A/B.
 
 ## AArch64 Audio Updates
 

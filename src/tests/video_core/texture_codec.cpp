@@ -102,8 +102,7 @@ void CheckExpandedTexture() {
 
 template <VideoCore::PixelFormat format>
 void CheckExpanded4BitTexture() {
-    static_assert(format == VideoCore::PixelFormat::I4 ||
-                  format == VideoCore::PixelFormat::A4);
+    static_assert(format == VideoCore::PixelFormat::I4 || format == VideoCore::PixelFormat::A4);
     std::array<u8, 8 * 8 / 2> tiled{};
     for (std::size_t i = 0; i < tiled.size(); ++i) {
         tiled[i] = static_cast<u8>((i * 59 + 13) & 0xFF);
@@ -258,6 +257,74 @@ void CheckLinearConvertedRGB8() {
     REQUIRE(roundtrip == expected_roundtrip);
 }
 
+template <bool has_alpha>
+void CheckETC1SubtileDirect(u64 value, u64 alpha, std::ptrdiff_t output_stride) {
+    constexpr std::size_t row_stride = 24;
+    constexpr std::size_t guard_size = 16;
+    std::array<u8, guard_size * 2 + row_stride * 4> expected{};
+    expected.fill(0xCD);
+
+    const std::size_t output_offset =
+        guard_size + (output_stride < 0 ? row_stride * 3 : std::size_t{0});
+    u8* const expected_output = expected.data() + output_offset;
+    for (u32 y = 0; y < 4; ++y) {
+        for (u32 x = 0; x < 4; ++x) {
+            u8* const pixel = expected_output + y * output_stride + x * 4;
+            const auto rgb = Pica::Texture::SampleETC1Subtile(value, x, y);
+            pixel[0] = rgb.r();
+            pixel[1] = rgb.g();
+            pixel[2] = rgb.b();
+            if constexpr (has_alpha) {
+                const u8 alpha4 = static_cast<u8>((alpha >> (4 * (x * 4 + y))) & 0xF);
+                pixel[3] = static_cast<u8>((alpha4 << 4) | alpha4);
+            } else {
+                pixel[3] = 0xFF;
+            }
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    u8* const decoded_output = decoded.data() + output_offset;
+    if constexpr (has_alpha) {
+        Pica::Texture::DecodeETC1A4Subtile(value, alpha, decoded_output, output_stride);
+    } else {
+        Pica::Texture::DecodeETC1Subtile(value, decoded_output, output_stride);
+    }
+    REQUIRE(decoded == expected);
+}
+
+void CheckETC1SubtileCoverage() {
+    constexpr std::array<u16, 8> bit_patterns = {
+        0x0000, 0xFFFF, 0xAAAA, 0x5555, 0x8001, 0xF00F, 0x0FF0, 0x6996,
+    };
+    constexpr std::array<u64, 4> alpha_patterns = {
+        0x0000000000000000ULL,
+        0xFFFFFFFFFFFFFFFFULL,
+        0x0123456789ABCDEFULL,
+        0xF0E1D2C3B4A59687ULL,
+    };
+    constexpr u64 controlled_bits = 0xFFFFFFFFULL | (u64{0xFF} << 32);
+
+    u64 state = 0xD1B54A32D192ED03ULL;
+    for (u32 iteration = 0; iteration < 128; ++iteration) {
+        state = state * 0x5851F42D4C957F2DULL + 0x14057B7EF767814FULL;
+        u64 value = state & ~controlled_bits;
+        value |= static_cast<u64>(bit_patterns[iteration & 7]);
+        value |= static_cast<u64>(bit_patterns[(iteration / 8 + 3) & 7]) << 16;
+        value |= static_cast<u64>(iteration & 3) << 32;
+        value |= static_cast<u64>(iteration & 7) << 34;
+        value |= static_cast<u64>((7 - iteration) & 7) << 37;
+
+        const u64 alpha = iteration < alpha_patterns.size() ? alpha_patterns[iteration]
+                                                            : state ^ 0xA5F03C96963CF0A5ULL;
+        for (const std::ptrdiff_t output_stride : {std::ptrdiff_t{24}, std::ptrdiff_t{-24}}) {
+            CheckETC1SubtileDirect<false>(value, alpha, output_stride);
+            CheckETC1SubtileDirect<true>(value, alpha, output_stride);
+        }
+    }
+}
+
 template <VideoCore::PixelFormat format>
 void CheckETC1() {
     static_assert(format == VideoCore::PixelFormat::ETC1 ||
@@ -365,6 +432,9 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("ETC1A4 block decode") {
         CheckETC1<VideoCore::PixelFormat::ETC1A4>();
+    }
+    SECTION("ETC1 direct decoder edge coverage") {
+        CheckETC1SubtileCoverage();
     }
 }
 
