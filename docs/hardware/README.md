@@ -20,6 +20,11 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 ## Guidance already applied
 
 - Keep compatible render work inside render passes/GMEM and avoid unnecessary resolves or mid-pass dependencies.
+- Treat skipped presentation as an asynchronous queue boundary, not a GPU-idle boundary. Submit
+  pending Vulkan work so emulated rendering continues in order, but rely on timeline-tagged pools,
+  stream-buffer wrap waits, and conservative deferred destruction instead of blocking the CPU on
+  every duplicate/Eco-Turbo-skipped frame. Retain explicit waits for CPU readback and resource
+  destruction. This preserves CPU/GPU overlap and avoids needless Adreno completion wakeups.
 - Do not resolve a stereo presentation surface that no active layout can sample. For mono-left or
   bottom-only output, preserve a valid descriptor by aliasing the current left image and skip the
   right-eye surface lookup/upload. This applies the Adreno guide's avoid-unnecessary-resolve rule

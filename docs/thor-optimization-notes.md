@@ -2756,6 +2756,43 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   2,781,397,898 bytes and `app/build` contains only the final APK. No device, ADB, install, launch,
   game, FPS, battery, wattage, temperature, or visual run was used.
 
+## 2026-08-17 Asynchronous Skipped-Frame Vulkan Submission
+
+- Upstream duplicate-frame suppression commit `8c4e8b77b` added a fallback
+  `scheduler.Finish()` whenever Vulkan rendered no host screen. That condition now also covers
+  Eco Turbo presentation throttling. `Finish()` submits the current command buffer and then waits
+  for its pre-submit timeline tick, so every duplicate or Eco-Turbo-skipped VBlank serialized the
+  emulation thread with GPU completion even though the CPU did not consume a rendered result.
+- The no-presentation fallback now uses `scheduler.Flush()`. It records the same render-pass end,
+  advances the same timeline value, dispatches the same command chunk, and submits the same Vulkan
+  command buffer, but does not call `MasterSemaphore::Wait()`. The graphics queue therefore keeps
+  guest work ordered while the CPU and Adreno can overlap it.
+- Lifetime safety does not depend on the removed wait. Command buffers and descriptor sets are
+  tagged with `CurrentTick()` and reused only after known GPU completion; stream-buffer wrap calls
+  `Scheduler::Wait()` for the exact recorded watch; and rasterizer garbage collection deletes a
+  sentenced surface only after the completed tick advances beyond its sentence tick. Stale-low
+  completion merely delays reuse or deletion. Explicit `Finish()` calls remain for screenshot CPU
+  readback, resized render-frame recreation, presentation-window destruction, and renderer teardown.
+- The full `arm64-v8a` native target passed in 1 minute 43 seconds, compiling the changed Vulkan
+  renderer and linking both the ELF64/AArch64 Catch2 executable and production
+  `libcitra-android.so`. The final ThinLTO `RendererVulkan::SwapBuffers()` is `0x408` bytes. Its
+  `screenRendered == false` branch calls `Scheduler::SubmitExecution()` directly (inlined
+  `Flush()`), with no call to `Scheduler::Finish()` or `MasterSemaphore::Wait()`. The later
+  `WaitWorker()` drains CPU command recording only; it is not a GPU-completion wait.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 2 minutes
+  46 seconds. The APK contains only `arm64-v8a`, is 28,970,191 bytes, and has SHA-256
+  `C41B14B848561271869A977748E248B8653C0782E23064179777BFCA606520C5`.
+- This removes exactly one GPU-completion wait from every Vulkan `SwapBuffers()` that performs no
+  host presentation. The actual saved time ranges from nearly zero when Adreno is already caught
+  up to the outstanding GPU backlog when it is not. No device, ADB, install, launch, game, FPS,
+  battery, wattage, temperature, or visual run was used, so this is a proven synchronization
+  removal and a strong power/overlap candidate rather than a measured whole-game percentage.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake/Ninja cache while removing
+  2,471,517,253 logical bytes of Gradle staging, the ARM64 test ELF, and native helper executables.
+  R8 held one generated `classes.dex` open until the Gradle daemons were stopped; the exact second
+  pass removed it. Reported C: free space increased by 2,030,428,160 bytes to 109,023,707,136.
+  The retained `.cxx` cache is 2,781,525,815 bytes and `app/build` contains only the final APK.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

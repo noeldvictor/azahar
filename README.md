@@ -499,6 +499,14 @@ relaxed ordering while Vulkan submission/completion and existing mutexes continu
 the actual work and resource queues. Final ARM64 code uses relaxed `LDADD`/CAS helpers and ordinary
 `LDR` counter reads, and each refresh makes at most one timeline-counter driver query.
 
+When duplicate-frame suppression or Eco Turbo skips host presentation, Vulkan now flushes pending
+3DS rendering work to the graphics queue without waiting for the GPU to finish it. The old fallback
+performed a full timeline wait on every non-presented VBlank, unnecessarily serializing the
+emulation thread with Adreno. Timeline-tagged command/descriptor pools, stream-buffer wrap checks,
+and conservative garbage collection still protect in-flight resources. Screenshot readback,
+render-frame recreation, swapchain/window destruction, and renderer teardown keep their explicit
+completion waits.
+
 ## Thor Screenshot
 
 This is a live AYN Thor screenshot of this Azahar Android fork showing the game library and visible bundled-cheat labels. It does not imply games are bundled with this repository.

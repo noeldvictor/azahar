@@ -1223,7 +1223,10 @@ void RendererVulkan::SwapBuffers() {
     }
 #endif
     if (!screenRendered) {
-        scheduler.Finish();
+        // Emulation work still needs to reach the graphics queue when presentation is skipped,
+        // but no CPU consumer needs its results here. Keep the normal timeline/resource tracking
+        // without serializing the emulation thread on GPU completion.
+        scheduler.Flush();
     }
 
     system.perf_stats->EndSwap();
