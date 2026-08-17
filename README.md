@@ -75,6 +75,11 @@ This fork has moved away from stock Azahar in visible ways:
   band. Final ThinLTO uses ordinary contiguous stores instead of the auto-vectorizer's `ST3`/`ST4`;
   repeated packing work falls by 35.5%-88.9% depending on the format. Exact alpha, channel order,
   16-bit truncation, CDMA gaps, scalar tails, and non-AArch64 behavior remain intact.
+- Unrotated linear Y2R output now streams completed tile rows directly into the final strip. The
+  old identity remap wrote and reread a 256-byte temporary for every full tile; bypassing it halves
+  arrangement load/store traffic and saves eight logical bytes per converted pixel. Final AArch64
+  ThinLTO uses one paired Q load and one paired Q store per eight-pixel band, with exact partial-row
+  and padded-stride coverage. This affects Y2R video/camera work rather than every rendered frame.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

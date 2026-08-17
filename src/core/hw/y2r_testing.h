@@ -25,4 +25,10 @@ __attribute__((visibility("hidden")))
 void EncodeRGBToOutput(Service::Y2R::OutputFormat output_format, const u32* input, u8* output,
                        std::size_t pixel_count, u8 alpha);
 
+#if defined(__GNUC__)
+__attribute__((visibility("hidden")))
+#endif
+void WriteUnrotatedLinearTiles(u32* output, const ImageTile tiles[], std::size_t num_tiles,
+                               unsigned int height, unsigned int line_stride);
+
 } // namespace HW::Y2R::Testing

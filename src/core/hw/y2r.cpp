@@ -531,6 +531,32 @@ static void WriteTileToOutput(u32* output, const ImageTile& tile, int height, in
     }
 }
 
+// Rotation::None with linear output has no remapping to perform: linear_lut is the identity.
+// Write complete tile rows directly into their final strip positions instead of first copying the
+// pixels through tmp_tile. Keeping this outlined also prevents the eight-row copy body from being
+// duplicated into PerformConversion's already-large format dispatcher.
+CITRA_NO_INLINE static void WriteUnrotatedLinearTiles(u32* output, const ImageTile tiles[],
+                                                      std::size_t num_tiles, unsigned int height,
+                                                      unsigned int line_stride) {
+    if (num_tiles == 0) {
+        return;
+    }
+    for (unsigned int y = 0; y < height; ++y) {
+        const ImageTile* input_tile = tiles;
+        u32* output_row = output + y * line_stride;
+        for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+            std::memcpy(output_row, input_tile->data() + y * 8, 8 * sizeof(u32));
+            ++input_tile;
+            output_row += 8;
+        }
+    }
+}
+
+void Testing::WriteUnrotatedLinearTiles(u32* output, const ImageTile tiles[], std::size_t num_tiles,
+                                        unsigned int height, unsigned int line_stride) {
+    ::HW::Y2R::WriteUnrotatedLinearTiles(output, tiles, num_tiles, height, line_stride);
+}
+
 MICROPROFILE_DEFINE(Y2R_PerformConversion, "Y2R", "PerformConversion", MP_RGB(185, 66, 245));
 
 /**
@@ -596,7 +622,6 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
     std::unique_ptr<u8[]> data_buffer(new u8[cvt.input_line_width * 8 * 4]);
     // Intermediate storage for decoded 8x8 image tiles. Always stored as RGB32.
     std::unique_ptr<ImageTile[]> tiles(new ImageTile[num_tiles]);
-    ImageTile tmp_tile;
 
     // LUT used to remap writes to a tile. Used to allow linear or swizzled output without
     // requiring two different code paths.
@@ -668,44 +693,50 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
 
         u32* output_buffer = reinterpret_cast<u32*>(data_buffer.get());
 
-        for (std::size_t i = 0; i < num_tiles; ++i) {
-            int image_strip_width = 0;
-            int output_stride = 0;
+        if (cvt.rotation == Rotation::None && cvt.block_alignment == BlockAlignment::Linear) {
+            WriteUnrotatedLinearTiles(output_buffer, tiles.get(), num_tiles, row_height,
+                                      cvt.input_line_width);
+        } else {
+            ImageTile tmp_tile;
+            for (std::size_t i = 0; i < num_tiles; ++i) {
+                int image_strip_width = 0;
+                int output_stride = 0;
 
-            switch (cvt.rotation) {
-            case Rotation::None:
-                RotateTile0(tiles[i], tmp_tile, row_height, tile_remap);
-                image_strip_width = cvt.input_line_width;
-                output_stride = 8;
-                break;
-            case Rotation::Clockwise_90:
-                RotateTile90(tiles[i], tmp_tile, row_height, tile_remap);
-                image_strip_width = 8;
-                output_stride = 8 * row_height;
-                break;
-            case Rotation::Clockwise_180:
-                // For 180 and 270 degree rotations we also invert the order of tiles in the strip,
-                // since the rotates are done individually on each tile.
-                RotateTile180(tiles[num_tiles - i - 1], tmp_tile, row_height, tile_remap);
-                image_strip_width = cvt.input_line_width;
-                output_stride = 8;
-                break;
-            case Rotation::Clockwise_270:
-                RotateTile270(tiles[num_tiles - i - 1], tmp_tile, row_height, tile_remap);
-                image_strip_width = 8;
-                output_stride = 8 * row_height;
-                break;
-            }
+                switch (cvt.rotation) {
+                case Rotation::None:
+                    RotateTile0(tiles[i], tmp_tile, row_height, tile_remap);
+                    image_strip_width = cvt.input_line_width;
+                    output_stride = 8;
+                    break;
+                case Rotation::Clockwise_90:
+                    RotateTile90(tiles[i], tmp_tile, row_height, tile_remap);
+                    image_strip_width = 8;
+                    output_stride = 8 * row_height;
+                    break;
+                case Rotation::Clockwise_180:
+                    // For 180 and 270 degree rotations we also invert the order of tiles in the
+                    // strip, since the rotates are done individually on each tile.
+                    RotateTile180(tiles[num_tiles - i - 1], tmp_tile, row_height, tile_remap);
+                    image_strip_width = cvt.input_line_width;
+                    output_stride = 8;
+                    break;
+                case Rotation::Clockwise_270:
+                    RotateTile270(tiles[num_tiles - i - 1], tmp_tile, row_height, tile_remap);
+                    image_strip_width = 8;
+                    output_stride = 8 * row_height;
+                    break;
+                }
 
-            switch (cvt.block_alignment) {
-            case BlockAlignment::Linear:
-                WriteTileToOutput(output_buffer, tmp_tile, row_height, image_strip_width);
-                output_buffer += output_stride;
-                break;
-            case BlockAlignment::Block8x8:
-                WriteTileToOutput(output_buffer, tmp_tile, 8, 8);
-                output_buffer += TILE_SIZE;
-                break;
+                switch (cvt.block_alignment) {
+                case BlockAlignment::Linear:
+                    WriteTileToOutput(output_buffer, tmp_tile, row_height, image_strip_width);
+                    output_buffer += output_stride;
+                    break;
+                case BlockAlignment::Block8x8:
+                    WriteTileToOutput(output_buffer, tmp_tile, 8, 8);
+                    output_buffer += TILE_SIZE;
+                    break;
+                }
             }
         }
 

@@ -208,3 +208,41 @@ TEST_CASE("Y2R output packing matches the scalar format reference", "[core][hw][
         }
     }
 }
+
+TEST_CASE("Y2R unrotated linear tiles write directly to the output strip", "[core][hw][y2r]") {
+    constexpr std::size_t GuardWords = 16;
+
+    for (const std::size_t num_tiles :
+         {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{3}}) {
+        std::vector<ImageTile> tiles(num_tiles);
+        for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+            for (std::size_t pixel = 0; pixel < tiles[tile].size(); ++pixel) {
+                tiles[tile][pixel] = static_cast<u32>(0x10000000 | tile << 16 | pixel);
+            }
+        }
+
+        for (const unsigned int height : {1u, 2u, 7u, 8u}) {
+            for (const unsigned int padding : {0u, 5u}) {
+                const unsigned int line_stride = static_cast<unsigned int>(num_tiles * 8) + padding;
+                const std::size_t output_words = static_cast<std::size_t>(line_stride) * 8;
+                std::vector<u32> expected(GuardWords + output_words + GuardWords, Canary);
+                std::vector<u32> actual = expected;
+
+                for (std::size_t tile = 0; tile < num_tiles; ++tile) {
+                    for (unsigned int y = 0; y < height; ++y) {
+                        for (unsigned int x = 0; x < 8; ++x) {
+                            expected[GuardWords + y * line_stride + tile * 8 + x] =
+                                tiles[tile][y * 8 + x];
+                        }
+                    }
+                }
+
+                HW::Y2R::Testing::WriteUnrotatedLinearTiles(
+                    actual.data() + GuardWords, tiles.data(), num_tiles, height, line_stride);
+
+                INFO("num_tiles=" << num_tiles << " height=" << height << " padding=" << padding);
+                CHECK(actual == expected);
+            }
+        }
+    }
+}

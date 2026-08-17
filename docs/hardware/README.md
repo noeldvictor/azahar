@@ -47,6 +47,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   byte masks, `SHLL`/`SHLL2`, and paired Q stores. Keep table constants outside the repeated RGB8
   loop and verify final ThinLTO contains no `ST3`/`ST4`; the A510 structured-store throughput in the
   reference table above makes source-level auto-vectorization an unsafe performance assumption.
+- Remove identity staging passes before trying to accelerate them. For unrotated linear Y2R output,
+  the tile remap is exactly the identity, so stream each 32-byte tile row into its final horizontal
+  position and make the destination row the inner traversal. The checked ordinary pair load/store
+  tables on X3 page 23, A715 page 26, A710 page 39, and A510 page 32 support the final post-indexed
+  Q-form `LDP`/`STP` loop. This halves arrangement load/store bytes and improves destination
+  locality without changing any color, rotation, swizzle, stride, or CDMA semantics.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

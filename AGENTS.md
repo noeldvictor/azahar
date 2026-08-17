@@ -255,6 +255,14 @@
   `ST3`, `ST4`, per-pixel packing, or vectorized scalar-tail alias checks. Keep 15/16/17 and
   31/32/37 boundaries, channel/alpha edges, and output canaries; the test-only packing entry point
   must stay hidden and absent from the production shared library.
+- `Rotation::None` plus linear Y2R output must write completed tile rows directly into the final
+  strip. `linear_lut` is the identity, so do not restore the redundant tile-to-`tmp_tile` scatter
+  followed by a second output copy. Preserve the unchanged rotated and Block8x8 paths, partial
+  heights, arbitrary valid line strides, tile order, and untouched padding. Final AArch64 ThinLTO
+  should keep the outlined 68-byte writer with one post-indexed Q-form `LDP`, one post-indexed
+  Q-form `STP`, decrement, and branch per eight-pixel band. Retain zero/multiple-tile,
+  1/2/7/8-row, padded-stride, and guard-canary coverage; its test hook must remain absent from the
+  production shared library.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs

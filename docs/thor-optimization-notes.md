@@ -2523,6 +2523,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Thor A/B should target video/camera-heavy scenes and hold the standard title, cache, renderer,
   resolution, driver, performance/fan, brightness, and display-layout controls fixed.
 
+## 2026-08-17 Direct Unrotated Linear Y2R Output
+
+- After YUV conversion, the common `Rotation::None` plus `BlockAlignment::Linear` route still sent
+  every tile through `RotateTile0()`. Its selected `linear_lut` is the exact identity, so that step
+  copied each pixel into a 256-byte `tmp_tile`; `WriteTileToOutput()` immediately read the temporary
+  and copied it to the final strip. A full tile therefore performed 1,024 logical bytes of
+  arrangement loads plus stores even though only 512 bytes are required. The direct route saves
+  512 bytes per full tile, or eight bytes per converted pixel; a 400x240 conversion avoids 768,000
+  logical bytes of redundant traffic.
+- The direct writer traverses output rows first and copies each 32-byte tile row into its final
+  horizontal position. This is exactly the composition of the old identity remap and output copy:
+  source pixel `tiles[tile][y * 8 + x]` still reaches
+  `output[y * input_line_width + tile * 8 + x]`. Every rotated route and Block8x8 output retains
+  the old remap, temporary, tile-order reversal where required, and write behavior.
+- The pre-change Android AArch64 release object emitted a five-instruction scalar identity-scatter
+  body for every pixel and a fourteen-instruction copy body for every eight-pixel row: 432 repeated
+  instructions per full tile before surrounding setup and switches. Final production ThinLTO
+  keeps the new writer as a 68-byte function. Its inner band is exactly a post-indexed Q-form
+  `LDP`, decrement, post-indexed Q-form `STP`, and branch: 32 repeated instructions per full tile,
+  plus 69 setup/control instructions amortized across a full eight-row strip. That is about 76.6%
+  less arrangement work for one tile and 92.3% less for a 400-pixel/50-tile strip. These are static
+  executed-instruction counts, not measured cycle speedups.
+- The emitted shape follows the checked ordinary pair load/store tables on Cortex-X3 page 23,
+  Cortex-A715 page 26, Cortex-A710 page 39, and Cortex-A510 page 32. It uses baseline AArch64 only,
+  streams final destination rows contiguously, has no spills, and avoids trying to SIMD-accelerate
+  an unnecessary intermediate pass. `PerformConversion()` grows only four bytes from `0x3140` to
+  `0x3144`; the small outlined helper avoids duplicating this loop inside the already-large format
+  dispatcher.
+- Permanent independent coverage compares the direct writer with the old address mapping for
+  zero, one, two, and three tiles; heights 1/2/7/8; exact and five-word-padded line strides; and
+  sixteen-word guards on both sides. The production and test translation units compiled, and the
+  complete ELF64/AArch64 Catch2 executable plus `libcitra-android.so` linked with ThinLTO in 1
+  minute 22 seconds. The test name remains in the test ELF while its hidden entry point is absent
+  from the production library. The ARM64 executable was not run because device execution remains
+  excluded.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 1 minute
+  44 seconds. The resulting package contains only `arm64-v8a`, is 28,970,039 bytes, and has SHA-256
+  `FC05BB9062FF80651E4EE83A4BDCF17BCB7FE27DBC909179D21BBBE0B501EED6`. Cleanup retained that APK
+  and the active ARM64 RelWithDebInfo CMake cache while removing 2,469,286,588 logical bytes of
+  APK/JNI/native staging, the test ELF, codegen objects, and local Gradle cache. Reported C: free space
+  increased by 2,029,838,336 bytes to 109,481,762,816. One pre-existing Java process still holds a
+  bounded 669,766-byte Gradle HTML report, so it remains rather than terminating an unidentified
+  process. No device, ADB, install, launch, game, FPS, battery, wattage, temperature, or visual run
+  was used; the gain applies only when a title exercises unrotated linear Y2R video/camera output.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
