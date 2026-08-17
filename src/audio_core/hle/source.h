@@ -65,7 +65,7 @@ public:
      * @param dest The planar quadraphonic frame to mix into.
      * @param intermediate_mix_id The id of the intermediate mix whose gains we are using.
      */
-    void MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id) const;
+    void MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id);
 
 private:
     const std::size_t source_id;
@@ -130,6 +130,8 @@ private:
         // Mixing
 
         std::array<std::array<float, 4>, 3> gain = {};
+        std::array<std::array<float, 4>, 3> gain_ramp_start = {};
+        std::array<bool, 3> gain_ramp_active = {};
 
         // Buffer queue
 
@@ -170,6 +172,8 @@ private:
             ar & enabled;
             ar & sync_count;
             ar & gain;
+            ar & gain_ramp_start;
+            ar & gain_ramp_active;
             ar & input_queue;
             ar & mono_or_stereo;
             ar & format;
