@@ -53,6 +53,11 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   tables on X3 page 23, A715 page 26, A710 page 39, and A510 page 32 support the final post-indexed
   Q-form `LDP`/`STP` loop. This halves arrangement load/store bytes and improves destination
   locality without changing any color, rotation, swizzle, stride, or CDMA semantics.
+- Apply the same rule before Y2R conversion. An 8-bit CDMA source with `gap == 0` is already the
+  compact byte stream consumed by the converter, so borrow that read-only guest pointer and update
+  only the visible address/remaining-size state. Keep the staging buffer for gapped transfers and
+  for 16-bit low-byte extraction. This removes a complete read-plus-write pass rather than spending
+  NEON instructions on a copy that has no semantic work.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

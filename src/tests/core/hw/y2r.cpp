@@ -14,6 +14,7 @@ namespace {
 
 using HW::Y2R::Testing::ImageTile;
 using Service::Y2R::CoefficientSet;
+using Service::Y2R::ConversionBuffer;
 using Service::Y2R::InputFormat;
 using Service::Y2R::OutputFormat;
 
@@ -242,6 +243,66 @@ TEST_CASE("Y2R unrotated linear tiles write directly to the output strip", "[cor
 
                 INFO("num_tiles=" << num_tiles << " height=" << height << " padding=" << padding);
                 CHECK(actual == expected);
+            }
+        }
+    }
+}
+
+TEST_CASE("Y2R zero-gap 8-bit input borrows the compact CDMA stream", "[core][hw][y2r]") {
+    constexpr std::size_t GuardBytes = 16;
+
+    for (const u16 transfer_unit : {u16{1}, u16{7}, u16{16}, u16{31}}) {
+        for (const std::size_t units :
+             {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{5}}) {
+            const std::size_t amount = transfer_unit * units;
+            std::vector<u8> input(GuardBytes + amount + GuardBytes, 0xA5);
+            for (std::size_t byte = 0; byte < amount; ++byte) {
+                input[GuardBytes + byte] = static_cast<u8>(byte * 37 + transfer_unit * 11);
+            }
+            std::vector<u8> compact(amount + 2 * GuardBytes, 0xCD);
+            const std::vector<u8> untouched = compact;
+            ConversionBuffer buffer{0x12340000, static_cast<u32>(amount + 0x100), transfer_unit, 0};
+            const u8* prepared = HW::Y2R::Testing::PrepareInputData8(
+                input.data() + GuardBytes, compact.data() + GuardBytes, buffer, amount);
+
+            INFO("transfer_unit=" << transfer_unit << " units=" << units);
+            CHECK(prepared == input.data() + GuardBytes);
+            CHECK(compact == untouched);
+            CHECK(buffer.address == 0x12340000 + amount);
+            CHECK(buffer.image_size == 0x100);
+        }
+    }
+}
+
+TEST_CASE("Y2R gapped 8-bit input retains exact CDMA compaction", "[core][hw][y2r]") {
+    constexpr std::size_t GuardBytes = 16;
+
+    for (const u16 transfer_unit : {u16{1}, u16{7}, u16{16}, u16{31}}) {
+        for (const u16 gap : {u16{1}, u16{5}, u16{13}}) {
+            for (const std::size_t units :
+                 {std::size_t{0}, std::size_t{1}, std::size_t{2}, std::size_t{5}}) {
+                const std::size_t amount = transfer_unit * units;
+                const std::size_t source_bytes = (transfer_unit + gap) * units;
+                std::vector<u8> input(GuardBytes + source_bytes + GuardBytes, 0xA5);
+                std::vector<u8> expected(amount + 2 * GuardBytes, 0xCD);
+                std::vector<u8> actual = expected;
+                for (std::size_t unit = 0; unit < units; ++unit) {
+                    for (std::size_t byte = 0; byte < transfer_unit; ++byte) {
+                        const u8 value = static_cast<u8>(unit * 83 + byte * 37 + gap);
+                        input[GuardBytes + unit * (transfer_unit + gap) + byte] = value;
+                        expected[GuardBytes + unit * transfer_unit + byte] = value;
+                    }
+                }
+                ConversionBuffer buffer{0x12340000, static_cast<u32>(amount + 0x100), transfer_unit,
+                                        gap};
+                const u8* prepared = HW::Y2R::Testing::PrepareInputData8(
+                    input.data() + GuardBytes, actual.data() + GuardBytes, buffer, amount);
+
+                INFO("transfer_unit=" << transfer_unit << " gap=" << gap << " units=" << units);
+                CHECK(prepared == actual.data() + GuardBytes);
+                CHECK(actual == expected);
+                CHECK(buffer.address == 0x12340000 + source_bytes);
+                CHECK(buffer.image_size == 0x100);
             }
         }
     }

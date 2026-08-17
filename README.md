@@ -80,6 +80,11 @@ This fork has moved away from stock Azahar in visible ways:
   arrangement load/store traffic and saves eight logical bytes per converted pixel. Final AArch64
   ThinLTO uses one paired Q load and one paired Q store per eight-pixel band, with exact partial-row
   and padded-stride coverage. This affects Y2R video/camera work rather than every rendered frame.
+- Ordinary zero-gap 8-bit Y2R input now feeds the converter directly from contiguous guest memory
+  instead of first copying every Y, U, V, or YUYV byte into a strip buffer. Gapped CDMA input keeps
+  exact compaction, and 16-bit input keeps its required low-byte extraction. This removes 288,000
+  logical bytes of copy traffic from a 400x240 YUV420 conversion or 384,000 bytes from YUV422/YUYV;
+  the final AArch64 ThinLTO direct route is seven instructions and performs no data copy.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

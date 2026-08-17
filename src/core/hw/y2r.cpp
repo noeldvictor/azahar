@@ -230,11 +230,49 @@ void Testing::ConvertYUVToRGB(InputFormat input_format, const u8* input_Y, const
     }
 }
 
-/// Simulates an incoming CDMA transfer. The N parameter is used to automatically convert 16-bit
-/// formats to 8-bit.
+// An 8-bit transfer with no inter-unit gap is already the exact compact byte stream consumed by
+// the converter. Borrow it in place while preserving the CDMA-visible buffer progression. Gapped
+// input still has to be compacted into the internal strip buffer.
+CITRA_NO_INLINE static const u8* PrepareInputData8(const u8* input, u8* compact_output,
+                                                   ConversionBuffer& buf,
+                                                   std::size_t amount_of_data) {
+    if (buf.gap == 0) {
+        const u32 transferred = static_cast<u32>(amount_of_data);
+        buf.address += transferred;
+        buf.image_size -= transferred;
+        return input;
+    }
+
+    u8* const compact_begin = compact_output;
+    while (amount_of_data > 0) {
+        for (std::size_t i = 0; i < buf.transfer_unit; ++i) {
+            compact_output[i] = input[i];
+        }
+
+        compact_output += buf.transfer_unit;
+        input += buf.transfer_unit + buf.gap;
+        buf.address += buf.transfer_unit + buf.gap;
+        buf.image_size -= buf.transfer_unit;
+        amount_of_data -= buf.transfer_unit;
+    }
+    return compact_begin;
+}
+
+const u8* Testing::PrepareInputData8(const u8* input, u8* compact_output, ConversionBuffer& buf,
+                                     std::size_t amount_of_data) {
+    return ::HW::Y2R::PrepareInputData8(input, compact_output, buf, amount_of_data);
+}
+
+static const u8* ReceiveData8(Memory::MemorySystem& memory, u8* compact_output,
+                              ConversionBuffer& buf, std::size_t amount_of_data) {
+    return PrepareInputData8(memory.GetPointer(buf.address), compact_output, buf, amount_of_data);
+}
+
+/// Simulates an incoming 16-bit CDMA transfer and keeps only each sample's low byte.
 template <std::size_t N>
 static void ReceiveData(Memory::MemorySystem& memory, u8* output, ConversionBuffer& buf,
                         std::size_t amount_of_data) {
+    static_assert(N == 2);
     const u8* input = memory.GetPointer(buf.address);
 
     std::size_t output_unit = buf.transfer_unit / N;
@@ -641,39 +679,42 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
         // Total size in pixels of incoming data required for this strip.
         const std::size_t row_data_size = row_height * cvt.input_line_width;
 
-        u8* input_Y = data_buffer.get();
-        u8* input_U = input_Y + 8 * cvt.input_line_width;
-        u8* input_V = input_U + 8 * cvt.input_line_width / 2;
+        u8* const compact_Y = data_buffer.get();
+        u8* const compact_U = compact_Y + 8 * cvt.input_line_width;
+        u8* const compact_V = compact_U + 8 * cvt.input_line_width / 2;
+        const u8* input_Y = compact_Y;
+        const u8* input_U = compact_U;
+        const u8* input_V = compact_V;
 
         switch (cvt.input_format) {
         case InputFormat::YUV422_Indiv8:
-            ReceiveData<1>(memory, input_Y, cvt.src_Y, row_data_size);
-            ReceiveData<1>(memory, input_U, cvt.src_U, row_data_size / 2);
-            ReceiveData<1>(memory, input_V, cvt.src_V, row_data_size / 2);
+            input_Y = ReceiveData8(memory, compact_Y, cvt.src_Y, row_data_size);
+            input_U = ReceiveData8(memory, compact_U, cvt.src_U, row_data_size / 2);
+            input_V = ReceiveData8(memory, compact_V, cvt.src_V, row_data_size / 2);
             ConvertYUVToRGB<InputFormat::YUV422_Indiv8>(input_Y, input_U, input_V, tiles.get(),
                                                         cvt.input_line_width, row_height,
                                                         cvt.coefficients);
             break;
         case InputFormat::YUV420_Indiv8:
-            ReceiveData<1>(memory, input_Y, cvt.src_Y, row_data_size);
-            ReceiveData<1>(memory, input_U, cvt.src_U, row_data_size / 4);
-            ReceiveData<1>(memory, input_V, cvt.src_V, row_data_size / 4);
+            input_Y = ReceiveData8(memory, compact_Y, cvt.src_Y, row_data_size);
+            input_U = ReceiveData8(memory, compact_U, cvt.src_U, row_data_size / 4);
+            input_V = ReceiveData8(memory, compact_V, cvt.src_V, row_data_size / 4);
             ConvertYUVToRGB<InputFormat::YUV420_Indiv8>(input_Y, input_U, input_V, tiles.get(),
                                                         cvt.input_line_width, row_height,
                                                         cvt.coefficients);
             break;
         case InputFormat::YUV422_Indiv16:
-            ReceiveData<2>(memory, input_Y, cvt.src_Y, row_data_size);
-            ReceiveData<2>(memory, input_U, cvt.src_U, row_data_size / 2);
-            ReceiveData<2>(memory, input_V, cvt.src_V, row_data_size / 2);
+            ReceiveData<2>(memory, compact_Y, cvt.src_Y, row_data_size);
+            ReceiveData<2>(memory, compact_U, cvt.src_U, row_data_size / 2);
+            ReceiveData<2>(memory, compact_V, cvt.src_V, row_data_size / 2);
             ConvertYUVToRGB<InputFormat::YUV422_Indiv16>(input_Y, input_U, input_V, tiles.get(),
                                                          cvt.input_line_width, row_height,
                                                          cvt.coefficients);
             break;
         case InputFormat::YUV420_Indiv16:
-            ReceiveData<2>(memory, input_Y, cvt.src_Y, row_data_size);
-            ReceiveData<2>(memory, input_U, cvt.src_U, row_data_size / 4);
-            ReceiveData<2>(memory, input_V, cvt.src_V, row_data_size / 4);
+            ReceiveData<2>(memory, compact_Y, cvt.src_Y, row_data_size);
+            ReceiveData<2>(memory, compact_U, cvt.src_U, row_data_size / 4);
+            ReceiveData<2>(memory, compact_V, cvt.src_V, row_data_size / 4);
             ConvertYUVToRGB<InputFormat::YUV420_Indiv16>(input_Y, input_U, input_V, tiles.get(),
                                                          cvt.input_line_width, row_height,
                                                          cvt.coefficients);
@@ -681,7 +722,7 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
         case InputFormat::YUYV422_Interleaved:
             input_U = nullptr;
             input_V = nullptr;
-            ReceiveData<1>(memory, input_Y, cvt.src_YUYV, row_data_size * 2);
+            input_Y = ReceiveData8(memory, compact_Y, cvt.src_YUYV, row_data_size * 2);
             ConvertYUVToRGB<InputFormat::YUYV422_Interleaved>(input_Y, input_U, input_V,
                                                               tiles.get(), cvt.input_line_width,
                                                               row_height, cvt.coefficients);

@@ -2568,6 +2568,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   process. No device, ADB, install, launch, game, FPS, battery, wattage, temperature, or visual run
   was used; the gain applies only when a title exercises unrotated linear Y2R video/camera output.
 
+## 2026-08-17 Direct Zero-Gap 8-bit Y2R Input
+
+- Every 8-bit Y2R input plane previously copied its incoming CDMA bytes into `data_buffer` before
+  the converter reread them. With a zero inter-unit gap, the source is already one contiguous byte
+  stream: the old loop copied `input[i]` to `output[i]` without transforming it. The converter now
+  borrows that read-only guest pointer for the duration of the strip and reproduces the only
+  externally visible state changes, advancing `ConversionBuffer::address` by the byte count and
+  subtracting the same count from `image_size`.
+- The shortcut is exact for `YUV422_Indiv8`, `YUV420_Indiv8`, and interleaved `YUYV422`. Each plane
+  independently chooses direct or compact input. Any nonzero gap retains the old per-transfer-unit
+  compaction, and both 16-bit planar formats retain their every-other-byte extraction. Conversion
+  consumes the complete input strip before output arrangement or CDMA writes begin, so the borrowed
+  pointer does not outlive its read-only use. The old implementation already obtained one guest
+  pointer and walked it across the complete transfer, so address-contiguity assumptions do not
+  change.
+- Removing the staging pass saves one source read and one staging write for every input byte. At
+  400x240, 4:2:0 contains 144,000 input bytes and therefore avoids 288,000 logical bytes of copy
+  traffic; 4:2:2 and YUYV contain 192,000 bytes and avoid 384,000. Per eight-row strip, the bounds
+  are `24 * width` and `32 * width` logical bytes respectively. This is in addition to, but must not
+  be numerically added as a speed percentage to, the separate conversion, packing, and linear-output
+  reductions.
+- The pre-change no-LTO AArch64 release object emitted the 8-bit receive logic inside
+  `PerformConversion()`, whose code size was `0x3144`. The candidate outlines one shared 136-byte
+  helper and shrinks the dispatcher to `0x29e0`, 1,892 bytes or 15.0% smaller. Final production
+  ThinLTO retains those exact sizes. Its zero-gap route is seven instructions: load and test `gap`,
+  paired-load address/size, add, subtract, paired-store, and return. It performs no source or
+  staging data load/store. A proposed hot divisibility assertion was rejected during codegen review
+  because it introduced `UDIV`/`MSUB` on every plane; permanent edge coverage supplies the safety
+  check without burdening production.
+- Independent Catch2 coverage exercises transfer units 1/7/16/31, zero/one/two/five units, zero
+  gap with an untouched staging buffer, and gaps 1/5/13 against an independent byte reference. It
+  checks exact returned pointers, address/size progression, and sixteen-byte guards. Both Y2R
+  objects compiled, and the complete ELF64/AArch64 test executable plus `libcitra-android.so` linked
+  with ThinLTO in 1 minute 26 seconds. Both test names remain in the test ELF while the hidden test
+  wrapper is garbage-collected from the production library.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 2 minutes
+  50 seconds. The package contains only `arm64-v8a`, is 28,970,147 bytes, and has SHA-256
+  `52A5E611D41E46F24FED8F249250F41DCCF274ABA04D5709732795158C7757BA`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,498,930,560 logical bytes of APK/JNI/native staging, the test ELF, codegen audit objects, and
+  local Gradle cache. Reported C: free space increased by 2,030,465,024 bytes to 109,477,445,632.
+  The pre-existing bounded 669,766-byte Gradle HTML report remains rather than terminating an
+  unidentified process. No device, ADB, install, launch, game, FPS, battery, wattage, temperature,
+  or visual run was used. This is a bounded video/camera memory-traffic and code-size win, not a
+  measured whole-game speed or power claim.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -31,4 +31,11 @@ __attribute__((visibility("hidden")))
 void WriteUnrotatedLinearTiles(u32* output, const ImageTile tiles[], std::size_t num_tiles,
                                unsigned int height, unsigned int line_stride);
 
+#if defined(__GNUC__)
+__attribute__((visibility("hidden")))
+#endif
+const u8*
+PrepareInputData8(const u8* input, u8* compact_output, Service::Y2R::ConversionBuffer& buffer,
+                  std::size_t amount_of_data);
+
 } // namespace HW::Y2R::Testing
