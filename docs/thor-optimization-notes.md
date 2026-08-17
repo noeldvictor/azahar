@@ -1187,6 +1187,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   layout, performance/fan mode, brightness, and duration, then record texture-upload CPU time,
   frametimes, battery power, temperature, thermal slope, visual correctness, and stability.
 
+## 2026-08-17 HLE Audio Resampler Window
+
+- The shared None/Linear stepping loop previously inserted `xn2` and `xn1` at the front of its
+  `std::deque` on every call. Final release AArch64 code then repeated deque block-map arithmetic,
+  block-pointer loads, and separate adjacent-sample loads for every output sample, including when
+  upsampling reused the same integer input position. This bookkeeping survived even after the
+  stereo interpolation arithmetic itself had been reduced to one exact two-lane `SQDMULH`.
+- The complete AArch64 load-table pages were rendered and visually checked in the Cortex-X3 issue
+  4.0 guide (table 3-7, PDF pages 18-19), Cortex-A715 issue 5.0 guide (table 3-7, pages 20-21),
+  Cortex-A710 issue 4.0 guide (table 3-13, pages 28-29), and Cortex-A510 issue 6.0 guide (table
+  3-12, pages 23-24). The big-core tables list four-cycle L1-hit latency for the relevant ordinary
+  register loads; A510 lists two cycles. Removing dependent container loads is therefore useful on
+  every Snapdragon 8 Gen 2 CPU class, without assuming SVE or changing the interpolation ISA. The
+  external PDFs remain uncommitted and indexed in `docs/hardware/README.md`.
+- The replacement treats history as a virtual sequence: `V(0) = xn2`, `V(1) = xn1`, and
+  `V(j) = input[j - 2]` for `j >= 2`. A cached adjacent-sample window follows the monotonic integer
+  input position. Reusing a position touches no deque sample; advancing by one performs one
+  sequential iterator load. End-of-input state records the same final two virtual samples,
+  subtracts the same consumed Q24 position, and erases exactly the corresponding real input
+  samples. No history elements are inserted or moved.
+- Two apparently broader variants were rejected only after linked-code inspection. A target-based
+  rebase lambda became a 488-byte helper called for every output. A later large-decimation seek
+  guard still became a 356-byte helper called for every output and forced a 192-byte stack frame.
+  Both would have made the common path worse despite looking reasonable in C++. The accepted
+  monotonic cursor inlines completely; the only 72-byte out-of-line lambda is the cold
+  `ASSERT(rate > 0)` failure path.
+- Final ThinLTO `Linear()` has no call in the valid per-output loop. Its normal advance is one
+  post-increment `LDR`, while an unchanged position branches directly into the arithmetic. The
+  exact `SSUBL`, `SQXTN`, `SSHLL`, `SQDMULH`, `SADDW`, and `UZP1` sequence remains. `Linear()`
+  shrinks from 636 to 408 bytes and `None()` from 560 to 368 bytes. For rates above one, the cursor
+  loads each skipped sample; the permanent tested matrix reaches 2.75x, where that is at most two
+  or three sequential loads per output and avoids the old repeated map lookups. Do not infer a win
+  for extreme unprofiled rate multipliers from this static result.
+- Permanent Catch2 coverage now compares both None and Linear against the old independent
+  deque-prefix algorithm across six rates, five boundary phases, signed extremes, partial output,
+  empty and one-to-three-sample input, already-full output, and four consecutive calls. The full
+  ELF64/AArch64 test executable compiled and linked successfully. Separately, the actual edited
+  `interpolate.cpp` was compiled for the x64 host with only the assertion backend stubbed and
+  matched the old algorithm across 20,000 randomized streaming cases, one to four calls per case,
+  rates from 0.0625x through 8x, arbitrary PCM16 history/data, input sizes 0-700, appended data, and
+  output starts 0-160.
+- Command-line Git over SSH refreshed `upstream/master` at `3392c56ce` (`core: Fix another msvc
+  compiler bug`). The fork remains zero commits behind, so no upstream merge was required.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 52 seconds after the final rejected
+  experiment was removed. `:app:assembleVanillaRelWithDebInfoLite` then passed incrementally in 23
+  seconds. The 28,963,055-byte APK contains only `arm64-v8a` native libraries and has SHA-256
+  `4D3402454B4D1C499EC736791EA26429B2A670ADAD45E90C49FDF638E8970D2A`.
+- No Thor, ADB, install, launch, game, FPS run, or battery measurement was used. This is a verified
+  sustained DSP bookkeeping reduction, not a whole-game speed or wattage claim. A future allowed
+  matched A/B should use a title with multiple resampled sources and identical save, caches,
+  renderer, resolution, driver, layout, performance/fan mode, brightness, and duration. Record
+  audio-thread CPU time/placement, underruns, frametimes, battery power, temperature, thermal slope,
+  stability, and output correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

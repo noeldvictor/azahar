@@ -56,7 +56,7 @@ std::array<s16, 2> LinearSample(u64 fraction, const std::array<s16, 2>& x0,
 #endif
 
 /// Here we step over the input in steps of rate, until we consume all of the input.
-/// Three adjacent samples are passed to fn each step.
+/// Two adjacent samples are passed to fn each step.
 template <typename Function>
 static void StepOverSamples(State& state, StereoBuffer16& input, float rate, StereoFrame16& output,
                             std::size_t& outputi, Function fn) {
@@ -65,45 +65,63 @@ static void StepOverSamples(State& state, StereoBuffer16& input, float rate, Ste
     if (input.empty())
         return;
 
-    input.insert(input.begin(), {state.xn2, state.xn1});
-
     const u64 step_size = static_cast<u64>(rate * scale_factor);
     u64 fposition = state.fposition;
     std::size_t inputi = 0;
 
+    // Treat the two history samples as a virtual prefix instead of inserting them into the deque.
+    // The integer input position never moves backwards, so retain its two-sample window and only
+    // touch the deque when that position advances. Upsampling can therefore reuse the same window,
+    // while the common one-sample advance needs one sequential iterator load instead of two
+    // independent deque block-map lookups.
+    std::size_t window_index = 0;
+    std::array<s16, 2> x0 = state.xn2;
+    std::array<s16, 2> x1 = state.xn1;
+    auto next_input = input.begin();
+
+    const auto advance_window = [&] {
+        while (window_index < inputi) {
+            x0 = x1;
+            x1 = *next_input;
+            ++next_input;
+            ++window_index;
+        }
+    };
+
     while (outputi < output.size()) {
         inputi = static_cast<std::size_t>(fposition / scale_factor);
 
-        if (inputi + 2 >= input.size()) {
-            inputi = input.size() - 2;
+        if (inputi >= input.size()) {
+            inputi = input.size();
+            advance_window();
             break;
         }
 
+        advance_window();
         u64 fraction = fposition & scale_mask;
-        output[outputi++] = fn(fraction, input[inputi], input[inputi + 1], input[inputi + 2]);
+        output[outputi++] = fn(fraction, x0, x1);
 
         fposition += step_size;
     }
 
-    state.xn2 = input[inputi];
-    state.xn1 = input[inputi + 1];
+    state.xn2 = x0;
+    state.xn1 = x1;
     state.fposition = fposition - inputi * scale_factor;
 
-    input.erase(input.begin(), std::next(input.begin(), inputi + 2));
+    input.erase(input.begin(), next_input);
 }
 
 void None(State& state, StereoBuffer16& input, float rate, StereoFrame16& output,
           std::size_t& outputi) {
-    StepOverSamples(
-        state, input, rate, output, outputi,
-        [](u64 fraction, const auto& x0, const auto& x1, const auto& x2) { return x0; });
+    StepOverSamples(state, input, rate, output, outputi,
+                    [](u64 fraction, const auto& x0, const auto& x1) { return x0; });
 }
 
 void Linear(State& state, StereoBuffer16& input, float rate, StereoFrame16& output,
             std::size_t& outputi) {
     // Note on accuracy: Some values that this produces are +/- 1 from the actual firmware.
     StepOverSamples(state, input, rate, output, outputi,
-                    [](u64 fraction, const auto& x0, const auto& x1, const auto& x2) {
+                    [](u64 fraction, const auto& x0, const auto& x1) {
 #if defined(__aarch64__)
                         return LinearSample(fraction, x0, x1);
 #else

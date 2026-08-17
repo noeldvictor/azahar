@@ -187,10 +187,13 @@ speed and battery effects remain unmeasured until device testing is allowed.
 
 Linear HLE resampling now uses the same stereo-lane strategy. A saturated signed delta and the
 existing 24-bit phase are mapped exactly onto one baseline AdvSIMD `SQDMULH`, replacing two scalar
-64-bit multiplies, their duplicated clamp chains, and their shifts. Final ThinLTO shrinks the whole
-interpolation function from 680 to 636 bytes and contains one two-lane `SQDMULH` per output sample.
-This improves a sustained DSP path when linear interpolation is selected; it is not yet a measured
-whole-game FPS or battery-power claim.
+64-bit multiplies, their duplicated clamp chains, and their shifts. The shared None/Linear stepping
+path also keeps the two history samples as a virtual prefix instead of inserting them into the
+deque. Reused positions perform no deque sample lookup; a normal one-sample advance performs one
+sequential load instead of recomputing and loading two deque entries. Final ThinLTO keeps the exact
+two-lane `SQDMULH`, shrinks Linear from 636 to 408 bytes, and shrinks None from 560 to 368 bytes.
+These are sustained DSP bookkeeping and instruction reductions, not yet measured whole-game FPS
+or battery-power gains.
 
 ## Vulkan Worker-Power Updates
 
