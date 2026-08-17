@@ -115,6 +115,9 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   field layout when compatibility requires it, and prove that loaded/stale fields are overwritten
   or bypassed before use. Count both the load and store sides of every removed copy when estimating
   memory-system work, then confirm the linked call sites actually disappeared.
+- A native-endian shared-memory view should use one pointer per channel rather than flattening
+  nested arrays across subobject boundaries. Keep an explicit endian-converting fallback for other
+  hosts, and inspect linked AArch64 to prove those pointers load once before the vector loop.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 

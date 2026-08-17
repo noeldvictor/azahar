@@ -2220,6 +2220,43 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   constant, then record aux-enable patterns, DSP/audio-thread time, underruns, frametimes, battery
   power, temperature, thermal slope, output correctness, and stability.
 
+## 2026-08-17 Native Aux-Return Direct View
+
+- The preceding live-input route still copied each enabled ARM11 auxiliary return from its shared
+  `s32_le[4][160]` buffer into a persistent planar frame before immediately downmixing it. Android
+  AArch64 is little-endian, so `s32_le` is native `s32`; the source lifetime covers `Tick()` and no
+  ownership, alignment, or conversion boundary requires that staging copy.
+- Native-endian final mixing now reads enabled returns through four independent channel pointers.
+  This avoids undefined pointer traversal between nested-array subobjects. The generic non-native-
+  endian path retains `CopySharedToPlanar()` and consumes the converted state buffer. Historical
+  three-slot state serialization, enabled sends, aux selection, arithmetic order, saturation,
+  sleep/wakeup behavior, and output serialization remain unchanged.
+- The original mixer made three state-staging copies plus one required send for each enabled aux.
+  The final native route makes only the zero, one, or two required sends. It therefore removes
+  three 2,560-byte staging copies for every configuration: 15,360 bytes of load-plus-store traffic
+  per DSP frame, or 3,141,888 bytes/second at 32,728 Hz / 160 samples. Relative to the preceding
+  slice, this saves another 1,047,296 bytes/second with one enabled aux and 2,094,592 with both;
+  the already-copy-free all-disabled path is unchanged.
+- Production AArch64 ThinLTO shrinks `Mixers::Tick()` from 188 to 136 bytes and `AuxReturn()` from
+  92 bytes to a 4-byte `RET`. `AuxSend()` remains 108 bytes. The pointer-view selection grows
+  `MixCurrentFrame()` from 644 to 716 bytes and the retained downmixer from 712 to 776 bytes; the
+  full retained set nevertheless falls from 1,840 to 1,836 bytes. Disassembly proves the four
+  source pointers load once before the loop. The established direct-first-bus and accumulated NEON
+  loop bodies retain their instruction counts and have no new spills.
+- Existing all-disabled, both-enabled, and mixed enabled/disabled tests cover live main/disabled
+  inputs, direct shared returns, required sends, and untouched disabled shared output. The complete
+  ELF64/AArch64 test executable and production ThinLTO library compile and link successfully in
+  1 minute 9 seconds; the ARM64 executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 43 seconds and produced an ARM64-only
+  28,966,523-byte APK with SHA-256
+  `50255CCA1E44F0E646B8F3C3178C5D2952CD348E9CB989F32839CE6F2BC1538A`.
+- After verification, 2,334,854,595 logical bytes of the native test executable and reproducible
+  Gradle intermediates were removed. Reported C: free space increased by 1,896,767,488 bytes; the
+  final APK and active ARM64 RelWithDebInfo CMake cache remain in the workspace.
+- No device, ADB, install, launch, game run, FPS test, or battery measurement was used. This is a
+  bounded always-on DSP memory-system reduction, not evidence for a specific whole-game FPS or
+  battery-watt gain.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

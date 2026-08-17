@@ -137,23 +137,26 @@
   The first audible bus, including an auxiliary bus after leading signed-zero buses, must define
   `current_frame` directly from its already-clamped contribution. Later audible buses retain the
   original per-bus clamp followed by saturating accumulation, and an all-silent frame must clear
-  the complete output even after an audible prior frame. Preserve aux send/return copies, saved
+  the complete output even after an audible prior frame. Preserve aux exchange semantics, saved
   intermediate buffers, Surround's Stereo behavior, and exact multiply/FMA/conversion order.
-  Keep `MixCurrentFrame()` `CITRA_NO_INLINE`: final ThinLTO should leave `Mixers::Tick()` at 236
-  bytes rather than duplicating the full mixer. The common first-bus AArch64 Stereo/Mono loops
+  Keep `MixCurrentFrame()` `CITRA_NO_INLINE`: final ThinLTO must keep the full mixer out of
+  `Mixers::Tick()`, which is currently 136 bytes after native aux-return routing. The common
+  first-bus AArch64 Stereo/Mono loops
   should remain 36/35 instructions per eight samples with Q-form `ST2` and no output `LD2` or
   `SQADD`; later accumulated paths deliberately retain their output `LD2` and two `SQADD` at 38/36
   instructions. Keep multiple-bus saturation, signed-zero, first-audible-aux, and silent-after-
   audible Mono/Stereo regression coverage.
-- Final HLE mixing must consume the main bus and disabled auxiliary buses directly from the
-  current `Tick()` input. Only enabled ARM11 auxiliary returns stage in
-  `state.intermediate_mix_buffer`; `AuxSend()` writes enabled buses to shared memory but must not
-  copy main/disabled input into persistent state. Retain all historical mixer-state archive slots
-  for save compatibility: their main/disabled contents are transiently irrelevant because the
-  next tick uses live input, while enabled returns are overwritten before mixing. Final AArch64
-  ThinLTO should leave the all-aux-disabled `Tick()` route with no 2,560-byte `memcpy`, at 188 bytes
-  versus the 236-byte staging baseline, and `AuxSend()` at 108 versus 136 bytes. Keep all-disabled,
-  both-enabled, and mixed enabled/disabled routing and untouched-disabled-shared-output coverage.
+- Final HLE mixing must consume main and disabled auxiliary buses directly from the current
+  `Tick()` input. On native little-endian targets, enabled ARM11 auxiliary returns must also mix
+  through four independent channel pointers into the shared return buffer; only the generic
+  non-native-endian fallback stages and converts them in `state.intermediate_mix_buffer`.
+  `AuxSend()` still writes each enabled source bus to shared memory. Retain all historical
+  mixer-state archive slots for save compatibility: their native-endian contents are transiently
+  irrelevant because the next tick bypasses them. Final AArch64 ThinLTO should leave `Tick()` at
+  136 bytes, `AuxReturn()` as a 4-byte return, `AuxSend()` at 108 bytes, and only zero, one, or two
+  2,560-byte `memcpy` calls for enabled sends. The four source pointers must load before, not
+  inside, each NEON sample loop. Keep all-disabled, both-enabled, and mixed enabled/disabled
+  routing and untouched-disabled-shared-output coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

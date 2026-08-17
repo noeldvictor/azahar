@@ -11,6 +11,8 @@
 
 namespace AudioCore::HLE {
 
+using PlanarQuadView32 = std::array<const s32*, 4>;
+
 class Mixers final {
 public:
     Mixers() {
@@ -40,8 +42,8 @@ private:
         std::array<float, 3> intermediate_mixer_volume = {};
 
         std::array<bool, 2> aux_bus_enable = {};
-        // Enabled auxiliary returns stage here. Main and disabled auxiliary buses mix directly
-        // from the current Tick() input; retain all three slots for save-state compatibility.
+        // Non-native-endian auxiliary returns stage here. Native-endian buses mix directly from
+        // the current Tick() buffers; retain all three slots for save-state compatibility.
         std::array<PlanarQuadFrame32, 3> intermediate_mix_buffer = {};
 
         OutputFormat output_format = OutputFormat::Stereo;
@@ -89,10 +91,11 @@ private:
     void AuxSend(IntermediateMixSamples& write_samples,
                  const std::array<PlanarQuadFrame32, 3>& input);
     /// INTERNAL: Mix current_frame directly from current input or returned auxiliary samples.
-    void MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input);
+    void MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input,
+                         const IntermediateMixSamples& read_samples);
     /// INTERNAL: Downmix from quadraphonic to stereo based on status.output_format and accumulate
     /// into current_frame, or define it directly for the first audible bus.
-    void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples,
+    void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadView32& samples,
                                        bool accumulate);
     /// INTERNAL: Generate DspStatus based on internal state.
     DspStatus GetCurrentStatus() const;

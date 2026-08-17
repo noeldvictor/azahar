@@ -41,7 +41,7 @@ DspStatus Mixers::Tick(DspConfiguration& config, const IntermediateMixSamples& r
     AuxReturn(read_samples);
     AuxSend(write_samples, input);
 
-    MixCurrentFrame(input);
+    MixCurrentFrame(input, read_samples);
 
     return GetCurrentStatus();
 }
@@ -136,23 +136,41 @@ static void CopyPlanarToShared(s32_le (&output)[4][samples_per_frame],
     }
 }
 
+static PlanarQuadView32 MakePlanarView(const PlanarQuadFrame32& input) {
+    return {input[0].data(), input[1].data(), input[2].data(), input[3].data()};
+}
+
+template <typename Sample>
+static PlanarQuadView32 MakeSharedPlanarView(const Sample (&input)[4][samples_per_frame],
+                                             const PlanarQuadFrame32& endian_converted) {
+    if constexpr (std::is_same_v<Sample, s32>) {
+        return {input[0], input[1], input[2], input[3]};
+    } else {
+        return MakePlanarView(endian_converted);
+    }
+}
+
 #if defined(__aarch64__)
 template <bool Accumulate>
 static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
-                              const PlanarQuadFrame32& samples) {
+                              const PlanarQuadView32& samples) {
     static_assert(samples_per_frame % 8 == 0);
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
+    const s32* const front_left = samples[0];
+    const s32* const front_right = samples[1];
+    const s32* const back_left = samples[2];
+    const s32* const back_right = samples[3];
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
-        const float32x4_t front_left_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
-        const float32x4_t front_left_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
-        const float32x4_t front_right_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
-        const float32x4_t front_right_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample + 4]));
-        const float32x4_t back_left_0 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
-        const float32x4_t back_left_1 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample + 4]));
-        const float32x4_t back_right_0 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
-        const float32x4_t back_right_1 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample + 4]));
+        const float32x4_t front_left_0 = vcvtq_f32_s32(vld1q_s32(front_left + sample));
+        const float32x4_t front_left_1 = vcvtq_f32_s32(vld1q_s32(front_left + sample + 4));
+        const float32x4_t front_right_0 = vcvtq_f32_s32(vld1q_s32(front_right + sample));
+        const float32x4_t front_right_1 = vcvtq_f32_s32(vld1q_s32(front_right + sample + 4));
+        const float32x4_t back_left_0 = vcvtq_f32_s32(vld1q_s32(back_left + sample));
+        const float32x4_t back_left_1 = vcvtq_f32_s32(vld1q_s32(back_left + sample + 4));
+        const float32x4_t back_right_0 = vcvtq_f32_s32(vld1q_s32(back_right + sample));
+        const float32x4_t back_right_1 = vcvtq_f32_s32(vld1q_s32(back_right + sample + 4));
 
         // Keep the same multiply/FMA order emitted for the scalar AArch64 path.
         float32x4_t left_0 = vmulq_f32(back_left_0, gain_vec);
@@ -184,20 +202,24 @@ static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
 
 template <bool Accumulate>
 static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
-                            const PlanarQuadFrame32& samples) {
+                            const PlanarQuadView32& samples) {
     static_assert(samples_per_frame % 8 == 0);
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
+    const s32* const channel_0 = samples[0];
+    const s32* const channel_1 = samples[1];
+    const s32* const channel_2 = samples[2];
+    const s32* const channel_3 = samples[3];
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
-        const float32x4_t channel_0_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
-        const float32x4_t channel_0_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
-        const float32x4_t channel_1_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
-        const float32x4_t channel_1_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample + 4]));
-        const float32x4_t channel_2_0 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
-        const float32x4_t channel_2_1 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample + 4]));
-        const float32x4_t channel_3_0 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
-        const float32x4_t channel_3_1 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample + 4]));
+        const float32x4_t channel_0_0 = vcvtq_f32_s32(vld1q_s32(channel_0 + sample));
+        const float32x4_t channel_0_1 = vcvtq_f32_s32(vld1q_s32(channel_0 + sample + 4));
+        const float32x4_t channel_1_0 = vcvtq_f32_s32(vld1q_s32(channel_1 + sample));
+        const float32x4_t channel_1_1 = vcvtq_f32_s32(vld1q_s32(channel_1 + sample + 4));
+        const float32x4_t channel_2_0 = vcvtq_f32_s32(vld1q_s32(channel_2 + sample));
+        const float32x4_t channel_2_1 = vcvtq_f32_s32(vld1q_s32(channel_2 + sample + 4));
+        const float32x4_t channel_3_0 = vcvtq_f32_s32(vld1q_s32(channel_3 + sample));
+        const float32x4_t channel_3_1 = vcvtq_f32_s32(vld1q_s32(channel_3 + sample + 4));
 
         // Match the scalar AArch64 operation order before dividing the mono sum by two.
         float32x4_t mono_0 = vmulq_f32(channel_1_0, gain_vec);
@@ -228,7 +250,7 @@ static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
 }
 #endif
 
-void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples,
+void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadView32& samples,
                                            bool accumulate) {
     // TODO(merry): Limiter. (Currently we're performing final mixing assuming a disabled limiter.)
 
@@ -282,12 +304,14 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& 
 }
 
 void Mixers::AuxReturn(const IntermediateMixSamples& read_samples) {
-    if (state.aux_bus_enable[0]) {
-        CopySharedToPlanar(state.intermediate_mix_buffer[1], read_samples.mix1.pcm32);
-    }
+    if constexpr (!std::is_same_v<s32_le, s32>) {
+        if (state.aux_bus_enable[0]) {
+            CopySharedToPlanar(state.intermediate_mix_buffer[1], read_samples.mix1.pcm32);
+        }
 
-    if (state.aux_bus_enable[1]) {
-        CopySharedToPlanar(state.intermediate_mix_buffer[2], read_samples.mix2.pcm32);
+        if (state.aux_bus_enable[1]) {
+            CopySharedToPlanar(state.intermediate_mix_buffer[2], read_samples.mix2.pcm32);
+        }
     }
 }
 
@@ -302,7 +326,8 @@ void Mixers::AuxSend(IntermediateMixSamples& write_samples,
     }
 }
 
-CITRA_NO_INLINE void Mixers::MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input) {
+CITRA_NO_INLINE void Mixers::MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input,
+                                             const IntermediateMixSamples& read_samples) {
     bool has_output = false;
 
     // TODO(SachinV): This is probably not accurate, based on symbols from FE:Fates,
@@ -312,11 +337,18 @@ CITRA_NO_INLINE void Mixers::MixCurrentFrame(const std::array<PlanarQuadFrame32,
         // Integer mix samples multiplied by either sign of zero cannot affect the s16 output.
         // Keep NaN on the arithmetic path so the existing conversion behavior remains unchanged.
         if (gain != 0.0f) {
-            // Main and disabled auxiliary buses are already live in input. Enabled auxiliary
-            // buses use the ARM11-returned samples copied into persistent state by AuxReturn().
-            const PlanarQuadFrame32& samples = mix == 0 || !state.aux_bus_enable[mix - 1]
-                                                   ? input[mix]
-                                                   : state.intermediate_mix_buffer[mix];
+            PlanarQuadView32 samples;
+            if (mix == 0) {
+                samples = MakePlanarView(input[mix]);
+            } else if (!state.aux_bus_enable[mix - 1]) {
+                samples = MakePlanarView(input[mix]);
+            } else if (mix == 1) {
+                samples =
+                    MakeSharedPlanarView(read_samples.mix1.pcm32, state.intermediate_mix_buffer[1]);
+            } else {
+                samples =
+                    MakeSharedPlanarView(read_samples.mix2.pcm32, state.intermediate_mix_buffer[2]);
+            }
             // The first audible bus can define the complete frame directly. Later buses retain
             // the original per-bus clamp followed by saturating accumulation.
             DownmixAndMixIntoCurrentFrame(gain, samples, has_output);
