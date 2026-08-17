@@ -2952,10 +2952,17 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 10 minutes 58 seconds.
   This was an accidentally clean 2,199-action native rebuild after two local Ninja versions reset
   the generated build log, not evidence that the source change itself requires a full rebuild.
-  No game was launched and no FPS, battery power, temperature, or sustained-speed measurement was
-  taken. A matched A/B should use an indexed, CPU-vertex-fallback-heavy scene and hold title, save,
-  caches, renderer, driver, resolution, layout, performance/fan mode, brightness, and duration
-  fixed before assigning a whole-game or wattage benefit.
+  After commit `0bcb6a8e8`, an incremental version-stamped build passed in 1 minute 32 seconds. The
+  final APK is ARM64-only, 28,970,267 bytes, v2-signed with the test certificate, reports
+  `0bcb6a8e8-vanilla-thor`, and has SHA-256
+  `6C30FC4673EE74E3C6A5236D27EA2C8E519EEF05C5001B700E4E83C026488A63`.
+- The final APK installed successfully over `org.azahar_emu.azahar.debug` on USB Thor `c3ca0370`.
+  Package inspection reports `primaryCpuAbi=arm64-v8a` and the expected version; the package was
+  explicitly force-stopped afterward. No game or app UI was launched and no FPS, battery power,
+  temperature, or sustained-speed measurement was taken. A matched A/B should use an indexed,
+  CPU-vertex-fallback-heavy scene and hold title, save, caches, renderer, driver, resolution,
+  layout, performance/fan mode, brightness, and duration fixed before assigning a whole-game or
+  wattage benefit.
 
 ## High-Value Optimization Places
 
