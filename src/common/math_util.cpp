@@ -58,6 +58,34 @@ std::pair<u8, u8> FindMinMax(const std::span<const u8>& data) {
 #elif defined(CITRA_HAS_NEON)
         uint8x16_t vmin = vdupq_n_u8(0xFF);
         uint8x16_t vmax = vdupq_n_u8(0);
+#if defined(__aarch64__)
+        constexpr size_t simd_batch_count = simd_line_count * 4;
+        constexpr size_t simd_batch_threshold = simd_batch_count * 2;
+        if (count >= simd_batch_threshold) {
+            uint8x16_t vmin1 = vmin;
+            uint8x16_t vmin2 = vmin;
+            uint8x16_t vmin3 = vmin;
+            uint8x16_t vmax1 = vmax;
+            uint8x16_t vmax2 = vmax;
+            uint8x16_t vmax3 = vmax;
+            for (; i + simd_batch_count <= count; i += simd_batch_count) {
+                const uint8x16_t vals0 = vld1q_u8(data_ptr + i);
+                const uint8x16_t vals1 = vld1q_u8(data_ptr + i + simd_line_count);
+                const uint8x16_t vals2 = vld1q_u8(data_ptr + i + simd_line_count * 2);
+                const uint8x16_t vals3 = vld1q_u8(data_ptr + i + simd_line_count * 3);
+                vmin = vminq_u8(vmin, vals0);
+                vmin1 = vminq_u8(vmin1, vals1);
+                vmin2 = vminq_u8(vmin2, vals2);
+                vmin3 = vminq_u8(vmin3, vals3);
+                vmax = vmaxq_u8(vmax, vals0);
+                vmax1 = vmaxq_u8(vmax1, vals1);
+                vmax2 = vmaxq_u8(vmax2, vals2);
+                vmax3 = vmaxq_u8(vmax3, vals3);
+            }
+            vmin = vminq_u8(vminq_u8(vmin, vmin1), vminq_u8(vmin2, vmin3));
+            vmax = vmaxq_u8(vmaxq_u8(vmax, vmax1), vmaxq_u8(vmax2, vmax3));
+        }
+#endif
         for (; i + simd_line_count <= count; i += simd_line_count) {
             uint8x16_t vals = vld1q_u8(data_ptr + i);
             vmin = vminq_u8(vmin, vals);
@@ -130,6 +158,34 @@ std::pair<u16, u16> FindMinMax(const std::span<const u16>& data) {
 #elif defined(CITRA_HAS_NEON)
         uint16x8_t vmin = vdupq_n_u16(static_cast<u16>(0xFFFF));
         uint16x8_t vmax = vdupq_n_u16(0);
+#if defined(__aarch64__)
+        constexpr size_t simd_batch_count = simd_line_count * 4;
+        constexpr size_t simd_batch_threshold = simd_batch_count * 2;
+        if (count >= simd_batch_threshold) {
+            uint16x8_t vmin1 = vmin;
+            uint16x8_t vmin2 = vmin;
+            uint16x8_t vmin3 = vmin;
+            uint16x8_t vmax1 = vmax;
+            uint16x8_t vmax2 = vmax;
+            uint16x8_t vmax3 = vmax;
+            for (; i + simd_batch_count <= count; i += simd_batch_count) {
+                const uint16x8_t vals0 = vld1q_u16(data_ptr + i);
+                const uint16x8_t vals1 = vld1q_u16(data_ptr + i + simd_line_count);
+                const uint16x8_t vals2 = vld1q_u16(data_ptr + i + simd_line_count * 2);
+                const uint16x8_t vals3 = vld1q_u16(data_ptr + i + simd_line_count * 3);
+                vmin = vminq_u16(vmin, vals0);
+                vmin1 = vminq_u16(vmin1, vals1);
+                vmin2 = vminq_u16(vmin2, vals2);
+                vmin3 = vminq_u16(vmin3, vals3);
+                vmax = vmaxq_u16(vmax, vals0);
+                vmax1 = vmaxq_u16(vmax1, vals1);
+                vmax2 = vmaxq_u16(vmax2, vals2);
+                vmax3 = vmaxq_u16(vmax3, vals3);
+            }
+            vmin = vminq_u16(vminq_u16(vmin, vmin1), vminq_u16(vmin2, vmin3));
+            vmax = vmaxq_u16(vmaxq_u16(vmax, vmax1), vmaxq_u16(vmax2, vmax3));
+        }
+#endif
         for (; i + simd_line_count <= count; i += simd_line_count) {
             uint16x8_t vals = vld1q_u16(data_ptr + i);
             vmin = vminq_u16(vmin, vals);

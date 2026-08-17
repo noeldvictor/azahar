@@ -2347,6 +2347,44 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   exposure. No device, ADB, install, launch, game, FPS, power, or temperature measurement was used,
   so no whole-game speed or wattage percentage is claimed.
 
+## 2026-08-17 AArch64 Indexed-Draw Scan Unroll
+
+- `RasterizerAccelerated::AnalyzeVertexArray()` calls `Common::FindMinMax()` for every indexed draw
+  to derive the vertex range. The earlier AArch64 fix replaced scalar lane extraction with native
+  horizontal reduction, but its main loop still carried one minimum and one maximum dependency
+  across every 16-byte vector.
+- The Cortex-X3, Cortex-A715, and Cortex-A710 optimization guides list AdvSIMD integer `UMIN`/`UMAX`
+  at two-cycle latency; the Cortex-A510 lists three cycles. All four guides recommend memory-loop
+  unrolling, and their Q-load tables give two Q loads and one Q-form `LDP` the same useful-byte
+  issue rate. The large-scan path now uses four independent minimum and four independent maximum
+  accumulators so each chain is revisited only after 64 bytes of other work.
+- The throughput path starts at 128 bytes. This requires at least two 64-byte batches before paying
+  for six extra accumulator initializations and the six-instruction final tree reduction. Shorter
+  scans retain the prior compact one-vector loop; the vector tail and scalar remainder are
+  unchanged. Unsigned minimum and maximum are associative, so grouping the same elements into four
+  accumulators and reducing them afterward is exactly equivalent for `u8` and `u16`.
+- Android Clang 18 compilation of the previous source emitted seven repeated instructions per
+  16-byte vector: one Q load, two address updates, one compare, `UMIN`, `UMAX`, and one branch. That
+  is 28 instructions per 64 bytes with one recurrence chain. Final production AArch64 ThinLTO emits
+  two Q-form `LDP`, four independent `UMIN`, four independent `UMAX`, and five address/control
+  instructions per 64-byte batch: 15 instructions, no spills, and 46.4% fewer repeated
+  instructions. Both `u8` and `u16` functions grow from 284 to 436 bytes to retain separate small-
+  and large-scan paths, a 304-byte combined code-size trade.
+- Permanent reference coverage now checks every prefix through 145 byte indices and 73 halfword
+  indices. Explicit extrema straddle 63/64 and 127/128 byte positions, covering scalar tails, the
+  one-vector loop, the 127/128/129-byte crossover, multiple batches, and empty-input sentinels.
+  The complete ELF64/AArch64 test executable and production shared library compiled and linked
+  successfully after the final crossover refinement in 1 minute 11 seconds. The ARM64 executable
+  was not run on the x64 host, and no device, ADB, install, launch, game, FPS, power, or temperature
+  measurement was used.
+- `:app:assembleVanillaRelWithDebInfoLite` passed with JDK 17 in 1 minute 23 seconds and produced an
+  ARM64-only 28,969,775-byte APK with SHA-256
+  `167832B7CBC8F2478F807BFFB62FFA6093503BF0B48BCD6D9ABB14649F40D0E9`. Cleanup retained that APK
+  and the active ARM64 RelWithDebInfo CMake cache while removing 2,452,981,293 logical bytes of the
+  test ELF, JNI/native staging, mappings, symbols, Kotlin/Gradle intermediates, and temporary
+  assembly/manual-inspection files. Reported C: free space increased by 2,011,570,176 bytes. One
+  bounded 5,179,280-byte R8 `classes.dex` remains because an existing Java process has it open.
+
 ## 2026-08-17 Rejected PICA RSQ and Blind Fastmem Shortcuts
 
 - The tempting PICA `RSQ` lowering `FRSQRTE; FMUL; FRSQRTS; FMUL` would be four instructions, not

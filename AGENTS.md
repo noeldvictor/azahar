@@ -43,6 +43,13 @@
 - Use `:app:assembleVanillaDebug` only when an actual debuggable APK is needed.
 - Before pushing Android changes, verify at least `:app:compileVanillaDebugKotlin`; prefer a full `:app:assembleVanillaRelWithDebInfoLite` when native code, packaging, or Thor installs are involved.
 - Vulkan Anime4K is a real three-stage filter: copy the unscaled source to an independent image, generate the RG16F X gradient, generate the R16F Y/luma gradient, then refine into the scaled surface. Never bind the destination surface as one of its sampled inputs. Preserve explicit transfer, color-attachment, and fragment-read dependencies and compare a fixed frame against the OpenGL path on Adreno after changing this code.
+- Large AArch64 `Common::FindMinMax()` index scans deliberately switch at 128 bytes to four
+  independent minimum and four independent maximum accumulators over each 64-byte batch. Preserve
+  exact unsigned `u8`/`u16` extrema, the one-vector and scalar tails, empty-input sentinels, and the
+  unchanged non-AArch64 paths. Do not lower the crossover to one batch: its extra vector setup and
+  tree reduction nearly consume the first 64-byte saving. Final ThinLTO should retain two Q-form
+  `LDP`, eight `UMIN`/`UMAX`, and five address/control instructions per repeated band with no
+  spills. Keep prefix-reference coverage across 127/128/129 bytes and equivalent halfword counts.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its paired-load lowering.
 - The AArch64 PICA `LG2` positive-input helper similarly keeps its five exact coefficient words in one aligned two-Q-register block. Preserve its `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value vectors and branches.

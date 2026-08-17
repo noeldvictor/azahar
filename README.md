@@ -69,6 +69,8 @@ This fork has moved away from stock Azahar in visible ways:
 - The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
   and refreshes it only after geometry `EMIT`, removing repeated bank loads and address generation
   from every ordinary output write.
+- Large indexed draws scan their index bounds through four independent AArch64 min/max chains and
+  two paired Q loads per 64-byte band. Short draws retain the compact single-vector loop.
 - The hottest PICA command-list parser has an AArch64 four-pair `LD2` path that validates ordinary
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - The AArch64 PICA `EX2` and `LG2` helpers pack their exact approximation constants into aligned
@@ -150,6 +152,17 @@ sequences, build evidence, limitations, and the required benchmark controls are 
 [Thor optimization notes](docs/thor-optimization-notes.md).
 
 ## AArch64 PICA Updates
+
+Every indexed draw must find the minimum and maximum `u8` or `u16` index before vertex analysis.
+For scans of at least 128 bytes, the AArch64 path now keeps four independent unsigned-minimum and
+four independent unsigned-maximum accumulators across each 64-byte band. Final ThinLTO lowers the
+band to two Q-form `LDP`, eight `UMIN`/`UMAX`, and five address/control instructions with no spills:
+15 repeated instructions instead of four passes through the old seven-instruction 16-byte loop,
+or 46.4% fewer instructions per 64 bytes. The four chains also break the two- to three-cycle
+min/max dependency carried by the old loop across every vector. Scans below 128 bytes keep the
+smaller loop so setup and tree-reduction work do not overwhelm the saving. Every prefix through
+both crossover boundaries has reference coverage; these are linked-code reductions, not a
+whole-game FPS or battery-watt measurement.
 
 The PICA vertex-shader JIT now attacks six common AArch64 lowering costs. Source swizzles use
 register-only AdvSIMD permutations where possible, `ST1` lane stores handle partial destination

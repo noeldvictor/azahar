@@ -47,6 +47,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   ordinary paired Q loads plus `UZP` before sharing widening/conversion work across outputs. The
   A710, A715, and X3 guides recommend loop unrolling and non-writeback `LDP`/`STP` for throughput;
   final ThinLTO must confirm this lowering instead of assuming an intrinsic avoids `LD2`.
+- For large linear index-bound scans, use four independent `UMIN` and `UMAX` chains over 64-byte
+  bands and let Clang combine adjacent vector loads into Q-form `LDP`. The X3, A715, and A710 list
+  AdvSIMD integer min/max at two-cycle latency, while the A510 lists three cycles; one accumulator
+  therefore serializes the next vector even when load bandwidth is available. Across all four
+  cores, two Q loads and one Q `LDP` carry the same useful bytes per documented issue interval.
+  Keep a single-chain path below two bands so accumulator setup and the final reduction do not
+  inflate small-draw work, and inspect final ThinLTO rather than assuming source unrolling survives.
 - For final HLE audio downmix that must read and write interleaved stereo, widen D-form `LD2`/`ST2`
   to Q-form and handle eight samples per loop. The exact tables above show equal or better useful
   bytes per cycle for Q form on all four Thor core classes. Do not replace the structured pair with
