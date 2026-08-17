@@ -599,6 +599,110 @@ SHADER_TEST_CASE("Address Register Offset", "[video_core][shader]") {
     REQUIRE(shader.Run(-129.f) == f_uniforms[40]);
 }
 
+SHADER_TEST_CASE("PICA State Access", "[video_core][shader]") {
+    const auto sh_input = SourceRegister::MakeInput(0);
+    const auto sh_c0 = SourceRegister::MakeFloat(0);
+    const auto sh_output = DestRegister::MakeOutput(0);
+
+    SECTION("Unused state is preserved") {
+        auto shader = TestType({
+            {OpCode::Id::MOV, sh_output, sh_input},
+            {OpCode::Id::END},
+        });
+
+        Pica::ShaderUnit shader_unit;
+        shader_unit.address_registers[0] = 17;
+        shader_unit.address_registers[1] = -29;
+        shader_unit.address_registers[2] = 41;
+        shader_unit.conditional_code[0] = true;
+        shader_unit.conditional_code[1] = false;
+        shader.Run(shader_unit, 1.0f);
+
+        REQUIRE(shader_unit.address_registers[0] == 17);
+        REQUIRE(shader_unit.address_registers[1] == -29);
+        REQUIRE(shader_unit.address_registers[2] == 41);
+        REQUIRE(shader_unit.conditional_code[0]);
+        REQUIRE_FALSE(shader_unit.conditional_code[1]);
+    }
+
+    SECTION("Partial MOVA preserves untouched registers") {
+        auto shader = TestType({
+            {OpCode::Id::MOVA, DestRegister{}, "x", sh_input, "x"},
+            {OpCode::Id::END},
+        });
+
+        Pica::ShaderUnit shader_unit;
+        shader_unit.address_registers[0] = -1;
+        shader_unit.address_registers[1] = 23;
+        shader_unit.address_registers[2] = -37;
+        shader.Run(shader_unit, 9.75f);
+
+        REQUIRE(shader_unit.address_registers[0] == 9);
+        REQUIRE(shader_unit.address_registers[1] == 23);
+        REQUIRE(shader_unit.address_registers[2] == -37);
+    }
+
+    SECTION("Relative uniform reads initial address state") {
+        auto shader = TestType({
+            {OpCode::Id::MOV, sh_output, "xyzw", sh_c0, "xyzw", SourceRegister{}, "",
+             nihstro::InlineAsm::RelativeAddress::A1},
+            {OpCode::Id::END},
+        });
+        shader.shader_setup->uniforms.f[5] = {
+            Pica::f24::FromFloat32(0.25f), Pica::f24::FromFloat32(0.5f),
+            Pica::f24::FromFloat32(0.75f), Pica::f24::One()};
+
+        Pica::ShaderUnit shader_unit;
+        shader_unit.address_registers[0] = 5;
+        shader.Run(shader_unit, 0.0f);
+
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].x.ToFloat32() == 0.25f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].y.ToFloat32() == 0.5f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].z.ToFloat32() == 0.75f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].w.ToFloat32() == 1.0f);
+        REQUIRE(shader_unit.address_registers[0] == 5);
+    }
+
+    SECTION("CMP writes conditional state") {
+        const auto sh_input2 = SourceRegister::MakeInput(1);
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::NOP},
+            {OpCode::Id::END},
+        });
+
+        nihstro::Instruction cmp{};
+        cmp.opcode = OpCode::Id::CMP;
+        cmp.common.operand_desc_id = 0;
+        cmp.common.src1 = sh_input;
+        cmp.common.src2 = sh_input2;
+        cmp.common.compare_op.x = nihstro::Instruction::Common::CompareOpType::LessThan;
+        cmp.common.compare_op.y = nihstro::Instruction::Common::CompareOpType::GreaterEqual;
+        shader_setup->UpdateProgramCode(0, cmp.hex);
+
+        nihstro::SwizzlePattern swizzle{};
+        swizzle.dest_mask = 0b1111;
+        for (int component = 0; component < 4; ++component) {
+            const auto selector = static_cast<nihstro::SwizzlePattern::Selector>(component);
+            swizzle.SetSelectorSrc1(component, selector);
+            swizzle.SetSelectorSrc2(component, selector);
+        }
+        shader_setup->UpdateSwizzleData(0, swizzle.hex);
+
+        auto shader = TestType(std::move(shader_setup));
+        Pica::ShaderUnit shader_unit;
+        shader_unit.conditional_code[0] = false;
+        shader_unit.conditional_code[1] = false;
+        const std::array<Common::Vec4f, 2> inputs = {
+            Common::Vec4f{1.0f, 4.0f, 0.0f, 0.0f},
+            Common::Vec4f{2.0f, 3.0f, 0.0f, 0.0f},
+        };
+        shader.RunShader(shader_unit, inputs);
+
+        REQUIRE(shader_unit.conditional_code[0]);
+        REQUIRE(shader_unit.conditional_code[1]);
+    }
+}
+
 SHADER_TEST_CASE("Dest Mask", "[video_core][shader]") {
     const auto sh_input = SourceRegister::MakeInput(0);
     const auto sh_output = DestRegister::MakeOutput(0);

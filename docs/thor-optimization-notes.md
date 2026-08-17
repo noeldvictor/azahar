@@ -278,6 +278,45 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   is exact, but whole-game FPS, battery power, temperature, and sustained wattage remain unmeasured
   until a future allowed matched scene A/B.
 
+## 2026-08-16 AArch64 Shader JIT State Traffic
+
+- Even after removing the oversized ABI frame, every compiled shader invocation still loaded all
+  three PICA address/loop registers and both condition flags, then wrote all five values back at
+  every `END`. That was four load instructions plus four stores and 28 bytes of state traffic even
+  when the shader never referenced or modified any of that state. The uniform-base move and
+  all-ones vector initialization were also unconditional.
+- The existing whole-program control-flow scan now records exact conservative access sets before
+  emitting code. Relative float-uniform operands mark only their selected `a0.x`, `a0.y`, or `aL`
+  register; enabled `MOVA` lanes mark their corresponding writes; `LOOP` marks `aL`; conditional
+  flow marks only the condition lanes selected by `JustX`, `JustY`, `Or`, or `And`; and `CMP` marks
+  both condition writes. Float-uniform operands and uniform flow mark the uniform base, while only
+  relative-address fallback, DPH/SGE/SLT/RCP/RSQ, and LG2 mark the `ONE` constant.
+- Any register that might be written is preloaded as well as written back. This intentionally keeps
+  the original value if runtime control flow skips the write or execution enters at a later shader
+  offset. Unreferenced state stays in `ShaderUnit` memory and is never transferred. The additional
+  analysis runs once when compiling a shader, while the removed instructions ran for every vertex
+  or geometry shader invocation.
+- A simple uniform-free `MOV` shader now removes ten emitted instructions per invocation: all eight
+  state memory operations, the dead uniform-base move, and the unused `ONE` initialization. Its 28
+  bytes of PICA state traffic fall to zero. A read-only `a0.x` shader emits one state load instead of
+  eight transfers (87.5% fewer); an x-only `MOVA` emits one load and one store (75% fewer); an aL
+  loop emits one load and one store; and a condition-only `JustX` path emits one byte load and no
+  condition store. Shaders using every state category conservatively retain the old traffic.
+- The same access map narrows caller-save wrappers around geometry `EMIT` and error callbacks. A
+  shader with no address, condition, loop, uniform, or `ONE` dependency now preserves only `STATE`
+  and `X30`: wrapper memory operations fall from ten to two (80%), register traffic from 144 to 32
+  bytes (77.8%), emitted save/restore instructions from twelve to four (66.7%), and stack use from
+  80 to 16 bytes. State-heavy geometry shaders keep every register they can actually need.
+- Focused Catch2 coverage now checks unused-state preservation, partial `MOVA` preservation,
+  initial-state relative uniform reads, and `CMP` writeback. Existing conditional-flow and nested
+  loop cases cover condition reads and aL persistence. The complete ARM64 test executable compiled
+  and linked, but was not run under the current no-Thor restriction.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` passed. The arm64-only APK is 28,964,975 bytes with
+  SHA-256 `5341AA99FBFABF37F301FA7651F529F06B32BB295325BE029F0A73A8A5E3A0FE`.
+  Only the active `6t472v1d` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or
+  Thor execution was performed, so whole-game FPS and wattage remain unmeasured.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.

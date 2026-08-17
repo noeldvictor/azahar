@@ -114,11 +114,8 @@ private:
      */
     void Compile_Assert(bool condition, const char* msg);
 
-    /**
-     * Analyzes the entire shader program for `CALL` instructions before emitting any code,
-     * identifying the locations where a return needs to be inserted.
-     */
-    void FindReturnOffsets();
+    /// Finds guest return points and the PICA state that emitted code reads or writes.
+    void AnalyzeProgram();
 
     /**
      * Emits data and code for utility functions.
@@ -139,8 +136,17 @@ private:
     /// Offsets in code where a return needs to be inserted
     std::vector<u32> return_offsets;
 
+    /// PICA state that emitted code must transfer between ShaderUnit memory and host registers.
+    std::bitset<3> address_register_reads;
+    std::bitset<3> address_register_writes;
+    std::bitset<2> conditional_code_reads;
+    std::bitset<2> conditional_code_writes;
+
     /// Whether math or guest-subroutine BLs require preserving the host return address at entry.
     bool needs_link_register_save = false;
+    bool uses_uniforms = false;
+    bool needs_one = false;
+    bool uses_loop = false;
 
     u32 program_counter = 0; ///< Offset of the next instruction to decode
     u8 loop_depth = 0;       ///< Depth of the (nested) loops currently compiled

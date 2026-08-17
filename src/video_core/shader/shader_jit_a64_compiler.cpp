@@ -472,7 +472,38 @@ void JitShader::Compile_UniformCondition(Instruction instr) {
 }
 
 std::bitset<64> JitShader::PersistentCallerSavedRegs() {
-    return persistent_regs & ABI_ALL_CALLER_SAVED;
+    std::bitset<64> regs = persistent_regs;
+    const std::bitset<3> address_register_accesses =
+        address_register_reads | address_register_writes;
+    const std::bitset<2> conditional_code_accesses =
+        conditional_code_reads | conditional_code_writes;
+
+    if (!uses_uniforms) {
+        regs.reset(RegToIndex(UNIFORMS));
+    }
+    if (!needs_one) {
+        regs.reset(RegToIndex(ONE));
+    }
+    if (!address_register_accesses.test(0)) {
+        regs.reset(RegToIndex(ADDROFFS_REG_0));
+    }
+    if (!address_register_accesses.test(1)) {
+        regs.reset(RegToIndex(ADDROFFS_REG_1));
+    }
+    if (!address_register_accesses.test(2)) {
+        regs.reset(RegToIndex(LOOPCOUNT_REG));
+    }
+    if (!conditional_code_accesses.test(0)) {
+        regs.reset(RegToIndex(COND0));
+    }
+    if (!conditional_code_accesses.test(1)) {
+        regs.reset(RegToIndex(COND1));
+    }
+    if (!uses_loop) {
+        regs.reset(RegToIndex(LOOPCOUNT));
+        regs.reset(RegToIndex(LOOPINC));
+    }
+    return regs & ABI_ALL_CALLER_SAVED;
 }
 
 void JitShader::Compile_ADD(Instruction instr) {
@@ -684,14 +715,25 @@ void JitShader::Compile_RSQ(Instruction instr) {
 void JitShader::Compile_NOP(Instruction instr) {}
 
 void JitShader::Compile_END(Instruction instr) {
-    // Save conditional code
-    STRB(COND0.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[0])));
-    STRB(COND1.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[1])));
+    // Write back only PICA state that the shader can modify.
+    if (conditional_code_writes.test(0)) {
+        STRB(COND0.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[0])));
+    }
+    if (conditional_code_writes.test(1)) {
+        STRB(COND1.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[1])));
+    }
 
-    // Save address/loop registers
-    STP(ADDROFFS_REG_0.toW(), ADDROFFS_REG_1.toW(), STATE,
-        u32(offsetof(ShaderUnit, address_registers)));
-    STR(LOOPCOUNT_REG.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[2])));
+    if (address_register_writes.test(0) && address_register_writes.test(1)) {
+        STP(ADDROFFS_REG_0.toW(), ADDROFFS_REG_1.toW(), STATE,
+            u32(offsetof(ShaderUnit, address_registers)));
+    } else if (address_register_writes.test(0)) {
+        STR(ADDROFFS_REG_0.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[0])));
+    } else if (address_register_writes.test(1)) {
+        STR(ADDROFFS_REG_1.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[1])));
+    }
+    if (address_register_writes.test(2)) {
+        STR(LOOPCOUNT_REG.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[2])));
+    }
 
     const std::bitset<64> callee_saved_regs =
         needs_link_register_save ? BuildRegSet({X30}) : std::bitset<64>{};
@@ -970,14 +1012,109 @@ void JitShader::Compile_NextInstr() {
     }
 }
 
-void JitShader::FindReturnOffsets() {
+void JitShader::AnalyzeProgram() {
     return_offsets.clear();
+    address_register_reads.reset();
+    address_register_writes.reset();
+    conditional_code_reads.reset();
+    conditional_code_writes.reset();
     needs_link_register_save = false;
+    uses_uniforms = false;
+    needs_one = false;
+    uses_loop = false;
 
     for (std::size_t offset = 0; offset < program_code->size(); ++offset) {
         Instruction instr = {(*program_code)[offset]};
+        const OpCode opcode = instr.opcode.Value();
+        const OpCode::Id effective_opcode = opcode.EffectiveOpCode();
+        const OpCode::Info& info = opcode.GetInfo();
 
-        switch (instr.opcode.Value()) {
+        // Only one arithmetic operand can use relative uniform addressing. Mirror the source
+        // selection in Compile_SwizzleSrc so the corresponding cached PICA register is loaded.
+        SourceRegister indexed_source;
+        u32 address_register_index = 0;
+        const bool is_inverted = (info.subtype & OpCode::Info::SrcInversed) != 0;
+        if (info.type == OpCode::Type::Arithmetic) {
+            indexed_source = is_inverted ? instr.common.GetSrc2(true) : instr.common.GetSrc1(false);
+            address_register_index = instr.common.address_register_index;
+
+            if ((info.subtype & OpCode::Info::Src1) != 0 &&
+                instr.common.GetSrc1(is_inverted).GetRegisterType() == RegisterType::FloatUniform) {
+                uses_uniforms = true;
+            }
+            if ((info.subtype & OpCode::Info::Src2) != 0 &&
+                instr.common.GetSrc2(is_inverted).GetRegisterType() == RegisterType::FloatUniform) {
+                uses_uniforms = true;
+            }
+        } else if (info.type == OpCode::Type::MultiplyAdd) {
+            indexed_source = is_inverted ? instr.mad.GetSrc3(true) : instr.mad.GetSrc2(false);
+            address_register_index = instr.mad.address_register_index;
+
+            uses_uniforms |=
+                instr.mad.GetSrc1(is_inverted).GetRegisterType() == RegisterType::FloatUniform ||
+                instr.mad.GetSrc2(is_inverted).GetRegisterType() == RegisterType::FloatUniform ||
+                instr.mad.GetSrc3(is_inverted).GetRegisterType() == RegisterType::FloatUniform;
+        }
+        if (address_register_index != 0 &&
+            indexed_source.GetRegisterType() == RegisterType::FloatUniform) {
+            address_register_reads.set(address_register_index - 1);
+            needs_one = true;
+        }
+
+        if (effective_opcode == OpCode::Id::MOVA) {
+            const SwizzlePattern swiz = {(*swizzle_data)[instr.common.operand_desc_id]};
+            if (swiz.DestComponentEnabled(0)) {
+                address_register_writes.set(0);
+            }
+            if (swiz.DestComponentEnabled(1)) {
+                address_register_writes.set(1);
+            }
+        } else if (effective_opcode == OpCode::Id::LOOP) {
+            address_register_writes.set(2);
+            uses_loop = true;
+        } else if (effective_opcode == OpCode::Id::CMP) {
+            conditional_code_writes.set();
+        }
+
+        switch (effective_opcode) {
+        case OpCode::Id::DPH:
+        case OpCode::Id::DPHI:
+        case OpCode::Id::SGE:
+        case OpCode::Id::SGEI:
+        case OpCode::Id::SLT:
+        case OpCode::Id::SLTI:
+        case OpCode::Id::RCP:
+        case OpCode::Id::RSQ:
+        case OpCode::Id::LG2:
+            needs_one = true;
+            break;
+        case OpCode::Id::CALLU:
+        case OpCode::Id::IFU:
+        case OpCode::Id::LOOP:
+        case OpCode::Id::JMPU:
+            uses_uniforms = true;
+            break;
+        default:
+            break;
+        }
+
+        if (info.type == OpCode::Type::Conditional &&
+            (info.subtype & OpCode::Info::HasCondition) != 0) {
+            switch (instr.flow_control.op) {
+            case Instruction::FlowControlType::Or:
+            case Instruction::FlowControlType::And:
+                conditional_code_reads.set();
+                break;
+            case Instruction::FlowControlType::JustX:
+                conditional_code_reads.set(0);
+                break;
+            case Instruction::FlowControlType::JustY:
+                conditional_code_reads.set(1);
+                break;
+            }
+        }
+
+        switch (opcode) {
         case OpCode::Id::EX2:
         case OpCode::Id::LG2:
             // The emitted math helpers are reached with BL, so preserve the host return address
@@ -1011,8 +1148,8 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     loop_depth = 0;
     instruction_labels.fill(Label());
 
-    // Find all `CALL` instructions and identify return locations
-    FindReturnOffsets();
+    // Identify control-flow targets and the PICA state used by emitted code.
+    AnalyzeProgram();
 
     const std::bitset<64> callee_saved_regs =
         needs_link_register_save ? BuildRegSet({X30}) : std::bitset<64>{};
@@ -1026,20 +1163,40 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
         STR(XSCRATCH0, SP, 8);
     }
 
-    MOV(UNIFORMS, ABI_PARAM1);
+    if (uses_uniforms) {
+        MOV(UNIFORMS, ABI_PARAM1);
+    }
     MOV(STATE, ABI_PARAM2);
 
-    // Load address/loop registers
-    LDP(ADDROFFS_REG_0.toW(), ADDROFFS_REG_1.toW(), STATE,
-        u32(offsetof(ShaderUnit, address_registers)));
-    LDR(LOOPCOUNT_REG.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[2])));
+    // A write may be skipped by runtime control flow or by entering at a later instruction, so
+    // preload every register that can be read or written and write back only possible mutations.
+    const std::bitset<3> address_register_accesses =
+        address_register_reads | address_register_writes;
+    if (address_register_accesses.test(0) && address_register_accesses.test(1)) {
+        LDP(ADDROFFS_REG_0.toW(), ADDROFFS_REG_1.toW(), STATE,
+            u32(offsetof(ShaderUnit, address_registers)));
+    } else if (address_register_accesses.test(0)) {
+        LDR(ADDROFFS_REG_0.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[0])));
+    } else if (address_register_accesses.test(1)) {
+        LDR(ADDROFFS_REG_1.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[1])));
+    }
+    if (address_register_accesses.test(2)) {
+        LDR(LOOPCOUNT_REG.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[2])));
+    }
 
-    //// Load conditional code
-    LDRB(COND0.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[0])));
-    LDRB(COND1.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[1])));
+    const std::bitset<2> conditional_code_accesses =
+        conditional_code_reads | conditional_code_writes;
+    if (conditional_code_accesses.test(0)) {
+        LDRB(COND0.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[0])));
+    }
+    if (conditional_code_accesses.test(1)) {
+        LDRB(COND1.toW(), STATE, u32(offsetof(ShaderUnit, conditional_code[1])));
+    }
 
-    // Used to set a register to one
-    FMOV(ONE.S4(), FImm8(false, 7, 0));
+    if (needs_one) {
+        // Used to set a register to one.
+        FMOV(ONE.S4(), FImm8(false, 7, 0));
+    }
 
     // Jump to start of the shader program
     BR(ABI_PARAM3);
