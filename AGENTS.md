@@ -50,6 +50,12 @@
 - Use `:app:assembleVanillaDebug` only when an actual debuggable APK is needed.
 - Before pushing Android changes, verify at least `:app:compileVanillaDebugKotlin`; prefer a full `:app:assembleVanillaRelWithDebInfoLite` when native code, packaging, or Thor installs are involved.
 - Vulkan Anime4K is a real three-stage filter: copy the unscaled source to an independent image, generate the RG16F X gradient, generate the R16F Y/luma gradient, then refine into the scaled surface. Never bind the destination surface as one of its sampled inputs. Preserve explicit transfer, color-attachment, and fragment-read dependencies and compare a fixed frame against the OpenGL path on Adreno after changing this code.
+- Vulkan guest-texture and final-presentation samplers deliberately keep anisotropy disabled with
+  `maxAnisotropy = 1.0f`. PICA exposes nearest/linear and mip filtering but no anisotropy control,
+  and the OpenGL path does not add it. Preserve exact guest filter semantics and deterministic
+  nearest presentation; do not restore device-maximum anisotropy without an explicit user setting,
+  visual validation, and a matched Thor performance/power A/B. The Vulkan device feature may stay
+  enabled for future controlled uses.
 - Large AArch64 `Common::FindMinMax()` index scans deliberately switch at 128 bytes to four
   independent minimum and four independent maximum accumulators over each 64-byte batch. Preserve
   exact unsigned `u8`/`u16` extrema, the one-vector and scalar tails, empty-input sentinels, and the

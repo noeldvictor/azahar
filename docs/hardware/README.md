@@ -8,7 +8,7 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 
 | Document | Revision or scope | Size | SHA-256 | Azahar relevance |
 | --- | --- | ---: | --- | --- |
-| `qualcomm_adreno_game_developer_guide.pdf` | Qualcomm 80-78185-2, 200 pages | 20.17 MiB | `0872AA49B763ACB46AEB7427784E926D2BF3939F2E731B405DEF977A5BFAECAC` | GMEM, render passes, resolves, concurrent binning, LRZ, and mobile bandwidth |
+| `qualcomm_adreno_game_developer_guide.pdf` | Qualcomm 80-78185-2, 200 pages | 20.17 MiB | `0872AA49B763ACB46AEB7427784E926D2BF3939F2E731B405DEF977A5BFAECAC` | GMEM, render passes, resolves, concurrent binning, LRZ, mobile bandwidth, and page 84 texture-fetch/filter cost |
 | `qualcomm_snapdragon_opencl_optimization_guide.pdf` | Qualcomm 80-NB295-11 Rev. C, 116 pages | 1.71 MiB | `59CEEE4F9E33686CEB5F2970045C77858B4A395885778C5944C3130E590EEB3A` | Hardware cache/UMA guidance; OpenCL API advice is out of scope |
 | [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/ha), `arm-architecture-reference-manual-a-profile.pdf` | DDI 0487 H.a, 11,530 pages; sibling `xenia-thor` research library | 65.86 MiB | `62AF4D2F908347C3018BD63572F0CE1D5EDF0D34ABAE2BEE3C18DE7C97D06E43` | Sections C7.2.289, C7.2.309, C7.2.339, C7.2.390, and C7.2.403 define `SQDMULH`, saturating `SQXTUN`, byte-table `TBL`, lane-variable `USHL`, and `ZIP1` semantics used by exact audio and ETC1 SIMD paths |
 | [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/mc), `arm_architecture_reference_manual_DDI0487M_c.pdf` | DDI 0487 M.c, 17,145 pages | 119.93 MiB | `B5F9DAA7EC0446777C8F848AA6431C99E5AB6554E5AA171B28B9016771494F8C` | Authoritative AArch64 instruction and memory-ordering semantics; sections C6.2.180 and C6.2.192 distinguish relaxed `LDADD`/ordinary loads from release/acquire variants |
@@ -40,6 +40,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   than a settings checkbox when a compatibility hack can be disabled per title.
 - Use Snapdragon Profiler to verify concurrent binning; do not infer it from source structure alone.
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
+- Preserve PICA sampler semantics instead of forcing device-maximum anisotropy. PICA exposes
+  nearest/linear and mip filtering but no anisotropy control, and OpenGL already leaves anisotropy
+  off. Vulkan guest and final-screen samplers therefore use isotropic filtering and
+  `maxAnisotropy = 1.0f`. Qualcomm guide page 84 warns that texture fetches/cache misses and stronger
+  filters consume texture-pipe capacity; a 16x anisotropic lookup can require up to sixteen samples
+  for an affected fragment, although adaptive real workloads are commonly much lower. Khronos also
+  defines nearest-plus-anisotropy behavior as implementation-dependent. Keep the Vulkan device
+  feature available, but do not opt samplers into it without an explicit setting and Thor A/B.
 - Prefer vector permutation plus ordinary contiguous stores over byte/halfword `ST3` or `ST4`
   when the exact layout permits it; the A510 structured-store path is exceptionally slow.
 - For converted RGB5A1/RGB565/RGBA4 encode, prepare both eight-pixel halves in Q registers so masks

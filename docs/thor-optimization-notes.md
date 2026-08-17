@@ -2876,6 +2876,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Reported C: free space increased by 2,025,955,328 bytes to 88,974,700,544. The retained `.cxx`
   cache is 2,782,171,675 bytes and `app/build` contains only the final APK.
 
+## 2026-08-17 Vulkan Isotropic Sampler Fidelity and Power
+
+- The initial Vulkan backend commit `dfa2fd0e0` enabled the physical device's maximum supported
+  anisotropy on every guest texture sampler, even though PICA sampler state exposes only
+  nearest/linear magnification, nearest/linear minification, nearest/linear mip selection, LOD
+  bounds/bias, and wrap modes. There is no guest anisotropy control in `regs_texturing.h` or
+  `SamplerParams`, and the OpenGL backend does not add anisotropy. Vulkan therefore changed the
+  emulated filter and potentially added texture work that the game never requested.
+- Vulkan's two final-screen samplers also requested device-maximum anisotropy for both the linear
+  and nearest choices. The current Khronos
+  [Vulkan sampling specification](https://docs.vulkan.org/spec/latest/chapters/textures.html) makes
+  nearest filtering with anisotropy implementation-dependent, so the old nearest screen choice did
+  not have deterministic nearest semantics across drivers.
+- Guest and final-screen Vulkan samplers now set `anisotropyEnable = false` and
+  `maxAnisotropy = 1.0f`. Guest nearest/linear, mip, LOD, wrap, border-color, and comparison state is
+  otherwise unchanged. The device feature remains enabled when supported, so a future explicit and
+  measured option can still use it without changing device creation.
+- Qualcomm Adreno Game Developer Guide 80-78185-2 AL page 84 recommends minimizing texture fetches
+  and cache misses and notes that bilinear or nearest can outperform trilinear or anisotropic
+  filtering. Its upper bound is sixteen samples for a 16x anisotropic lookup on an affected
+  fragment, while adaptive behavior usually makes average application cost much lower and commonly
+  under twice isotropic filtering. This change removes that unrequested adaptive work; it does not
+  assume every old sample consumed sixteen taps.
+- A complete `arm64-v8a` native rebuild passed in 1 minute 40 seconds and linked both the ARM64 test
+  ELF and production `libcitra-android.so`. Final AArch64 for `Vulkan::Sampler::Sampler` writes zero
+  to the `VkSamplerCreateInfo::anisotropyEnable` word and `0x3f800000` (`1.0f`) to
+  `maxAnisotropy`. `RendererVulkan::CompileShaders()` emits the same field pair for both final
+  presentation samplers, including the nearest sampler.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 3 minutes
+  48 seconds. The APK contains only `arm64-v8a`, is 28,970,223 bytes, and has SHA-256
+  `6C21171E5534618D9D96DB5E3E47E9B2F114912F4B8E1563C918C46C9EE188FE`.
+- This affects every Vulkan guest texture sampler plus the final screen samplers, so it is a broader
+  texture-pipe and power candidate than a one-per-frame CPU synchronization micro-optimization.
+  Exact benefit depends on texture angle, minification, cache behavior, scene, and driver. No
+  device, ADB, install, launch, game, FPS, battery, wattage, temperature, or visual run was used, so
+  no whole-game percentage is claimed. A future allowed matched Thor A/B should hold title, scene,
+  save, caches, driver, resolution, layout, performance/fan mode, brightness, and duration fixed;
+  compare image correctness and record GPU texture-pipe utilization, frametimes, battery power,
+  temperature, and thermal slope.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake/Ninja cache while removing
+  2,471,546,637 logical bytes of Gradle staging, the ARM64 test/helper bin directory, and native
+  helper tools. Reported C: free space increased by 2,024,697,856 bytes to 88,759,250,944. The
+  retained `.cxx` cache is 2,782,216,533 bytes and `app/build` contains only the final APK.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

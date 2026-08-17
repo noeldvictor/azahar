@@ -1489,7 +1489,6 @@ Sampler::Sampler(TextureRuntime& runtime, const VideoCore::SamplerParams& params
     using TextureConfig = VideoCore::SamplerParams::TextureConfig;
 
     const Instance& instance = runtime.GetInstance();
-    const vk::PhysicalDeviceProperties properties = instance.GetPhysicalDevice().getProperties();
     const bool use_border_color =
         instance.IsCustomBorderColorSupported() && (params.wrap_s == TextureConfig::ClampToBorder ||
                                                     params.wrap_t == TextureConfig::ClampToBorder);
@@ -1516,8 +1515,10 @@ Sampler::Sampler(TextureRuntime& runtime, const VideoCore::SamplerParams& params
         .addressModeU = wrap_u,
         .addressModeV = wrap_v,
         .mipLodBias = 0,
-        .anisotropyEnable = instance.IsAnisotropicFilteringSupported(),
-        .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+        // PICA exposes nearest/linear and mip filtering, but no anisotropy control. Forcing the
+        // host maximum changes the emulated filter and can multiply texture samples on mobile GPUs.
+        .anisotropyEnable = false,
+        .maxAnisotropy = 1.0f,
         .compareEnable = false,
         .compareOp = vk::CompareOp::eAlways,
         .minLod = lod_min,

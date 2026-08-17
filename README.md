@@ -521,6 +521,22 @@ The final Android AArch64 `TickFrame()` is only a direct cache tick with no `Wai
 These are exact per-frame synchronization removals, not measured whole-game FPS or battery-watt
 percentages.
 
+## Vulkan Texture-Filter Fidelity/Power Update
+
+Vulkan no longer silently enables the device's maximum anisotropy for every guest PICA texture.
+The 3DS sampler state exposes nearest/linear and mip filtering but no anisotropy choice, and the
+OpenGL backend already honors that state without adding anisotropy. Guest Vulkan samplers now do
+the same. This restores backend parity while removing adaptive extra texture taps that games never
+requested.
+
+The final linear and nearest screen samplers are also isotropic. This keeps nearest presentation
+deterministic under Vulkan and avoids paying for anisotropic work on the final screen quads.
+Qualcomm's Adreno guide identifies texture fetches, cache misses, and high anisotropy as texture-pipe
+costs; the [Vulkan sampling specification](https://docs.vulkan.org/spec/latest/chapters/textures.html)
+also makes nearest filtering with anisotropy implementation-dependent. The release ARM64 build and
+linked sampler-create fields are verified, but actual FPS, power, and image effects still require a
+matched Thor A/B.
+
 ## Thor Screenshot
 
 This is a live AYN Thor screenshot of this Azahar Android fork showing the game library and visible bundled-cheat labels. It does not imply games are bundled with this repository.
