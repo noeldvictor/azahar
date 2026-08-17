@@ -73,6 +73,8 @@ This fork has moved away from stock Azahar in visible ways:
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - The AArch64 PICA `EX2` and `LG2` helpers pack their exact approximation constants into aligned
   paired-Q blocks, replacing repeated scalar address/load sequences with 128-bit paired loads.
+- Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
+  an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
@@ -137,6 +139,16 @@ cross-correlation. The remaining scalar stereo-overlap loop now uses explicit ba
 for four frames at a time and eliminates eight `SDIV` instructions over that span. Negative results
 retain C++ truncation-toward-zero behavior. ARM64 compile/link and differential regression sources
 validate the path; sustained speed and power effects still require a controlled Thor A/B.
+
+## Vulkan Worker-Power Updates
+
+Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
+offset were reset, but an independent record counter was not, so a recycled chunk could permanently
+report non-empty. The per-frame `WaitWorker()` path could then queue an empty job, invoke the
+descriptor dispatch callback, notify and wake the Vulkan worker, and traverse queue, execution, and
+reserve locks without recording GPU work. `Empty()` now reads the authoritative linked-list head,
+which is set only after successful placement and cleared only after all commands execute. Actual
+command submission, condition-variable signaling, and scheduler lock ordering are unchanged.
 
 ## Thor Screenshot
 

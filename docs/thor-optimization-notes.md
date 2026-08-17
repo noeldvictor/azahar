@@ -820,6 +820,43 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   duration. Record helper hit counts, frametimes, process CPU time, battery power, temperature,
   thermal slope, stability, and visual correctness.
 
+## 2026-08-17 Vulkan Recycled-Chunk Wakeup Fix
+
+- `Scheduler::CommandChunk` maintained both a linked-list head and a `recorded_counts` field.
+  `Record()` incremented the counter before checking storage capacity, while `ExecuteAll()`
+  destroyed every command and reset `submit`, `command_offset`, `first`, and `last` but never reset
+  the counter. Once any recycled chunk had carried work, its `Empty()` result therefore remained
+  false forever even when its actual command list was empty.
+- This intersects the normal frame path. `RendererVulkan::RenderToWindow()` records screen work and
+  calls `scheduler.Flush()`, which dispatches the submit chunk and acquires a new or recycled chunk.
+  `RasterizerVulkan::TickFrame()` then calls `WaitWorker()`, which first calls `DispatchWork()`.
+  With a stale recycled counter, that call could invoke the descriptor dispatch callback, queue an
+  empty chunk, notify and wake the worker, acquire the queue/execution/reserve locks, execute zero
+  commands, and recycle the chunk again. The bug could therefore add up to one empty worker job to
+  a frame after chunk reuse; exact frequency still depends on scheduling and reserve timing.
+- `Empty()` now checks `first == nullptr`, and the redundant counter and per-command increment are
+  removed. `first` becomes non-null only after a command passes the capacity check and is placed;
+  it stays non-null while any linked command is pending and is cleared only after `ExecuteAll()`
+  executes and destroys the entire list. A full chunk remains dispatchable, a submit chunk always
+  contains its recorded submission callback before `MarkSubmit()`, and a truly empty recycled
+  chunk is skipped. No GPU command, submission, fence, semaphore, descriptor update needed by
+  recorded work, or callback ordering is removed.
+- The shared condition variable still uses `notify_all`: a dispatch must wake the worker even if a
+  simultaneous queue-drain waiter also sleeps on that variable. Queue-before-execution lock order,
+  command-buffer allocation, submit serialization, and reserve ownership are unchanged. This keeps
+  the fix scoped to stale empty-state accounting rather than attempting a risky scheduler rewrite.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m18s, rebuilding the scheduler and all Vulkan
+  consumers and linking the complete 443,612,688-byte ELF64/AArch64 test executable plus
+  `libcitra-android.so`. `:app:assembleVanillaRelWithDebInfoLite` passed in 2m00s. The 28,966,427-byte
+  APK contains only `arm64-v8a` native libraries and has SHA-256
+  `056AABB1F4348A5C55E01343E0692EA85932D1F07D61EAE83E350041D7B04D53`.
+- No ADB, install, launch, or device access occurred. This proves removal of the stale empty-job
+  route in source and validates the ARM64 build, but it does not quantify a watt or FPS result. A
+  future allowed A/B should instrument dispatched chunks and executed command counts in the same
+  Vulkan title/scene, caches, driver, resolution, display layout, performance/fan mode, brightness,
+  and duration, then record empty-dispatch count, worker wakeups, process CPU time, frametimes,
+  battery power, temperature, thermal slope, stability, and rendering correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
