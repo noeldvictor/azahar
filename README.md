@@ -80,7 +80,8 @@ This fork has moved away from stock Azahar in visible ways:
   table lookup expands ETC1A4 alpha, and four Q stores write the completed block.
 - Converted RGB5A1, RGB565, and RGBA4 texture copies now process sixteen pixels per AArch64 loop,
   including full Morton tiles and linear surfaces, instead of converting one packed pixel at a
-  time. Decode uses ordinary RGBA stores rather than the Cortex-A510-hostile `ST4` form.
+  time. Decode uses ordinary RGBA stores rather than the Cortex-A510-hostile `ST4` form. Encode
+  shares channel masks across both halves, and linear input uses one Q-form `LD4` per block.
 - Converted linear RGB8 copies remove every four-register table lookup: decode uses one `LD3` plus
   register ZIPs per sixteen pixels, while encode narrows each lookup to two adjacent input vectors.
 - IA8, RG8, I8, A8, and IA4 texture expansion now uses `ZIP` plus ordinary paired Q stores rather
@@ -195,10 +196,12 @@ both 8x8 Morton tiles and linear copies. Each loop converts sixteen pixels while
 formats' bit-replication and high-bit-truncation rules. Full-tile decode deinterleaves Morton rows
 with `LD2`, narrows and interleaves RGBA with vector operations, and finishes with ordinary paired
 Q stores; this intentionally avoids `ST4`, whose Q-form byte/halfword throughput is especially poor
-in the Cortex-A510 guide. The reverse path uses D-form `LD4` to deinterleave RGBA input and `ST2`
-to restore the two Morton rows. Exhaustive coverage checks every possible packed 16-bit value for
-all three formats, and odd-length linear tests protect the scalar tail and buffer canaries. This is
-a verified format-conversion CPU-work reduction, not yet a whole-game FPS or wattage result.
+in the Cortex-A510 guide. Encode now masks and packs both eight-pixel halves together. Linear input
+uses one 64-byte Q-form `LD4` instead of two D-form loads; Morton keeps two D-form loads for its
+non-contiguous rows but shares their channel preparation before `ST2` restores the tile layout.
+Exhaustive coverage checks every possible packed 16-bit value for all three formats, and odd-length
+linear tests protect the scalar tail and buffer canaries. This is a verified format-conversion
+CPU-work reduction, not yet a whole-game FPS or wattage result.
 
 Converted linear RGB8 traffic also uses a Thor-specific AdvSIMD shape. Decode deinterleaves the
 complete 48-byte BGR block with one Q-form `LD3`, then emits sixteen RGBA pixels with register ZIPs

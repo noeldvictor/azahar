@@ -1920,6 +1920,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   allowed matched Thor A/B should record RGB8 linear conversion frequency and renderer-thread time
   alongside frametimes, battery power, temperature, thermal slope, and visual correctness.
 
+## 2026-08-17 AArch64 16-bit Encode Band Fusion
+
+- Converted RGB5A1, RGB565, and RGBA4 encode already handled sixteen pixels per vector body, but
+  prepared each eight-pixel half independently. Linear conversion issued two D-form byte `LD4`
+  operations and duplicated masks, shifts, widening, and field assembly. Morton conversion needed
+  the two loads because its rows can be separated by padded stride, but still duplicated most of
+  the arithmetic.
+- The complete relevant tables were checked in Cortex-X3 issue 4.0 pages 31-37, Cortex-A715 issue
+  5.0 pages 34-40, Cortex-A710 issue 4.0 pages 52-59, and Cortex-A510 issue 6.0 pages 43-50.
+  X3 lists D-form byte `LD4` at throughput 1 and Q-form at `1/2`; A715 lists both at `1/2`;
+  A710 lists D-form at 1 and Q-form at `1/2`; A510 lists both at `1/3`. One Q-form load transfers
+  the same 64 bytes as two D-form loads, so the linear structured-load issue budget stays two
+  cycles on X3/A710, falls from four to two on A715, and falls from six to three on A510. The PDFs
+  remain external and uncommitted.
+- Encode now keeps all sixteen channel bytes in Q registers. Exact high-bit truncation is expressed
+  before widening: RGB565 uses `(R & 0xF8) << 8`, `(G & 0xFC) << 3`, and `B >> 3`;
+  RGB5A1 changes green to `(G & 0xF8) << 3` and assembles
+  `((B >> 2) & 0x3E) + (A >> 7)`; RGBA4 uses `(R & 0xF0) << 8`,
+  `(G & 0xF0) << 4`, and `(B & 0xF0) | (A >> 4)`. `SHLL`/`SHLL2` then produces both packed
+  halves from each shared byte vector.
+- Linear conversion reads the complete sixteen-pixel RGBA block with one Q-form `LD4` and writes
+  both packed halves with one `STP`. Morton conversion retains the required D-form `LD4` for
+  each non-contiguous row, combines matching channels, shares their byte preparation, and preserves
+  the exact two `ST2` tile stores. Neither path over-reads padding or changes the scalar fallback.
+- Isolated Android-Clang 18 `-O3` output for a sixteen-pixel encode falls from 25 to 18
+  instructions for RGB565 (100 to 72 bytes), 30 to 20 for RGB5A1 (120 to 80 bytes), and 24 to 17
+  for RGBA4 (96 to 68 bytes): 28.0%, 33.3%, and 29.2% fewer instructions. This is code shape, not a
+  claim that the whole loop or game is faster by those percentages.
+- Production ThinLTO confirms one Q-form `LD4`, Q masks/field assembly, `SHLL`/`SHLL2`, and one
+  paired Q store in every linear vector loop. Final RGB5A1/RGB565/RGBA4 linear encode symbols shrink
+  from 276/252/256 to 232/220/224 bytes, reductions of 15.9%, 12.7%, and 12.5%. Their full Morton
+  encode symbols shrink from 1,004/944/932 to 956/912/912 bytes, reductions of 4.8%, 3.4%, and
+  2.1%, while retaining the two row loads and exact tile stores.
+- An independent 132,608-case component/paired-component algebra check found zero mismatches.
+  Permanent Catch2 source exhaustively round-trips all 65,536 packed values for each format through
+  Morton encode/decode and separately covers 37-pixel linear vector bodies, scalar tails, and
+  canaries. The complete ELF64/AArch64 test executable and production shared library compiled and
+  linked successfully with ThinLTO in 1 minute 34 seconds. The ARM64 executable was not run on this
+  x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 43 seconds and produced an ARM64-only
+  28,966,475-byte APK with SHA-256
+  `852CD2B4A43DAAEAD8A2381ADDF262499AD06B38AD6B2DED63782703C361231E`. After verification,
+  2,463,352,987 logical bytes of scratch, test binaries, and disposable package intermediates were
+  removed. C: free space increased by 2,018,557,952 bytes; the APK and active ARM64 CMake cache
+  remain in the repository workspace.
+- Command-line Git over SSH refreshed `upstream/master` to `32a3c0bfd`; this fork already
+  contained it and remained 93 commits ahead with no upstream-only commit. No device, ADB, install,
+  launch, game run, FPS test, or battery measurement was used for this slice.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

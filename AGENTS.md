@@ -65,9 +65,13 @@
   decode, high-bit truncation on encode, bottom-up Morton row placement, padded row strides, and
   the scalar non-AArch64 path. Full-tile decode should retain `LD2`, vector shifts/masks,
   vector narrowing, `ZIP`, and ordinary paired Q stores; do not replace its output with `ST4`.
-  Encode may use D-form `LD4` to deinterleave RGBA input and `ST2` for the Morton rows. Keep the
-  exhaustive 65,536-value round-trip and odd linear-length/canary coverage, and recheck final
-  ThinLTO instead of assuming the intrinsics survived.
+  Encode must share byte-level channel masks and packing across both eight-pixel halves. Linear
+  encode uses one Q-form `LD4` per sixteen pixels, `SHLL`/`SHLL2`, and paired Q stores; do not
+  split it back into two D-form `LD4` operations. Morton encode retains two D-form `LD4` loads
+  because its rows are non-contiguous, but combines their components before shared preparation and
+  retains `ST2` for the Morton rows. Keep the exhaustive 65,536-value round-trip and odd
+  linear-length/canary coverage, and recheck final ThinLTO instead of assuming the intrinsics
+  survived.
 - AArch64 IA8, RG8, I8, A8, and IA4 Morton expansion must combine each two-row band with `ZIP`
   and ordinary paired Q stores; do not reintroduce D-form byte `ST4`. Native RGB8 and D24
   two-row Morton copies may retain structured `LD3` for deinterleaving, but packed output must use

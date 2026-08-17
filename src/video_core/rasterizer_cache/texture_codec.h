@@ -447,33 +447,63 @@ inline uint8x8x4_t DecodePixels16A64(uint16x8_t pixels) {
     return result;
 }
 
+// Encode two eight-pixel RGBA halves together. Keeping the channels wide until after their common
+// byte-level masking lets AArch64 share that work across all sixteen pixels and use SHLL/SHLL2.
+// Linear input can then use one Q-form LD4 instead of two D-form LD4 instructions. Morton rows are
+// non-contiguous, but combining their D-form loads still shares the channel preparation.
 template <PixelFormat format>
-inline uint16x8_t EncodePixels16A64(const uint8x8x4_t& pixels) {
+inline uint16x8x2_t EncodePixels16A64(const uint8x16x4_t& pixels) {
     static_assert(format == PixelFormat::RGB5A1 || format == PixelFormat::RGB565 ||
                   format == PixelFormat::RGBA4);
 
-    const uint16x8_t red = vmovl_u8(pixels.val[0]);
-    const uint16x8_t green = vmovl_u8(pixels.val[1]);
-    const uint16x8_t blue = vmovl_u8(pixels.val[2]);
-    const uint16x8_t alpha = vmovl_u8(pixels.val[3]);
+    uint8x16_t red;
+    uint8x16_t green;
+    uint8x16_t blue_alpha;
     if constexpr (format == PixelFormat::RGB565) {
-        const uint16x8_t red5 = vshlq_n_u16(vshrq_n_u16(red, 3), 11);
-        const uint16x8_t green6 = vshlq_n_u16(vshrq_n_u16(green, 2), 5);
-        const uint16x8_t blue5 = vshrq_n_u16(blue, 3);
-        return vorrq_u16(vorrq_u16(red5, green6), blue5);
+        red = vandq_u8(pixels.val[0], vdupq_n_u8(0xF8));
+        green = vandq_u8(pixels.val[1], vdupq_n_u8(0xFC));
+        blue_alpha = vshrq_n_u8(pixels.val[2], 3);
     } else if constexpr (format == PixelFormat::RGB5A1) {
-        const uint16x8_t red5 = vshlq_n_u16(vshrq_n_u16(red, 3), 11);
-        const uint16x8_t green5 = vshlq_n_u16(vshrq_n_u16(green, 3), 6);
-        const uint16x8_t blue5 = vshlq_n_u16(vshrq_n_u16(blue, 3), 1);
-        const uint16x8_t alpha1 = vshrq_n_u16(alpha, 7);
-        return vorrq_u16(vorrq_u16(red5, green5), vorrq_u16(blue5, alpha1));
+        red = vandq_u8(pixels.val[0], vdupq_n_u8(0xF8));
+        green = vandq_u8(pixels.val[1], vdupq_n_u8(0xF8));
+        blue_alpha = vandq_u8(vshrq_n_u8(pixels.val[2], 2), vdupq_n_u8(0x3E));
+        blue_alpha = vsraq_n_u8(blue_alpha, pixels.val[3], 7);
     } else {
-        const uint16x8_t red4 = vshlq_n_u16(vshrq_n_u16(red, 4), 12);
-        const uint16x8_t green4 = vshlq_n_u16(vshrq_n_u16(green, 4), 8);
-        const uint16x8_t blue4 = vshlq_n_u16(vshrq_n_u16(blue, 4), 4);
-        const uint16x8_t alpha4 = vshrq_n_u16(alpha, 4);
-        return vorrq_u16(vorrq_u16(red4, green4), vorrq_u16(blue4, alpha4));
+        red = vandq_u8(pixels.val[0], vdupq_n_u8(0xF0));
+        green = vandq_u8(pixels.val[1], vdupq_n_u8(0xF0));
+        blue_alpha = vsriq_n_u8(pixels.val[2], pixels.val[3], 4);
     }
+
+    const uint16x8_t red_low = vshll_n_u8(vget_low_u8(red), 8);
+    const uint16x8_t red_high = vshll_high_n_u8(red, 8);
+    const uint16x8_t blue_alpha_low = vmovl_u8(vget_low_u8(blue_alpha));
+    const uint16x8_t blue_alpha_high = vmovl_high_u8(blue_alpha);
+
+    uint16x8_t green_low;
+    uint16x8_t green_high;
+    if constexpr (format == PixelFormat::RGBA4) {
+        green_low = vshll_n_u8(vget_low_u8(green), 4);
+        green_high = vshll_high_n_u8(green, 4);
+    } else {
+        green_low = vshll_n_u8(vget_low_u8(green), 3);
+        green_high = vshll_high_n_u8(green, 3);
+    }
+
+    uint16x8x2_t result;
+    result.val[0] = vorrq_u16(vorrq_u16(red_low, green_low), blue_alpha_low);
+    result.val[1] = vorrq_u16(vorrq_u16(red_high, green_high), blue_alpha_high);
+    return result;
+}
+
+template <PixelFormat format>
+inline uint16x8x2_t EncodePixels16A64(const uint8x8x4_t& first,
+                                      const uint8x8x4_t& second) {
+    uint8x16x4_t pixels;
+    pixels.val[0] = vcombine_u8(first.val[0], second.val[0]);
+    pixels.val[1] = vcombine_u8(first.val[1], second.val[1]);
+    pixels.val[2] = vcombine_u8(first.val[2], second.val[2]);
+    pixels.val[3] = vcombine_u8(first.val[3], second.val[3]);
+    return EncodePixels16A64<format>(pixels);
 }
 
 template <bool morton_to_linear, PixelFormat format>
@@ -502,8 +532,12 @@ inline void MortonCopyTile16ConvertedA64(u32 stride, u8* tile_buffer, u8* linear
                               vcombine_u8(first_pixels.val[2], second_pixels.val[2]),
                               vcombine_u8(first_pixels.val[3], second_pixels.val[3]));
         } else {
-            const uint16x8_t first = EncodePixels16A64<format>(vld4_u8(first_row));
-            const uint16x8_t second = EncodePixels16A64<format>(vld4_u8(second_row));
+            const uint8x8x4_t first_pixels = vld4_u8(first_row);
+            const uint8x8x4_t second_pixels = vld4_u8(second_row);
+            const uint16x8x2_t encoded =
+                EncodePixels16A64<format>(first_pixels, second_pixels);
+            const uint16x8_t first = encoded.val[0];
+            const uint16x8_t second = encoded.val[1];
             const uint32x4_t first_words = vreinterpretq_u32_u16(first);
             const uint32x4_t second_words = vreinterpretq_u32_u16(second);
 
@@ -893,10 +927,9 @@ inline std::size_t LinearCopyConvertedA64(const u8* src, u8* dst, std::size_t pi
         for (; pixel + 16 <= pixel_count; pixel += 16) {
             const u8* const src_block = src + pixel * 4;
             u8* const dst_block = dst + pixel * 2;
-            const uint16x8_t first = EncodePixels16A64<format>(vld4_u8(src_block));
-            const uint16x8_t second = EncodePixels16A64<format>(vld4_u8(src_block + 32));
-            vst1q_u16(reinterpret_cast<u16*>(dst_block), first);
-            vst1q_u16(reinterpret_cast<u16*>(dst_block + 16), second);
+            const uint16x8x2_t encoded = EncodePixels16A64<format>(vld4q_u8(src_block));
+            vst1q_u16(reinterpret_cast<u16*>(dst_block), encoded.val[0]);
+            vst1q_u16(reinterpret_cast<u16*>(dst_block + 16), encoded.val[1]);
         }
     }
 

@@ -24,6 +24,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
 - Prefer vector permutation plus ordinary contiguous stores over byte/halfword `ST3` or `ST4`
   when the exact layout permits it; the A510 structured-store path is exceptionally slow.
+- For converted RGB5A1/RGB565/RGBA4 encode, prepare both eight-pixel halves in Q registers so masks
+  and byte-field assembly are shared through `SHLL`/`SHLL2`. Linear input should use one Q-form
+  byte `LD4` for all sixteen pixels, not two D-form `LD4` operations. That halves the structured
+  load count and the documented load-issue budget on A715 and A510 while keeping the same issue
+  budget on X3 and A710. The relevant entries are X3 page 34, A715 page 37, A710 page 56, and A510
+  page 47. Morton rows are non-contiguous, so retain their two D-form loads but share subsequent
+  channel preparation.
 - For packed D24 Morton to D32-float conversion, use D-form `LD3`, one-table shuffles, and
   ZIP/narrow operations across a two-row band. Do not collapse the mapping into a four-table `TBL`:
   Cortex-A510 documents that form at latency 16 and throughput `1/9`. Preserve true vector `FDIV`
