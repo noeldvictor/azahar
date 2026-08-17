@@ -1241,6 +1241,61 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   audio-thread CPU time/placement, underruns, frametimes, battery power, temperature, thermal slope,
   stability, and output correctness.
 
+## 2026-08-17 AArch64 Converted 16-bit Texture Codec
+
+- Converted `RGB5A1`, `RGB565`, and `RGBA4` texture copies still performed scalar per-pixel
+  expansion or packing on AArch64. Before this change, final ThinLTO Morton-copy symbols were
+  1,436, 1,340, and 1,536 bytes for the encode direction, and 372, 364, and 380 bytes for decode.
+  These are common PICA texture formats, so the remaining scalar work was a better target than
+  adding a broad architecture flag or approximate color math.
+- The relevant instruction tables were read from the actual Cortex-X3 issue 4.0 guide (PDF pages
+  27 and 31-36), Cortex-A715 issue 5.0 guide (pages 29-30 and 34-39), Cortex-A710 issue 4.0 guide
+  (pages 44 and 52-60), and Cortex-A510 issue 6.0 guide (pages 37 and 43-49). All four cores make
+  shifts, narrowing, and `ZIP` useful building blocks. The A510 table is the critical constraint:
+  Q-form byte/halfword `ST4` is documented at only `1/50` throughput while ordinary `ST1` is
+  `1/cycle`. The implementation therefore interleaves RGBA with `ZIP1`/`ZIP2` and emits ordinary
+  paired Q stores rather than using an attractive-looking `ST4` output. D-form `LD4` remains useful
+  where encode must deinterleave existing RGBA input. The external manuals remain uncommitted and
+  are indexed in `docs/hardware/README.md`.
+- `texture_codec.h` now converts sixteen pixels per linear iteration. Full Morton decode handles
+  two eight-pixel rows per iteration with `LD2`, vector shifts/masks, exact narrowing, `ZIP`, and
+  paired Q stores. Reverse Morton encode uses D-form `LD4` to deinterleave RGBA and `ST2` to write
+  the two Morton rows. Exact 5/6/4-bit replication is retained on decode, encode still truncates
+  to the high source bits, RGB5A1 alpha remains one bit, bottom-up row placement and padded strides
+  are unchanged, and every non-AArch64 path remains scalar.
+- Final linked-code inspection confirms that the intrinsics survived ThinLTO. The RGB565 Morton
+  decode body contains two `LD2`, two paired Q stores, no `ST4`, and no halfword scalar load. Its
+  encode body contains `LD4`/`ST2` and no `ST4`. The linear decode's only halfword scalar load is in
+  the tail. Final encode-direction Morton symbols shrink to 1,004, 944, and 932 bytes for RGB5A1,
+  RGB565, and RGBA4: 30.1%, 29.6%, and 39.3% below baseline. Decode-direction symbols become 464,
+  432, and 440 bytes; they are 15.8-24.7% larger but replace the full 64-pixel scalar conversion
+  loop with the vector body. Linear encode symbols are 276, 252, and 256 bytes, while linear decode
+  symbols are 392, 352, and 368 bytes.
+- Permanent Catch2 coverage exhaustively round-trips all 65,536 packed values for each format
+  through Morton tiles. Separate 37-pixel linear decode/encode cases exercise vector bodies,
+  scalar tails, and canaries. The ELF64/AArch64 test executable compiled and linked successfully.
+  A temporary independent model also verified every possible packed decode and round trip plus
+  one million random RGBA encodes per format; it was deleted after use and was not committed.
+- While this slice was in progress, command-line Git over SSH refreshed upstream to `32a3c0bfd`
+  (`core: dsp: Add volume ramping to the HLE backend (#2409)`). The merge conflict was limited to
+  the fork's planar HLE mixer: the resolution keeps `PlanarQuadFrame32` and channel-major indexing
+  while adopting upstream ramp state, serialization, dirty activation, per-frame ramp completion,
+  and the required non-const `MixInto()`. The complete ARM64 native build passed after the merge.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed, followed by a successful
+  `:app:assembleVanillaRelWithDebInfoLite` in 2 minutes 35 seconds. The resulting 28,963,995-byte
+  APK contains only `arm64-v8a` libraries and has SHA-256
+  `21F4D58969445E3FA3732F9AD1940BB09A170A68B5BF5D53A4DF098C108ABDFA`.
+- After verification, only exact generated paths under `src/android/app` were cleaned: Gradle
+  intermediates and the 444,317,952-byte linked test executable. The final APK and active ARM64
+  release native cache were retained, while free C: space increased by 2,019,221,504 bytes
+  (about 1.88 GiB). No source, manual, save, or unrelated file was touched.
+- No Thor, ADB, install, launch, game, FPS run, or battery measurement was used. This is an exact
+  16-pixel-at-a-time texture conversion and a major dynamic instruction/store-count reduction when
+  these formats are copied, not yet a whole-game FPS or wattage claim. A future allowed matched A/B
+  should hold title, scene, save, caches, renderer, resolution, driver, layout, performance/fan
+  mode, brightness, and duration constant, then record texture-upload CPU time, frametimes, battery
+  power, temperature, thermal slope, visual correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
