@@ -17,22 +17,25 @@ s16 ClampToS16(s32 value) {
 
 AudioCore::StereoFrame16 ReferenceMix(
     DspConfiguration::OutputFormat format, const std::array<float, 3>& gains,
-    const std::array<AudioCore::QuadFrame32, 3>& input) {
+    const std::array<AudioCore::PlanarQuadFrame32, 3>& input) {
     AudioCore::StereoFrame16 output{};
     for (std::size_t mix = 0; mix < input.size(); ++mix) {
         const float gain = gains[mix];
         for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
-            const auto& in = input[mix][sample];
             if (format == DspConfiguration::OutputFormat::Mono) {
                 const s16 mono = ClampToS16(static_cast<s32>(
-                    (gain * in[0] + gain * in[1] + gain * in[2] + gain * in[3]) / 2));
+                    (gain * input[mix][0][sample] + gain * input[mix][1][sample] +
+                     gain * input[mix][2][sample] + gain * input[mix][3][sample]) /
+                    2));
                 output[sample][0] =
                     ClampToS16(static_cast<s32>(output[sample][0]) + mono);
                 output[sample][1] =
                     ClampToS16(static_cast<s32>(output[sample][1]) + mono);
             } else {
-                const s16 left = ClampToS16(static_cast<s32>(gain * in[0] + gain * in[2]));
-                const s16 right = ClampToS16(static_cast<s32>(gain * in[1] + gain * in[3]));
+                const s16 left = ClampToS16(static_cast<s32>(
+                    gain * input[mix][0][sample] + gain * input[mix][2][sample]));
+                const s16 right = ClampToS16(static_cast<s32>(
+                    gain * input[mix][1][sample] + gain * input[mix][3][sample]));
                 output[sample][0] =
                     ClampToS16(static_cast<s32>(output[sample][0]) + left);
                 output[sample][1] =
@@ -49,12 +52,12 @@ void CheckMix(DspConfiguration::OutputFormat format) {
         -131072, -65536, -32769, -32768, -1, 0, 1, 32767, 32768, 65535, 65536, 131072,
     };
 
-    std::array<AudioCore::QuadFrame32, 3> input{};
+    std::array<AudioCore::PlanarQuadFrame32, 3> input{};
     for (std::size_t mix = 0; mix < input.size(); ++mix) {
         for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
             for (std::size_t channel = 0; channel < 4; ++channel) {
                 const std::size_t index = (sample * 5 + channel * 3 + mix * 7) % values.size();
-                input[mix][sample][channel] = values[index];
+                input[mix][channel][sample] = values[index];
             }
         }
     }
@@ -75,6 +78,57 @@ void CheckMix(DspConfiguration::OutputFormat format) {
     mixers.Tick(config, read_samples, write_samples, input);
 
     REQUIRE(mixers.GetOutput() == ReferenceMix(format, gains, input));
+}
+
+TEST_CASE("HLE mixer auxiliary buses preserve planar samples", "[audio_core][hle][mixers]") {
+    constexpr std::array<float, 3> gains{0.125f, 0.25f, 0.5f};
+
+    std::array<AudioCore::PlanarQuadFrame32, 3> input{};
+    std::array<AudioCore::PlanarQuadFrame32, 3> expected_mix{};
+    AudioCore::HLE::IntermediateMixSamples read_samples{};
+    AudioCore::HLE::IntermediateMixSamples write_samples{};
+
+    for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            input[0][channel][sample] = static_cast<s32>(sample * 13 + channel * 3 - 900);
+            input[1][channel][sample] = static_cast<s32>(sample * 17 + channel * 5 - 1200);
+            input[2][channel][sample] = static_cast<s32>(sample * 19 + channel * 7 - 1400);
+
+            read_samples.mix1.pcm32[channel][sample] =
+                static_cast<s32>(sample * 23 + channel * 11 - 1600);
+            read_samples.mix2.pcm32[channel][sample] =
+                static_cast<s32>(sample * 29 + channel * 13 - 1800);
+
+            expected_mix[0][channel][sample] = input[0][channel][sample];
+            expected_mix[1][channel][sample] = read_samples.mix1.pcm32[channel][sample];
+            expected_mix[2][channel][sample] = read_samples.mix2.pcm32[channel][sample];
+        }
+    }
+
+    DspConfiguration config{};
+    config.aux_bus_enable = {1, 1};
+    config.aux_bus_enable_0_dirty.Assign(1);
+    config.aux_bus_enable_1_dirty.Assign(1);
+    config.master_volume = gains[0];
+    config.aux_return_volume = {gains[1], gains[2]};
+    config.master_volume_dirty.Assign(1);
+    config.aux_return_volume_0_dirty.Assign(1);
+    config.aux_return_volume_1_dirty.Assign(1);
+    config.output_format = DspConfiguration::OutputFormat::Stereo;
+    config.output_format_dirty.Assign(1);
+
+    AudioCore::HLE::Mixers mixers;
+    mixers.Tick(config, read_samples, write_samples, input);
+
+    REQUIRE(mixers.GetOutput() ==
+            ReferenceMix(DspConfiguration::OutputFormat::Stereo, gains, expected_mix));
+
+    for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            REQUIRE(write_samples.mix1.pcm32[channel][sample] == input[1][channel][sample]);
+            REQUIRE(write_samples.mix2.pcm32[channel][sample] == input[2][channel][sample]);
+        }
+    }
 }
 
 } // namespace

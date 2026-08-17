@@ -415,7 +415,7 @@ StereoFrame16 DspHle::Impl::GenerateCurrentFrame() {
     HLE::SharedMemory& read = ReadRegion();
     HLE::SharedMemory& write = WriteRegion();
 
-    std::array<QuadFrame32, 3> intermediate_mixes = {};
+    std::array<PlanarQuadFrame32, 3> intermediate_mixes = {};
 
     // Generate intermediate mixes
     for (std::size_t i = 0; i < HLE::num_sources; i++) {

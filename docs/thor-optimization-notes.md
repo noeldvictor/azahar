@@ -992,6 +992,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   refresh counts, CPU time, frametimes, battery power, temperature, thermal slope, memory growth,
   stability, and rendering correctness.
 
+## 2026-08-17 ARM64 HLE Audio Planar Mix Layout
+
+- Command-line Git/SSH fetched Azahar upstream `master` at `3392c56ce` (`core: Fix another msvc
+  compiler bug`). Fork `master` at `297e9a0da` was already 0 commits behind and 70 ahead, so no
+  upstream merge or conflict resolution was required.
+- The first proposed aux-copy NEON patch was rejected after inspecting the complete ThinLTO
+  `libcitra-android.so`. Clang already recognizes the scalar-looking 4x160 transpose: the old
+  `AuxReturn()` fast path loaded two four-sample groups and emitted two `ST4` instructions per loop,
+  while `AuxSend()` emitted two `LD4` instructions plus ordinary vector stores. The old
+  `Source::MixInto()` also used two `LD4` and two `ST4` instructions for each eight source samples.
+  Hand-written `vld4q_s32`/`vst4q_s32` would therefore have duplicated existing optimization and
+  risked worse loop control and alias behavior.
+- Arm Architecture Reference Manual DDI 0487 M.c sections C7.2.213 and C7.2.371 confirm that
+  multiple-structure `LD4` de-interleaves memory into four registers and `ST4` interleaves four
+  registers into memory. The visually checked Cortex-A510 issue 6.0 table 3-37 on PDF page 49 lists
+  Q-form B/H/S `ST4` execution throughput as `1/50`, not an extraction or footnote error. The
+  corresponding X3 issue 4.0 page 36 and A710 issue 4.0 page 60 tables list `1/6`; A715 issue 5.0
+  page 39 lists `1/2`, while its page 67 complex-instruction guidance still calls out quad
+  multiple-structure `LD4`/`ST4` forms as decode-limited. X3 page 32, A715 page 35, A710 page 53,
+  and A510 page 44 provide the comparison data for ordinary `TRN`/`ZIP` permutations. The source
+  PDFs remain outside the repository and indexed through `docs/hardware/README.md`.
+- Rather than replacing one transpose instruction with a core-dependent shuffle sequence, the HLE
+  DSP now keeps its temporary four-channel mixes planar end to end. `Source::MixInto()` accumulates
+  directly into four contiguous channels; mono/stereo downmix loads those channels directly; and
+  shared-memory aux send/return copies an already matching planar layout. Little-endian hosts use
+  one 2,560-byte `memcpy` per enabled bus and direction. The compile-time big-endian fallback keeps
+  element assignment so `s32_le` conversion semantics remain intact.
+- Mixer state still serializes through the historical `std::array<QuadFrame32, 3>` sample-major
+  archive type. Save converts planar live state into that exact legacy shape before archival; load
+  converts it back afterward. This preserves old save-state field structure and order rather than
+  silently changing archives with the in-memory optimization.
+- Final release-style ARM64 code contains no `LD4` or `ST4` in `Source::MixInto()` or
+  `DownmixAndMixIntoCurrentFrame()`. Source mixing uses ordinary `LDP`/`LDR` and `STP`/`STR`; its
+  vector loop grows by seven executed instructions per eight samples versus the structured path,
+  an explicit big-core tradeoff for avoiding the A510 bottleneck. Downmix replaces one `LD4` with
+  four independent Q loads. `AuxReturn()` shrinks from 0x164 to 0x5c bytes and `AuxSend()` from
+  0x1b4 to 0x88 bytes, with one `memcpy` call per full enabled bus instead of transpose loops.
+- Catch2 source coverage now fills every aux bus/sample/channel with distinct signed values, checks
+  the exact planar aux send result, and compares aux return plus final stereo mixing against the
+  scalar reference. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 56 seconds after the final
+  save-state compatibility change, compiling and linking the full ELF64/AArch64 test executable and
+  `libcitra-android.so`. The test executable was not run because this host is x64 and current
+  instructions forbid Thor/device use.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1m21s. The 28,966,339-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `4141003D54AE8B454625EEF021A70A4517A5068D70FB9892F194CE78A25501E5`.
+- No device, ADB, install, launch, or game was used. Static code generation makes this a strong
+  efficiency candidate, especially if Android schedules HLE audio on an A510, but no whole-game FPS,
+  frametime, or wattage gain is claimed. A future allowed A/B should compare audio-heavy gameplay
+  with identical title, save, caches, renderer, resolution, driver, layout, performance/fan mode,
+  brightness, and duration. Record DSP-thread CPU placement/time, audio underruns, frametimes,
+  battery power, temperature, thermal slope, stability, and output correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

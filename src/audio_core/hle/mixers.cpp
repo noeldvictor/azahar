@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
+#include <type_traits>
 #if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
@@ -32,7 +34,7 @@ void Mixers::Wakeup() {
 
 DspStatus Mixers::Tick(DspConfiguration& config, const IntermediateMixSamples& read_samples,
                        IntermediateMixSamples& write_samples,
-                       const std::array<QuadFrame32, 3>& input) {
+                       const std::array<PlanarQuadFrame32, 3>& input) {
     ParseConfig(config);
 
     AuxReturn(read_samples);
@@ -109,22 +111,44 @@ static std::array<s16, 2> AddAndClampToS16(const std::array<s16, 2>& a,
             ClampToS16(static_cast<s32>(a[1]) + static_cast<s32>(b[1]))};
 }
 
+static void CopySharedToPlanar(PlanarQuadFrame32& output,
+                               const s32_le (&input)[4][samples_per_frame]) {
+    if constexpr (std::is_same_v<s32_le, s32>) {
+        static_assert(sizeof(output) == sizeof(input));
+        std::memcpy(output.data(), input, sizeof(input));
+    } else {
+        for (std::size_t channel = 0; channel < output.size(); ++channel) {
+            std::copy_n(input[channel], samples_per_frame, output[channel].begin());
+        }
+    }
+}
+
+static void CopyPlanarToShared(s32_le (&output)[4][samples_per_frame],
+                               const PlanarQuadFrame32& input) {
+    if constexpr (std::is_same_v<s32_le, s32>) {
+        static_assert(sizeof(output) == sizeof(input));
+        std::memcpy(output, input.data(), sizeof(output));
+    } else {
+        for (std::size_t channel = 0; channel < input.size(); ++channel) {
+            std::copy(input[channel].begin(), input[channel].end(), output[channel]);
+        }
+    }
+}
+
 #if defined(__aarch64__)
 static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
-                              const QuadFrame32& samples) {
+                              const PlanarQuadFrame32& samples) {
     static_assert(samples_per_frame % 4 == 0);
-    static_assert(sizeof(QuadFrame32::value_type) == 4 * sizeof(s32));
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
-        const int32x4x4_t input = vld4q_s32(samples[sample].data());
         int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
 
-        const float32x4_t front_left = vcvtq_f32_s32(input.val[0]);
-        const float32x4_t front_right = vcvtq_f32_s32(input.val[1]);
-        const float32x4_t back_left = vcvtq_f32_s32(input.val[2]);
-        const float32x4_t back_right = vcvtq_f32_s32(input.val[3]);
+        const float32x4_t front_left = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
+        const float32x4_t front_right = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
+        const float32x4_t back_left = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
+        const float32x4_t back_right = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
 
         // Keep the same multiply/FMA order emitted for the scalar AArch64 path.
         float32x4_t left = vmulq_f32(back_left, gain_vec);
@@ -141,20 +165,18 @@ static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
 }
 
 static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
-                            const QuadFrame32& samples) {
+                            const PlanarQuadFrame32& samples) {
     static_assert(samples_per_frame % 4 == 0);
-    static_assert(sizeof(QuadFrame32::value_type) == 4 * sizeof(s32));
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
-        const int32x4x4_t input = vld4q_s32(samples[sample].data());
         int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
 
-        const float32x4_t channel_0 = vcvtq_f32_s32(input.val[0]);
-        const float32x4_t channel_1 = vcvtq_f32_s32(input.val[1]);
-        const float32x4_t channel_2 = vcvtq_f32_s32(input.val[2]);
-        const float32x4_t channel_3 = vcvtq_f32_s32(input.val[3]);
+        const float32x4_t channel_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
+        const float32x4_t channel_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
+        const float32x4_t channel_2 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
+        const float32x4_t channel_3 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
 
         // Match the scalar AArch64 operation order before dividing the mono sum by two.
         float32x4_t mono = vmulq_f32(channel_1, gain_vec);
@@ -171,7 +193,7 @@ static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
 }
 #endif
 
-void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& samples) {
+void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples) {
     // TODO(merry): Limiter. (Currently we're performing final mixing assuming a disabled limiter.)
 
     switch (state.output_format) {
@@ -179,17 +201,13 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
 #if defined(__aarch64__)
         DownmixMonoNEON(current_frame, gain, samples);
 #else
-        std::transform(
-            current_frame.begin(), current_frame.end(), samples.begin(), current_frame.begin(),
-            [gain](const std::array<s16, 2>& accumulator,
-                   const std::array<s32, 4>& sample) -> std::array<s16, 2> {
-                // Downmix to mono
-                s16 mono = ClampToS16(static_cast<s32>(
-                    (gain * sample[0] + gain * sample[1] + gain * sample[2] + gain * sample[3]) /
-                    2));
-                // Mix into current frame
-                return AddAndClampToS16(accumulator, {mono, mono});
-            });
+        for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+            const s16 mono = ClampToS16(static_cast<s32>(
+                (gain * samples[0][sample] + gain * samples[1][sample] +
+                 gain * samples[2][sample] + gain * samples[3][sample]) /
+                2));
+            current_frame[sample] = AddAndClampToS16(current_frame[sample], {mono, mono});
+        }
 #endif
         return;
 
@@ -201,16 +219,13 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
 #if defined(__aarch64__)
         DownmixStereoNEON(current_frame, gain, samples);
 #else
-        std::transform(
-            current_frame.begin(), current_frame.end(), samples.begin(), current_frame.begin(),
-            [gain](const std::array<s16, 2>& accumulator,
-                   const std::array<s32, 4>& sample) -> std::array<s16, 2> {
-                // Downmix to stereo
-                s16 left = ClampToS16(static_cast<s32>(gain * sample[0] + gain * sample[2]));
-                s16 right = ClampToS16(static_cast<s32>(gain * sample[1] + gain * sample[3]));
-                // Mix into current frame
-                return AddAndClampToS16(accumulator, {left, right});
-            });
+        for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+            const s16 left =
+                ClampToS16(static_cast<s32>(gain * samples[0][sample] + gain * samples[2][sample]));
+            const s16 right =
+                ClampToS16(static_cast<s32>(gain * samples[1][sample] + gain * samples[3][sample]));
+            current_frame[sample] = AddAndClampToS16(current_frame[sample], {left, right});
+        }
 #endif
         return;
     }
@@ -219,51 +234,27 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& sample
 }
 
 void Mixers::AuxReturn(const IntermediateMixSamples& read_samples) {
-    // NOTE: read_samples.mix{1,2}.pcm32 annoyingly have their dimensions in reverse order to
-    // QuadFrame32.
-
     if (state.aux_bus_enable[0]) {
-        for (std::size_t sample = 0; sample < samples_per_frame; sample++) {
-            for (std::size_t channel = 0; channel < 4; channel++) {
-                state.intermediate_mix_buffer[1][sample][channel] =
-                    read_samples.mix1.pcm32[channel][sample];
-            }
-        }
+        CopySharedToPlanar(state.intermediate_mix_buffer[1], read_samples.mix1.pcm32);
     }
 
     if (state.aux_bus_enable[1]) {
-        for (std::size_t sample = 0; sample < samples_per_frame; sample++) {
-            for (std::size_t channel = 0; channel < 4; channel++) {
-                state.intermediate_mix_buffer[2][sample][channel] =
-                    read_samples.mix2.pcm32[channel][sample];
-            }
-        }
+        CopySharedToPlanar(state.intermediate_mix_buffer[2], read_samples.mix2.pcm32);
     }
 }
 
 void Mixers::AuxSend(IntermediateMixSamples& write_samples,
-                     const std::array<QuadFrame32, 3>& input) {
-    // NOTE: read_samples.mix{1,2}.pcm32 annoyingly have their dimensions in reverse order to
-    // QuadFrame32.
-
+                     const std::array<PlanarQuadFrame32, 3>& input) {
     state.intermediate_mix_buffer[0] = input[0];
 
     if (state.aux_bus_enable[0]) {
-        for (std::size_t sample = 0; sample < samples_per_frame; sample++) {
-            for (std::size_t channel = 0; channel < 4; channel++) {
-                write_samples.mix1.pcm32[channel][sample] = input[1][sample][channel];
-            }
-        }
+        CopyPlanarToShared(write_samples.mix1.pcm32, input[1]);
     } else {
         state.intermediate_mix_buffer[1] = input[1];
     }
 
     if (state.aux_bus_enable[1]) {
-        for (std::size_t sample = 0; sample < samples_per_frame; sample++) {
-            for (std::size_t channel = 0; channel < 4; channel++) {
-                write_samples.mix2.pcm32[channel][sample] = input[2][sample][channel];
-            }
-        }
+        CopyPlanarToShared(write_samples.mix2.pcm32, input[2]);
     } else {
         state.intermediate_mix_buffer[2] = input[2];
     }

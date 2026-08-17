@@ -23,6 +23,9 @@ using StereoFrame16 = std::array<std::array<s16, 2>, samples_per_frame>;
 /// The DSP is quadraphonic internally.
 using QuadFrame32 = std::array<std::array<s32, 4>, samples_per_frame>;
 
+/// The HLE DSP keeps intermediate mixer channels planar to avoid repeated SIMD transposes.
+using PlanarQuadFrame32 = std::array<std::array<s32, samples_per_frame>, 4>;
+
 /// A variable length buffer of signed PCM16 stereo samples.
 using StereoBuffer16 = std::deque<std::array<s16, 2>>;
 

@@ -25,17 +25,17 @@ SourceStatus::Status Source::Tick(SourceConfiguration::Configuration& config,
     return GetCurrentStatus();
 }
 
-void Source::MixInto(QuadFrame32& dest, std::size_t intermediate_mix_id) const {
+void Source::MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id) const {
     if (!state.enabled)
         return;
 
     const std::array<float, 4>& gains = state.gain.at(intermediate_mix_id);
     for (std::size_t samplei = 0; samplei < samples_per_frame; samplei++) {
-        // Conversion from stereo (current_frame) to quadraphonic (dest) occurs here.
-        dest[samplei][0] += static_cast<s32>(gains[0] * current_frame[samplei][0]);
-        dest[samplei][1] += static_cast<s32>(gains[1] * current_frame[samplei][1]);
-        dest[samplei][2] += static_cast<s32>(gains[2] * current_frame[samplei][0]);
-        dest[samplei][3] += static_cast<s32>(gains[3] * current_frame[samplei][1]);
+        // Conversion from stereo (current_frame) to planar quadraphonic (dest) occurs here.
+        dest[0][samplei] += static_cast<s32>(gains[0] * current_frame[samplei][0]);
+        dest[1][samplei] += static_cast<s32>(gains[1] * current_frame[samplei][1]);
+        dest[2][samplei] += static_cast<s32>(gains[2] * current_frame[samplei][0]);
+        dest[3][samplei] += static_cast<s32>(gains[3] * current_frame[samplei][1]);
     }
 }
 

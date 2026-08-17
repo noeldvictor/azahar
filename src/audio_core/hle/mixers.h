@@ -23,7 +23,8 @@ public:
     void Wakeup();
 
     DspStatus Tick(DspConfiguration& config, const IntermediateMixSamples& read_samples,
-                   IntermediateMixSamples& write_samples, const std::array<QuadFrame32, 3>& input);
+                   IntermediateMixSamples& write_samples,
+                   const std::array<PlanarQuadFrame32, 3>& input);
 
     StereoFrame16 GetOutput() const {
         return current_frame;
@@ -39,7 +40,7 @@ private:
         std::array<float, 3> intermediate_mixer_volume = {};
 
         std::array<bool, 2> aux_bus_enable = {};
-        std::array<QuadFrame32, 3> intermediate_mix_buffer = {};
+        std::array<PlanarQuadFrame32, 3> intermediate_mix_buffer = {};
 
         OutputFormat output_format = OutputFormat::Stereo;
 
@@ -47,7 +48,30 @@ private:
         void serialize(Archive& ar, const unsigned int) {
             ar & intermediate_mixer_volume;
             ar & aux_bus_enable;
-            ar & intermediate_mix_buffer;
+            // Preserve the historical sample-major archive type and order after changing the live
+            // HLE mixer layout to channel-major.
+            std::array<QuadFrame32, 3> serialized_mix_buffer{};
+            if constexpr (Archive::is_saving::value) {
+                for (std::size_t mix = 0; mix < intermediate_mix_buffer.size(); ++mix) {
+                    for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+                        for (std::size_t channel = 0; channel < 4; ++channel) {
+                            serialized_mix_buffer[mix][sample][channel] =
+                                intermediate_mix_buffer[mix][channel][sample];
+                        }
+                    }
+                }
+            }
+            ar & serialized_mix_buffer;
+            if constexpr (Archive::is_loading::value) {
+                for (std::size_t mix = 0; mix < intermediate_mix_buffer.size(); ++mix) {
+                    for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+                        for (std::size_t channel = 0; channel < 4; ++channel) {
+                            intermediate_mix_buffer[mix][channel][sample] =
+                                serialized_mix_buffer[mix][sample][channel];
+                        }
+                    }
+                }
+            }
             ar & output_format;
         }
     };
@@ -60,12 +84,13 @@ private:
     /// INTERNAL: Read samples from shared memory that have been modified by the ARM11.
     void AuxReturn(const IntermediateMixSamples& read_samples);
     /// INTERNAL: Write samples to shared memory for the ARM11 to modify.
-    void AuxSend(IntermediateMixSamples& write_samples, const std::array<QuadFrame32, 3>& input);
+    void AuxSend(IntermediateMixSamples& write_samples,
+                 const std::array<PlanarQuadFrame32, 3>& input);
     /// INTERNAL: Mix current_frame.
     void MixCurrentFrame();
     /// INTERNAL: Downmix from quadraphonic to stereo based on status.output_format and accumulate
     /// into current_frame.
-    void DownmixAndMixIntoCurrentFrame(float gain, const QuadFrame32& samples);
+    void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples);
     /// INTERNAL: Generate DspStatus based on internal state.
     DspStatus GetCurrentStatus() const;
 

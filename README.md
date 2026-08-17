@@ -84,6 +84,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
+- The HLE DSP keeps its temporary quadraphonic mixes channel-planar, eliminating structured
+  `LD4`/`ST4` transposes from source accumulation and final downmix and turning enabled auxiliary
+  bus exchange into contiguous copies.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
@@ -151,6 +154,14 @@ cross-correlation. The remaining scalar stereo-overlap loop now uses explicit ba
 for four frames at a time and eliminates eight `SDIV` instructions over that span. Negative results
 retain C++ truncation-toward-zero behavior. ARM64 compile/link and differential regression sources
 validate the path; sustained speed and power effects still require a controlled Thor A/B.
+
+The HLE DSP's four-channel intermediate frame is also planar throughout source accumulation,
+auxiliary-bus exchange, and final downmix. This avoids the Q-form `ST4` used by the old
+sample-interleaved layout; Arm's Cortex-A510 guide lists that 32-bit structured store at execution
+throughput `1/50`. Final ThinLTO uses ordinary paired/vector loads and stores in source mixing,
+ordinary channel loads in downmix, and one contiguous 2.5 KiB copy per enabled aux bus direction.
+The old sample-major save-state archive layout is preserved explicitly. This is a manual- and
+code-generation-backed hot-path change, not a whole-game speed or wattage claim.
 
 ## Vulkan Worker-Power Updates
 
