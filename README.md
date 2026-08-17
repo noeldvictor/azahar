@@ -234,6 +234,16 @@ strong evidence for this common routing shape but not proof that every game beha
 Signed zero remains silent; NaN and every nonzero ramp still mix. No whole-game speed or battery
 gain is claimed without a matched Thor run.
 
+Active buses with only front-left/front-right routing now use a second exact AArch64 specialization.
+One 64-bit bit-mask test treats both signs of rear zero as silent but sends subnormals, infinities,
+NaNs, and every nonzero rear ramp through the unchanged four-channel path. Final ThinLTO reduces
+the steady front-stereo loop from 52 to 32 instructions per eight samples (38.5%) and the ramped
+loop from 74 to 46 (37.8%), while leaving the full loops at 52 and 74. Omitting rear destination
+loads and stores also halves active-bus destination traffic from 5,120 to 2,560 bytes per frame.
+The containing function grows from 832 to 1,244 bytes for the two specialized loops. Focused tests
+verify exact front output and untouched rear buffers for steady and ramped routing; whole-game FPS
+and battery effects still require a matched Thor run.
+
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
 `SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one

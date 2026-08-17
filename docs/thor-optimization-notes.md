@@ -1494,6 +1494,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   time/placement, audio underruns, frametimes, battery power, temperature, thermal slope, output
   correctness, and stability.
 
+## 2026-08-17 HLE Front-Stereo Specialization
+
+- The all-bus elision still leaves four destination channels of work on every active bus, even when
+  only front-left/front-right gains are configured. The in-tree MerryAudio fixture sets only main
+  gains `[0][0]` and `[0][1]`, while its biquad fixture sets only auxiliary gain `[1][0]`; both
+  dirty all three gain groups. This is direct repository evidence for a common reduced-routing
+  shape, while the unchanged full path remains available for games that use rear channels.
+- The complete relevant load/store table pages were visually inspected in the external manuals:
+  Cortex-A510 issue 6.0 pages 45 and 48, Cortex-A710 issue 4.0 pages 55 and 58, Cortex-A715 issue
+  5.0 pages 36 and 38, and Cortex-X3 issue 4.0 pages 33 and 35. Across the efficiency, performance,
+  and prime cores, vector loads/stores consume load/store and vector-side resources; the latter
+  three also document forwarding cost into FP/AdvSIMD/vector consumers, and store operations split
+  into address and data work. That makes eliminating proven-unused destination traffic preferable
+  to performing zero multiplies. The PDFs remain outside Git and their hashes stay recorded in
+  `docs/hardware/README.md`.
+- AArch64 now selects a front-only template when both ending rear gains are exact signed zero and,
+  for an active ramp, both starting rear gains are exact signed zero. One D load plus a 64-bit
+  `AND`/`TST #0x7fffffff7fffffff` removes only the two sign bits. Thus `+0` and `-0` can skip rear
+  work, while every subnormal, finite nonzero, infinity, or NaN takes the unchanged four-channel
+  arithmetic path. Each source/destination iterator remains within its own `std::array` object;
+  no flattened cross-subarray pointer arithmetic is used. Non-AArch64 behavior is unchanged.
+- Final ThinLTO proves that front-only loops contain no rear offsets (`0x500`, `0x510`, `0x780`,
+  or `0x790`). Their two paired destination loads and two paired stores move 2,560 bytes per active
+  bus/frame instead of 5,120, a 50% reduction. The steady body falls from 52 to 32 instructions per
+  eight samples (38.5%), and the ramped body falls from 74 to 46 (37.8%). The four-channel steady
+  and ramped bodies remain exactly 52 and 74, avoiding the one-instruction fallback regression in
+  an earlier index-loop draft. `Source::MixInto()` grows from 832 to 1,244 bytes, a 412-byte
+  instruction-cache trade for the two specialized loops. The 24-source caller remains 492 bytes
+  with one `MixInto()` call per source.
+- Focused Catch2 sections compare both steady and ramped front-only routing with the independent
+  scalar reference and guarded three-bus destination object, proving exact front accumulation,
+  untouched rear channels, ramp-state advancement, and intact canaries. The final native build
+  compiled and linked those tests and the ThinLTO library in 56 seconds. The 444,501,016-byte ARM64
+  test ELF was not executed on the x64 host because device use remains forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 19 seconds. The resulting
+  28,965,995-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `A1EEF78968F5CACAA42C877F68B0C9E77BEE9F8EDCC8EDC21267F3A1A3B6F62A`.
+- After verification, exact Gradle intermediates, downloaded JNI copies, mapping/debug-symbol
+  output, the ARM64 test executable, and repo-local manual renders were removed. The APK and active
+  ARM64 CMake cache were retained; free C: space increased by 2,465,615,872 bytes (about 2.30 GiB).
+  No source, external manual, save, or unrelated file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. These are exact
+  linked hot-loop and traffic reductions for a repository-evidenced routing shape, not a whole-game
+  speed or wattage claim. A future allowed matched A/B must hold title, scene, save, caches,
+  renderer, resolution, driver, layout, performance/fan mode, brightness, and duration constant,
+  then record DSP-thread time/placement, audio underruns, frametimes, battery power, temperature,
+  thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

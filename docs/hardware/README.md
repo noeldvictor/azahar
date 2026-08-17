@@ -12,10 +12,10 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 | `qualcomm_snapdragon_opencl_optimization_guide.pdf` | Qualcomm 80-NB295-11 Rev. C, 116 pages | 1.71 MiB | `59CEEE4F9E33686CEB5F2970045C77858B4A395885778C5944C3130E590EEB3A` | Hardware cache/UMA guidance; OpenCL API advice is out of scope |
 | [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/ha), `arm-architecture-reference-manual-a-profile.pdf` | DDI 0487 H.a, 11,530 pages; sibling `xenia-thor` research library | 65.86 MiB | `62AF4D2F908347C3018BD63572F0CE1D5EDF0D34ABAE2BEE3C18DE7C97D06E43` | Sections C7.2.289, C7.2.309, C7.2.339, C7.2.390, and C7.2.403 define `SQDMULH`, saturating `SQXTUN`, byte-table `TBL`, lane-variable `USHL`, and `ZIP1` semantics used by exact audio and ETC1 SIMD paths |
 | [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/mc), `arm_architecture_reference_manual_DDI0487M_c.pdf` | DDI 0487 M.c, 17,145 pages | 119.93 MiB | `B5F9DAA7EC0446777C8F848AA6431C99E5AB6554E5AA171B28B9016771494F8C` | Authoritative AArch64 instruction and memory-ordering semantics; sections C6.2.180 and C6.2.192 distinguish relaxed `LDADD`/ordinary loads from release/acquire variants |
-| `arm_cortex_x3_software_optimization_guide.pdf` | Cortex-X3 | 1.12 MiB | `3EC100F2BBCD4DE004E1730553A3276BB27ECA4B320471B177BBDB843B8761D9` | Prime-core pipelines; `UMINV`/`FCMEQ` tables on pages 26 and 28, ordinary loads on pages 18-19, and AdvSIMD shift, narrow, permute, structured-load, and structured-store tables on pages 27 and 31-36 |
-| `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 | 1.16 MiB | `D6D7A49F34528B79E1F8C8E0B02D59D3DA6011D719D3271D310A4D83EC8F6FA2` | Newer performance-core pair; `UMINV`/`FCMEQ` tables on pages 29-30, ordinary loads on pages 20-21, and corresponding AdvSIMD memory tables on pages 34-39 |
-| `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 | 1.39 MiB | `096B9C2924BBFA4C5045D2C2F1C711D6E544C28F2F04ADAAD4B66B2E8C48CD6A` | Older performance-core pair; `UMINV`/`FCMEQ` tables on pages 43 and 46, ordinary loads on pages 28-29, and corresponding AdvSIMD memory tables on pages 52-60 |
-| `arm_cortex_a510_software_optimization_guide.pdf` | Cortex-A510 | 1.22 MiB | `E80E25EFFBEE27FB95740420469846FA0B3211C5716757A464E5C32E63281D44` | Efficiency cores and shared vector resources; `UMINV`/`FCMEQ` tables on pages 36 and 39, ordinary loads on pages 23-24, and AdvSIMD memory tables on pages 43-49, including D-form byte/halfword `ST3` at `1/17`, D-form `ST4` at `1/25`, and Q-form `ST4` at `1/50` throughput |
+| `arm_cortex_x3_software_optimization_guide.pdf` | Cortex-X3 | 1.12 MiB | `3EC100F2BBCD4DE004E1730553A3276BB27ECA4B320471B177BBDB843B8761D9` | Prime-core pipelines; `UMINV`/`FCMEQ` tables on pages 26 and 28, ordinary loads on pages 18-19, AdvSIMD load/store tables on pages 33 and 35, and shift, narrow, permute, and structured-memory tables on pages 27 and 31-36 |
+| `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 | 1.16 MiB | `D6D7A49F34528B79E1F8C8E0B02D59D3DA6011D719D3271D310A4D83EC8F6FA2` | Newer performance-core pair; `UMINV`/`FCMEQ` tables on pages 29-30, ordinary loads on pages 20-21, AdvSIMD load/store tables on pages 36 and 38, and corresponding vector-memory tables on pages 34-39 |
+| `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 | 1.39 MiB | `096B9C2924BBFA4C5045D2C2F1C711D6E544C28F2F04ADAAD4B66B2E8C48CD6A` | Older performance-core pair; `UMINV`/`FCMEQ` tables on pages 43 and 46, ordinary loads on pages 28-29, AdvSIMD load/store tables on pages 55 and 58, and corresponding vector-memory tables on pages 52-60 |
+| `arm_cortex_a510_software_optimization_guide.pdf` | Cortex-A510 | 1.22 MiB | `E80E25EFFBEE27FB95740420469846FA0B3211C5716757A464E5C32E63281D44` | Efficiency cores and shared vector resources; `UMINV`/`FCMEQ` tables on pages 36 and 39, ordinary loads on pages 23-24, and AdvSIMD load/store tables on pages 45 and 48 within the pages 43-49 memory section, including D-form byte/halfword `ST3` at `1/17`, D-form `ST4` at `1/25`, and Q-form `ST4` at `1/50` throughput |
 
 ## Guidance already applied
 
@@ -34,6 +34,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,
   and verify the linked binary because a scalarized predicate erases much of the front-end win.
+- When an exact frame-wide predicate proves a group of planar outputs unused, specialize that group
+  out instead of multiplying by zero and still loading/storing its buffers. The A510, A710, A715,
+  and X3 load/store tables all show vector memory operations consuming load/store and vector-side
+  resources; eliminating the operation is portable across Thor's heterogeneous cores. Preserve a
+  full path for every nonzero or NaN value and verify the linked loop rather than assuming template
+  specialization removed the memory traffic.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 

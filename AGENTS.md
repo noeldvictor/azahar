@@ -78,6 +78,14 @@
   path, and nonzero-to-zero/zero-to-nonzero ramps must still mix. On AArch64, final ThinLTO should
   retain one Q `FCMEQ`/`UMINV` predicate per checked gain vector rather than four scalar compares.
   Keep three-bus, signed-zero, zero-to-zero ramp, nonzero-ramp, disabled-state, and canary coverage.
+- An active AArch64 HLE source bus may use the front-stereo specialization only when both ending
+  rear gains are exact signed zero and, during a ramp, both starting rear gains are also exact
+  signed zero. Preserve the integer `AND`/`TST #0x7fffffff7fffffff` predicate: any nonzero bit
+  pattern after removing the two sign bits, including a subnormal, infinity, or NaN, must use the
+  full four-channel path. The front path must not load or write rear destinations; the full steady
+  and ramped loops must remain the original 52 and 74 instructions per eight samples. Keep each
+  nested `std::array` pointer within its own array object instead of relying on cross-subarray
+  pointer arithmetic. Recheck final ThinLTO and the front/rear destination canaries after edits.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

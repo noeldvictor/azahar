@@ -57,6 +57,8 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
     constexpr std::array<float, 4> ramp_start{-0.75f, 0.5f, 1.25f, -0.125f};
     constexpr std::array<float, 4> gains{0.0f, 0.25f, -0.5f, 1.75f};
     constexpr std::array<float, 4> zero_gains{-0.0f, 0.0f, -0.0f, 0.0f};
+    constexpr std::array<float, 4> front_ramp_start{-0.25f, 0.5f, 0.0f, -0.0f};
+    constexpr std::array<float, 4> front_gains{0.75f, -0.5f, -0.0f, 0.0f};
 
     AudioCore::StereoFrame16 input{};
     for (std::size_t sample = 0; sample < input.size(); ++sample) {
@@ -112,6 +114,12 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
     }
     SECTION("ramped gains") {
         run_case(true, ramp_start, gains);
+    }
+    SECTION("steady front-stereo gains leave rear destinations untouched") {
+        run_case(false, front_ramp_start, front_gains);
+    }
+    SECTION("ramped front-stereo gains leave rear destinations untouched") {
+        run_case(true, front_ramp_start, front_gains);
     }
     SECTION("steady signed-zero gains leave every destination untouched") {
         run_case(false, ramp_start, zero_gains);

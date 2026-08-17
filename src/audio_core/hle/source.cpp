@@ -38,7 +38,14 @@ inline void AccumulateSourceBand(s32* dest, float32x4_t samples, float32x4_t gai
     vst1q_s32(dest, vaddq_s32(vld1q_s32(dest), mixed));
 }
 
-template <bool ramp_active>
+inline bool HasAudibleRearGain(const std::array<float, 4>& gains) {
+    static_assert(sizeof(float) == sizeof(u32));
+    const u64 bits =
+        vget_lane_u64(vreinterpret_u64_u32(vreinterpret_u32_f32(vld1_f32(gains.data() + 2))), 0);
+    return (bits & 0x7FFF'FFFF'7FFF'FFFFULL) != 0;
+}
+
+template <bool ramp_active, bool rear_active>
 void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
                        const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains) {
     static_assert(samples_per_frame % 8 == 0);
@@ -46,8 +53,12 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
 
     const float32x4_t gain_0 = vdupq_n_f32(gains[0]);
     const float32x4_t gain_1 = vdupq_n_f32(gains[1]);
-    const float32x4_t gain_2 = vdupq_n_f32(gains[2]);
-    const float32x4_t gain_3 = vdupq_n_f32(gains[3]);
+    float32x4_t gain_2{};
+    float32x4_t gain_3{};
+    if constexpr (rear_active) {
+        gain_2 = vdupq_n_f32(gains[2]);
+        gain_3 = vdupq_n_f32(gains[3]);
+    }
 
     float32x4_t ramp_start_0{};
     float32x4_t ramp_start_1{};
@@ -60,12 +71,14 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
     if constexpr (ramp_active) {
         ramp_start_0 = vdupq_n_f32(ramp_start[0]);
         ramp_start_1 = vdupq_n_f32(ramp_start[1]);
-        ramp_start_2 = vdupq_n_f32(ramp_start[2]);
-        ramp_start_3 = vdupq_n_f32(ramp_start[3]);
         ramp_delta_0 = vsubq_f32(gain_0, ramp_start_0);
         ramp_delta_1 = vsubq_f32(gain_1, ramp_start_1);
-        ramp_delta_2 = vsubq_f32(gain_2, ramp_start_2);
-        ramp_delta_3 = vsubq_f32(gain_3, ramp_start_3);
+        if constexpr (rear_active) {
+            ramp_start_2 = vdupq_n_f32(ramp_start[2]);
+            ramp_start_3 = vdupq_n_f32(ramp_start[3]);
+            ramp_delta_2 = vsubq_f32(gain_2, ramp_start_2);
+            ramp_delta_3 = vsubq_f32(gain_3, ramp_start_3);
+        }
     }
 
     constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
@@ -74,10 +87,16 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
     uint32x4_t sample_indices_1 = vld1q_u32(initial_sample_indices.data() + 4);
     const uint32x4_t sample_index_step = vdupq_n_u32(8);
 
-    for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
+    const StereoFrame16::value_type* source_band = source.data();
+    s32* dest_0_band = dest[0].data();
+    s32* dest_1_band = dest[1].data();
+    s32* dest_2_band = dest[2].data();
+    s32* dest_3_band = dest[3].data();
+    const s32* const dest_end = dest_0_band + samples_per_frame;
+    for (; dest_0_band != dest_end; source_band += 8, dest_0_band += 8, dest_1_band += 8) {
         // Two ordinary Q loads plus UZP are preferable to a structured LD2 on Thor's A510.
-        const int16x8_t interleaved_0 = vld1q_s16(source[sample].data());
-        const int16x8_t interleaved_1 = vld1q_s16(source[sample + 4].data());
+        const int16x8_t interleaved_0 = vld1q_s16(source_band[0].data());
+        const int16x8_t interleaved_1 = vld1q_s16(source_band[4].data());
         const int16x8_t left = vuzp1q_s16(interleaved_0, interleaved_1);
         const int16x8_t right = vuzp2q_s16(interleaved_0, interleaved_1);
 
@@ -90,10 +109,16 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
         float32x4_t band_gain_0_1 = gain_0;
         float32x4_t band_gain_1_0 = gain_1;
         float32x4_t band_gain_1_1 = gain_1;
-        float32x4_t band_gain_2_0 = gain_2;
-        float32x4_t band_gain_2_1 = gain_2;
-        float32x4_t band_gain_3_0 = gain_3;
-        float32x4_t band_gain_3_1 = gain_3;
+        float32x4_t band_gain_2_0{};
+        float32x4_t band_gain_2_1{};
+        float32x4_t band_gain_3_0{};
+        float32x4_t band_gain_3_1{};
+        if constexpr (rear_active) {
+            band_gain_2_0 = gain_2;
+            band_gain_2_1 = gain_2;
+            band_gain_3_0 = gain_3;
+            band_gain_3_1 = gain_3;
+        }
         if constexpr (ramp_active) {
             const float32x4_t progress_0 = vmulq_n_f32(vcvtq_f32_u32(sample_indices_0), ramp_scale);
             const float32x4_t progress_1 = vmulq_n_f32(vcvtq_f32_u32(sample_indices_1), ramp_scale);
@@ -101,22 +126,28 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
             band_gain_0_1 = vfmaq_f32(ramp_start_0, progress_1, ramp_delta_0);
             band_gain_1_0 = vfmaq_f32(ramp_start_1, progress_0, ramp_delta_1);
             band_gain_1_1 = vfmaq_f32(ramp_start_1, progress_1, ramp_delta_1);
-            band_gain_2_0 = vfmaq_f32(ramp_start_2, progress_0, ramp_delta_2);
-            band_gain_2_1 = vfmaq_f32(ramp_start_2, progress_1, ramp_delta_2);
-            band_gain_3_0 = vfmaq_f32(ramp_start_3, progress_0, ramp_delta_3);
-            band_gain_3_1 = vfmaq_f32(ramp_start_3, progress_1, ramp_delta_3);
+            if constexpr (rear_active) {
+                band_gain_2_0 = vfmaq_f32(ramp_start_2, progress_0, ramp_delta_2);
+                band_gain_2_1 = vfmaq_f32(ramp_start_2, progress_1, ramp_delta_2);
+                band_gain_3_0 = vfmaq_f32(ramp_start_3, progress_0, ramp_delta_3);
+                band_gain_3_1 = vfmaq_f32(ramp_start_3, progress_1, ramp_delta_3);
+            }
             sample_indices_0 = vaddq_u32(sample_indices_0, sample_index_step);
             sample_indices_1 = vaddq_u32(sample_indices_1, sample_index_step);
         }
 
-        AccumulateSourceBand(dest[0].data() + sample, left_0, band_gain_0_0);
-        AccumulateSourceBand(dest[0].data() + sample + 4, left_1, band_gain_0_1);
-        AccumulateSourceBand(dest[1].data() + sample, right_0, band_gain_1_0);
-        AccumulateSourceBand(dest[1].data() + sample + 4, right_1, band_gain_1_1);
-        AccumulateSourceBand(dest[2].data() + sample, left_0, band_gain_2_0);
-        AccumulateSourceBand(dest[2].data() + sample + 4, left_1, band_gain_2_1);
-        AccumulateSourceBand(dest[3].data() + sample, right_0, band_gain_3_0);
-        AccumulateSourceBand(dest[3].data() + sample + 4, right_1, band_gain_3_1);
+        AccumulateSourceBand(dest_0_band, left_0, band_gain_0_0);
+        AccumulateSourceBand(dest_0_band + 4, left_1, band_gain_0_1);
+        AccumulateSourceBand(dest_1_band, right_0, band_gain_1_0);
+        AccumulateSourceBand(dest_1_band + 4, right_1, band_gain_1_1);
+        if constexpr (rear_active) {
+            AccumulateSourceBand(dest_2_band, left_0, band_gain_2_0);
+            AccumulateSourceBand(dest_2_band + 4, left_1, band_gain_2_1);
+            AccumulateSourceBand(dest_3_band, right_0, band_gain_3_0);
+            AccumulateSourceBand(dest_3_band + 4, right_1, band_gain_3_1);
+            dest_2_band += 8;
+            dest_3_band += 8;
+        }
     }
 }
 
@@ -152,10 +183,20 @@ void Source::MixInto(std::array<PlanarQuadFrame32, 3>& dest) {
         const bool silent = !HasAudibleGain(gains) && (!ramp_active || !HasAudibleGain(ramp_start));
         if (!silent) {
 #if defined(__aarch64__)
+            const bool rear_silent =
+                !HasAudibleRearGain(gains) && (!ramp_active || !HasAudibleRearGain(ramp_start));
             if (ramp_active) {
-                MixSourceFrameA64<true>(dest[mix], current_frame, ramp_start, gains);
+                if (rear_silent) {
+                    MixSourceFrameA64<true, false>(dest[mix], current_frame, ramp_start, gains);
+                } else {
+                    MixSourceFrameA64<true, true>(dest[mix], current_frame, ramp_start, gains);
+                }
             } else {
-                MixSourceFrameA64<false>(dest[mix], current_frame, ramp_start, gains);
+                if (rear_silent) {
+                    MixSourceFrameA64<false, false>(dest[mix], current_frame, ramp_start, gains);
+                } else {
+                    MixSourceFrameA64<false, true>(dest[mix], current_frame, ramp_start, gains);
+                }
             }
 #else
             constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
