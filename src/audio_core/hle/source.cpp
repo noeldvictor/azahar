@@ -526,9 +526,11 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
 }
 
 void Source::GenerateFrame() {
-    current_frame.fill({});
-
     if (state.current_buffer.empty()) {
+        // A dequeued buffer intentionally starts on the next DSP frame, so every early return
+        // from this path must replace the previous frame with silence.
+        current_frame.fill({});
+
         // TODO(SachinV): Should dequeue happen at the end of the frame generation?
         if (DequeueBuffer()) {
             return;
@@ -565,6 +567,14 @@ void Source::GenerateFrame() {
             break;
         }
     }
+
+    // Resampling overwrites the complete produced prefix. Clear only an unwritten underrun tail
+    // instead of writing silence over every active frame immediately before replacing it.
+    if (frame_position < current_frame.size()) {
+        std::fill(current_frame.begin() + frame_position, current_frame.end(),
+                  std::array<s16, 2>{});
+    }
+
     // TODO(jroweboy): Keep track of frame_position independently so that it doesn't lose precision
     // over time
     state.current_sample_number += static_cast<u32>(frame_position * state.rate_multiplier);

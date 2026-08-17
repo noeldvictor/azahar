@@ -2091,6 +2091,45 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and record DSP-thread time/placement, underruns, frametimes, battery power, temperature, and
   thermal slope with the usual title, scene, renderer, driver, display, and fan controls fixed.
 
+## 2026-08-17 Tail-Only HLE Source Frame Silence
+
+- `Source::GenerateFrame()` previously called `memset(current_frame, 0, 640)` before checking the
+  source buffer. During normal playback, None, Linear, and the Polyphase placeholder all fill the
+  produced prefix through the same resampler traversal. A complete 160-sample frame therefore
+  overwrote all 640 bytes immediately, making the initial clear pure write-before-write traffic.
+- Generation now clears the whole frame only on empty entry, before either dequeue or disable can
+  return a silent frame. A running source starts with its previous contents, lets the resampler
+  overwrite `[0, frame_position)`, and clears `[frame_position, 160)` only after an underrun. The
+  tail clear remains before sample accounting and `SourceFilters::ProcessFrame()`, so recurrent
+  filters still observe the exact same zero padding and histories. Reset, sleep/wakeup, buffer
+  state, resampler state, and sample-count behavior are unchanged.
+- At the native 32,728 Hz rate, a DSP frame runs about 204.55 times per second. The maximum 24
+  active sources formerly wrote 15,360 redundant bytes per tick, or 3,141,888 bytes per second,
+  before producing the real samples. This is modest DRAM bandwidth but continuous avoidable store,
+  L1/cache-line, and dirty-data work on the DSP thread.
+- Baseline production AArch64 ThinLTO emitted a 392-byte `GenerateFrame()` with an unconditional
+  entry `memset` of `0x280` bytes. The retained 440-byte function branches around that call when
+  `current_buffer` is nonempty; a full 160-sample result reaches accounting/filtering with no clear.
+  The empty path still passes `0x280`, and the underrun path computes exactly `640 - 4 *
+  frame_position` bytes. The 48-byte code-size increase retains one extra integer register and the
+  two correctness paths in exchange for removing the large call and stores from steady playback.
+- Permanent Catch2 coverage dirties the previous frame and checks three cases independently: a
+  complete frame overwrites every sample, a 35-sample underrun preserves its produced history/input
+  prefix and zeros the complete tail, and an empty source returns all-zero output while disabling
+  itself. Sample accounting and enabled state are checked as well. The production shared library
+  and complete ELF64/AArch64 test executable compile and link successfully; the executable is not
+  run on this x64 host, and no Thor/device/ADB action was used.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 27 seconds and produced an ARM64-only
+  28,967,359-byte APK with SHA-256
+  `E415F1AC895877AED56896AA4AF4A0F9E7E263F7C67EB7466688A974113FE21C`.
+- After verification, 2,334,759,497 logical bytes of the native test executable and disposable
+  Gradle intermediates were removed. C: free space increased by 1,896,480,768 bytes; the final APK
+  and active ARM64 CMake cache remain in the repository workspace.
+- This change removes continuous source-generation writes but is not a whole-game FPS or wattage
+  result. A future allowed Thor A/B should count active/full/partial sources and record DSP-thread
+  time and placement, underruns, frametimes, battery power, temperature, and thermal slope with the
+  title, scene, renderer, driver, resolution, display layout, fan, and performance mode fixed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

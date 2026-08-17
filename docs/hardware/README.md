@@ -66,6 +66,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   removes that dependent load/address chain until the rare deque-block transition without assuming
   any optional ISA extension. Preserve the portable deque abstraction and verify the final linked
   loop because source-level iterators alone do not prove the compiler retained the pointer.
+- Eliminate provable write-before-write traffic before reaching for a wider instruction. HLE source
+  resampling defines and overwrites its complete produced prefix, so a full-frame silence store is
+  needed only when no output will be produced; an underrun needs silence only after the produced
+  prefix. This saves store-pipeline, cache, and dirty-line work across every Thor core class without
+  assuming an optional ISA feature. Preserve full clears on early returns and tail silence before
+  recurrent filters, then verify the control-flow shape in the linked AArch64 binary.
 - For SoundTouch's integer 64-tap stereo FIR, use an exact 32-bit accumulator on Android LP64 and
   feed both channels from one coefficient vector. Two Q-form `LD2` sample loads plus one paired
   coefficient load per sixteen taps avoid the duplicated coefficient structured loads while eight

@@ -179,6 +179,13 @@
   partial-output behavior across calls. Do not reinsert history into the deque or accept a helper
   call in the valid per-output ARM64 loop; final ThinLTO should reuse the cached window when the
   index is unchanged and issue one sequential sample load when it advances by one.
+- `Source::GenerateFrame()` must not pre-clear a nonempty source's complete 640-byte output frame:
+  every resampler mode overwrites the produced prefix. Preserve a full clear before the empty-entry
+  dequeue/disable early returns, clear only `[frame_position, end)` after an active underrun, and do
+  that tail clear before sample accounting and filtering. Keep the exact silence, enable/buffer
+  state, resampler history, filter history, and saved-frame behavior. Final AArch64 ThinLTO should
+  have no 640-byte `memset` on the steady full-frame path while retaining the empty and partial
+  clears.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - The Thor may enumerate through both USB (`c3ca0370`) and wireless ADB. Use `adb -s c3ca0370` for deterministic installs and tests when both transports are present. Strip the large native test executable into a temporary file before pushing it to `/data/local/tmp`, and remove both temporary copies immediately after the run.

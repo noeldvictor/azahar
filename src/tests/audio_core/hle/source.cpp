@@ -28,6 +28,35 @@ struct SourceMixTestAccess {
     static bool RampActive(const Source& source, std::size_t mix_id) {
         return source.state.gain_ramp_active[mix_id];
     }
+
+    static void ConfigureGeneration(Source& source, const StereoFrame16& previous_frame,
+                                    const AudioInterp::StereoBuffer16& input,
+                                    const AudioInterp::State& interp_state) {
+        source.current_frame = previous_frame;
+        source.state.enabled = true;
+        source.state.current_buffer = input;
+        source.state.interpolation_mode = Source::InterpolationMode::None;
+        source.state.rate_multiplier = 1.0f;
+        source.state.interp_state = interp_state;
+        source.state.current_sample_number = 0;
+        source.state.filters.Reset();
+    }
+
+    static void GenerateFrame(Source& source) {
+        source.GenerateFrame();
+    }
+
+    static const StereoFrame16& CurrentFrame(const Source& source) {
+        return source.current_frame;
+    }
+
+    static bool Enabled(const Source& source) {
+        return source.state.enabled;
+    }
+
+    static u32 CurrentSampleNumber(const Source& source) {
+        return source.state.current_sample_number;
+    }
 };
 
 } // namespace AudioCore::HLE
@@ -51,6 +80,90 @@ void ReferenceSourceMix(AudioCore::PlanarQuadFrame32& dest, const AudioCore::Ste
 }
 
 } // Anonymous namespace
+
+TEST_CASE("HLE source generation overwrites full frames and silences missing samples",
+          "[audio_core][hle]") {
+    constexpr std::array<s16, 2> dirty_sample{-12345, 23456};
+    constexpr AudioCore::AudioInterp::State interp_state{
+        .xn1 = {1234, -2345},
+        .xn2 = {-30000, 30000},
+        .fposition = 0,
+    };
+
+    AudioCore::StereoFrame16 dirty_frame{};
+    dirty_frame.fill(dirty_sample);
+
+    const auto make_input = [](std::size_t count) {
+        AudioCore::AudioInterp::StereoBuffer16 input;
+        for (std::size_t sample = 0; sample < count; ++sample) {
+            input.push_back({
+                static_cast<s16>((static_cast<s32>(sample) * 7919 % 65536) - 32768),
+                static_cast<s16>((static_cast<s32>(sample) * 3571 % 65536) - 32768),
+            });
+        }
+        return input;
+    };
+
+    const auto expected_prefix = [&](const AudioCore::AudioInterp::StereoBuffer16& input,
+                                     std::size_t produced) {
+        AudioCore::StereoFrame16 expected{};
+        if (produced != 0) {
+            expected[0] = interp_state.xn2;
+        }
+        if (produced > 1) {
+            expected[1] = interp_state.xn1;
+        }
+        for (std::size_t output = 2; output < produced; ++output) {
+            expected[output] = input[output - 2];
+        }
+        return expected;
+    };
+
+    SECTION("complete frame replaces every dirty sample") {
+        const auto input = make_input(AudioCore::samples_per_frame);
+        const auto expected = expected_prefix(input, AudioCore::samples_per_frame);
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::ConfigureGeneration(source, dirty_frame, input,
+                                                                 interp_state);
+
+        AudioCore::HLE::SourceMixTestAccess::GenerateFrame(source);
+
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentFrame(source) == expected);
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::Enabled(source));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentSampleNumber(source) ==
+                AudioCore::samples_per_frame);
+    }
+
+    SECTION("underrun replaces its prefix and silences its unwritten tail") {
+        constexpr std::size_t input_count = 35;
+        constexpr std::size_t produced = input_count;
+        const auto input = make_input(input_count);
+        const auto expected = expected_prefix(input, produced);
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::ConfigureGeneration(source, dirty_frame, input,
+                                                                 interp_state);
+
+        AudioCore::HLE::SourceMixTestAccess::GenerateFrame(source);
+
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentFrame(source) == expected);
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::Enabled(source));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentSampleNumber(source) == produced);
+    }
+
+    SECTION("empty source replaces the previous frame with silence") {
+        const AudioCore::AudioInterp::StereoBuffer16 input;
+        const AudioCore::StereoFrame16 expected{};
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::ConfigureGeneration(source, dirty_frame, input,
+                                                                 interp_state);
+
+        AudioCore::HLE::SourceMixTestAccess::GenerateFrame(source);
+
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentFrame(source) == expected);
+        REQUIRE_FALSE(AudioCore::HLE::SourceMixTestAccess::Enabled(source));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentSampleNumber(source) == 0);
+    }
+}
 
 TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_core][hle]") {
     constexpr std::size_t mix_id = 1;

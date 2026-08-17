@@ -268,6 +268,16 @@ mono duplication, stereo ordering, byte expansion, little-endian PCM16 values, z
 and 1023/1024/1025-sample deque boundaries have permanent coverage. This is a sustained source-
 decode reduction when games use PCM buffers, not measured whole-game FPS or battery watts.
 
+Active HLE sources no longer clear their complete 640-byte output frame immediately before the
+resampler overwrites it. A full source frame now reaches filtering without any silence clear;
+an underrun clears only its unwritten tail, while empty/dequeue frames retain the complete clear
+required to replace old audio with silence. At 24 active sources and the 32,728 Hz / 160-sample DSP
+cadence, the removed write-before-write traffic is at most 15,360 bytes per tick, or about 3.14 MB/s.
+Final AArch64 ThinLTO removes the entry-path 640-byte `memset`; the precise empty and tail calls
+remain. Full, partial, and empty dirty-frame regression cases preserve output and state. This is
+continuous store/cache work removed from source-heavy HLE audio, not measured whole-game FPS or
+battery watts.
+
 Thor's integer SoundTouch stereo-overlap loop uses explicit baseline AArch64 NEON for four frames
 at a time and eliminates eight `SDIV` instructions over that span. Negative results retain C++
 truncation-toward-zero behavior. ARM64 compile/link and differential regression sources validate
