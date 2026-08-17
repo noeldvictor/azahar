@@ -73,6 +73,8 @@ This fork has moved away from stock Azahar in visible ways:
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - The AArch64 PICA `EX2` and `LG2` helpers pack their exact approximation constants into aligned
   paired-Q blocks, replacing repeated scalar address/load sequences with 128-bit paired loads.
+- Repeated PICA program-code and swizzle uploads scan eight words per AArch64 NEON block, sharing
+  the expensive unchanged-data reduction and loop bookkeeping across two vectors.
 - Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
   an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
@@ -131,6 +133,12 @@ The command-list parser now deinterleaves four ordinary `[value, header]` pairs 
 nonconsecutive or duplicate IDs retain ordered writes, while special, extended, invalid, and short
 batches retain their scalar behavior. Final ThinLTO code shrinks the hot function by 9.5% despite
 adding the fast path.
+
+Program-code and swizzle range updates now compare eight words per first-stage AArch64 NEON loop.
+The two vector masks share one unchanged-data `UMAXV`; changed data uses paired stores and still
+returns the exact highest changed lane for dirty-hash and biggest-range tracking. In the final
+ThinLTO binary, an eight-word unchanged block falls from 42 to 25 executed loop instructions. The
+existing four-word NEON tail and scalar remainder preserve short and odd-length behavior.
 
 ## AArch64 Audio Time-Stretch Updates
 

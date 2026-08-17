@@ -857,6 +857,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and duration, then record empty-dispatch count, worker wakeups, process CPU time, frametimes,
   battery power, temperature, thermal slope, stability, and rendering correctness.
 
+## 2026-08-17 AArch64 PICA Eight-Word Range Scan
+
+- PICA command processing sends contiguous shader program-code and swizzle writes through
+  `UpdateProgramCodeRange()` and `UpdateSwizzleDataRange()`. Their AArch64 path compared four words
+  at a time, then used `UMAXV` first to decide whether any lane changed and again to locate the
+  highest changed lane. Re-uploaded shader data therefore paid one horizontal reduction and the
+  complete loop bookkeeping for every four unchanged words.
+- This change is based on the official guides for every CPU type in Thor's Snapdragon 8 Gen 2,
+  not an x86 analogy. For 4H/4S max/min reductions including `UMAXV`, Cortex-X3 issue 4.0 PDF page
+  26 reports latency 2 and throughput 2 instructions/cycle; Cortex-A715 issue 5.0 page 29 reports
+  latency 3 and throughput 1; Cortex-A710 issue 4.0 page 43 reports latency 2 and throughput 2;
+  and Cortex-A510 issue 6.0 page 36 reports latency 4 and throughput 1. The A510 dependency is the
+  strongest reason not to repeat the reduction unnecessarily. The external manuals remain indexed
+  by hash in `docs/hardware/README.md`; no PDF or rendered review page is committed.
+- A new baseline-Armv8-A block loads two old and two new Q vectors, compares both, ORs their change
+  masks, and performs one `UMAXV` for the common all-equal path. It stores both vectors only after
+  detecting a difference. High-half index constants are 4-7, so a zero high reduction
+  unambiguously selects the low half; the earlier combined reduction proves that low lane zero is a
+  valid changed result rather than an all-equal sentinel. The existing four-word NEON loop and
+  scalar remainder handle lengths below eight and every tail. SSE and non-NEON behavior are
+  unchanged.
+- Final ThinLTO emits `LDP` for the adjacent old vectors, two Q `LDR` instructions for new data,
+  two vector compares, `MVN`/`ORN`, and one `UMAXV` on the unchanged path; changed data uses `STP`.
+  For eight unchanged words, the complete vector-loop body and its result bookkeeping fall from 42
+  executed instructions across two old four-word iterations to 25 in one eight-word iteration: 17
+  fewer, or 40.5% for that local loop case. Program and swizzle functions each grow by 156 bytes to
+  retain optimized four-word and scalar tails (292 to 448 bytes and 296 to 452 bytes respectively),
+  a 312-byte total code-size tradeoff. These are local machine-code facts, not whole-game FPS or
+  battery-watt estimates.
+- New Catch2 differential coverage compares range writes with scalar public-API writes for program
+  and swizzle storage, offsets 0 and 3, every count from 0 through 24, unchanged/all/alternating
+  masks, and every individual changed lane. It also replays an unchanged range after hash
+  calculation and then changes the first word, comparing arrays, largest-used sizes, and hashes.
+  A separate exhaustive semantic check passed all 256 eight-lane masks. The Android ARM64 test
+  executable compiled and linked as a 443,683,104-byte ELF64/AArch64 PIE but was not run because the
+  host is x64 and current instructions forbid using the Thor.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m00s, and
+  `:app:assembleVanillaRelWithDebInfoLite` passed in 1m56s. The 28,966,475-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `11535A31D050274F48E4E16E72D0E27F94E659280236F25D9C18663D2839F2DD`. No ADB, install, launch,
+  or device access occurred.
+- A future allowed A/B should use a shader-command-heavy scene with identical title, save, caches,
+  renderer, driver, resolution, display layout, performance/fan mode, brightness, and duration.
+  Instrument range-call count and size plus changed/unchanged block rates, then record frametimes,
+  process CPU time, battery power, temperature, thermal slope, stability, and visual correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
