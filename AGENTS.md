@@ -244,6 +244,17 @@
   replace the packed output with D-form byte `ST4`. Keep all-format, width/height, coefficient-edge,
   and untouched-row canary coverage. The test-only conversion entry point must remain hidden so it
   is garbage-collected from production shared libraries.
+- AArch64 Y2R output packing deliberately processes sixteen intermediate `0xRRGGBB00` words per
+  band for RGBA8, RGB8, RGB5A1, and RGB565. Preserve exact little-endian output byte order, alpha
+  replacement, high-bit truncation, CDMA transfer-unit/gap progression, the scalar tail, and the
+  unchanged non-AArch64 path. RGB8 must keep its three adjacent-input `TBL2` maps in the outlined
+  helper so their constants load once per CDMA unit; final ThinLTO should retain a 12-instruction
+  repeated loop with paired/ordinary Q stores. RGBA8 must OR alpha into the known-zero low byte of
+  each valid intermediate word and use ordinary Q stores; RGB5A1/RGB565 must retain one Q-form
+  `LD4`, byte masks, `SHLL`/`SHLL2`, and paired Q stores per sixteen pixels. Do not reintroduce
+  `ST3`, `ST4`, per-pixel packing, or vectorized scalar-tail alias checks. Keep 15/16/17 and
+  31/32/37 boundaries, channel/alpha edges, and output canaries; the test-only packing entry point
+  must stay hidden and absent from the production shared library.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs

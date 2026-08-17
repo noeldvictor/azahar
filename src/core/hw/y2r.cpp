@@ -257,39 +257,208 @@ static void ReceiveData(Memory::MemorySystem& memory, u8* output, ConversionBuff
 /// Convert intermediate RGB32 format to the final output format while simulating an outgoing CDMA
 /// transfer.
 template <OutputFormat output_format>
-static void SendData(Memory::MemorySystem& memory, const u32* input, ConversionBuffer& buf,
-                     int amount_of_data, u8 alpha) {
+static void EncodeRGBToOutputScalar(const u32* input, u8* output, std::size_t pixel_count,
+                                    u8 alpha) {
+#if CITRA_ARCH(arm64)
+// The explicit sixteen-pixel AdvSIMD body has already consumed every full band. Keep the at-most-
+// fifteen-pixel remainder compact instead of letting the auto-vectorizer add alias checks and a
+// second partial SIMD implementation.
+#pragma clang loop vectorize(disable) interleave(disable)
+#endif
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        const u32 color = input[pixel];
+        const Common::Vec4<u8> col_vec{static_cast<u8>(color >> 24), static_cast<u8>(color >> 16),
+                                       static_cast<u8>(color >> 8), alpha};
 
-    u8* output = memory.GetPointer(buf.address);
+        if constexpr (output_format == OutputFormat::RGBA8) {
+            Common::Color::EncodeRGBA8(col_vec, output + pixel * 4);
+        } else if constexpr (output_format == OutputFormat::RGB8) {
+            Common::Color::EncodeRGB8(col_vec, output + pixel * 3);
+        } else if constexpr (output_format == OutputFormat::RGB5A1) {
+            Common::Color::EncodeRGB5A1(col_vec, output + pixel * 2);
+        } else if constexpr (output_format == OutputFormat::RGB565) {
+            Common::Color::EncodeRGB565(col_vec, output + pixel * 2);
+        } else {
+            UNREACHABLE_MSG("Unknown Y2R output format {}", output_format);
+        }
+    }
+}
 
-    while (amount_of_data > 0) {
-        u8* unit_end = output + buf.transfer_unit;
-        while (output < unit_end) {
-            u32 color = *input++;
-            Common::Vec4<u8> col_vec{(u8)(color >> 24), (u8)(color >> 16), (u8)(color >> 8), alpha};
+#if CITRA_ARCH(arm64)
 
-            if constexpr (output_format == OutputFormat::RGBA8) {
-                Common::Color::EncodeRGBA8(col_vec, output);
-                output += 4;
-            } else if constexpr (output_format == OutputFormat::RGB8) {
-                Common::Color::EncodeRGB8(col_vec, output);
-                output += 3;
-            } else if constexpr (output_format == OutputFormat::RGB5A1) {
-                Common::Color::EncodeRGB5A1(col_vec, output);
-                output += 2;
-            } else if constexpr (output_format == OutputFormat::RGB565) {
-                Common::Color::EncodeRGB565(col_vec, output);
-                output += 2;
+// Each 16-byte output band needs bytes from only two adjacent 16-byte input vectors. Keep all
+// indices below 32 so RGB8 packing lowers to three TBL2 operations and ordinary Q stores instead
+// of the scalar shift/store loop or a throughput-limited structured store.
+template <u32 block>
+consteval std::array<u8, 16> MakeRGB8OutputShuffleA64() {
+    static_assert(block < 3);
+    std::array<u8, 16> indices{};
+    for (u32 lane = 0; lane < indices.size(); ++lane) {
+        const u32 output_byte = block * 16 + lane;
+        const u32 pixel = output_byte / 3;
+        const u32 component = output_byte % 3;
+        const u32 source_byte = pixel * 4 + component + 1;
+        indices[lane] = static_cast<u8>(source_byte - block * 16);
+    }
+    return indices;
+}
+
+inline constexpr std::array<std::array<u8, 16>, 3> RGB8_OUTPUT_SHUFFLES_A64 = {
+    MakeRGB8OutputShuffleA64<0>(),
+    MakeRGB8OutputShuffleA64<1>(),
+    MakeRGB8OutputShuffleA64<2>(),
+};
+
+static_assert([] {
+    for (u32 output_byte = 0; output_byte < 48; ++output_byte) {
+        const u32 pixel = output_byte / 3;
+        const u32 component = output_byte % 3;
+        const u32 block = output_byte / 16;
+        const u8 local_index = RGB8_OUTPUT_SHUFFLES_A64[block][output_byte % 16];
+        if (local_index >= 32 || block * 16 + local_index != pixel * 4 + component + 1) {
+            return false;
+        }
+    }
+    return true;
+}());
+
+CITRA_NO_INLINE static std::size_t EncodeRGB8ToOutputA64(const u32* input, u8* output,
+                                                         std::size_t pixel_count) {
+    const uint8x16_t shuffle_0 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[0].data());
+    const uint8x16_t shuffle_1 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[1].data());
+    const uint8x16_t shuffle_2 = vld1q_u8(RGB8_OUTPUT_SHUFFLES_A64[2].data());
+    std::size_t pixel = 0;
+    for (; pixel + 16 <= pixel_count; pixel += 16) {
+        const u8* const src = reinterpret_cast<const u8*>(input + pixel);
+        const uint8x16_t input_0 = vld1q_u8(src);
+        const uint8x16_t input_1 = vld1q_u8(src + 16);
+        const uint8x16_t input_2 = vld1q_u8(src + 32);
+        const uint8x16_t input_3 = vld1q_u8(src + 48);
+        const uint8x16x2_t table_0 = {input_0, input_1};
+        const uint8x16x2_t table_1 = {input_1, input_2};
+        const uint8x16x2_t table_2 = {input_2, input_3};
+        u8* const dst = output + pixel * 3;
+        vst1q_u8(dst, vqtbl2q_u8(table_0, shuffle_0));
+        vst1q_u8(dst + 16, vqtbl2q_u8(table_1, shuffle_1));
+        vst1q_u8(dst + 32, vqtbl2q_u8(table_2, shuffle_2));
+    }
+    return pixel;
+}
+
+template <OutputFormat output_format>
+static std::size_t EncodeRGBToOutputA64(const u32* input, u8* output, std::size_t pixel_count,
+                                        u8 alpha) {
+    static_assert(output_format == OutputFormat::RGBA8 || output_format == OutputFormat::RGB8 ||
+                  output_format == OutputFormat::RGB5A1 || output_format == OutputFormat::RGB565);
+
+    if constexpr (output_format == OutputFormat::RGB8) {
+        return EncodeRGB8ToOutputA64(input, output, pixel_count);
+    }
+
+    std::size_t pixel = 0;
+    if constexpr (output_format == OutputFormat::RGBA8) {
+        const uint32x4_t alpha_words = vdupq_n_u32(alpha);
+        for (; pixel + 16 <= pixel_count; pixel += 16) {
+            // Y2R's intermediate words are numeric 0xRRGGBB00, so on little-endian AArch64 the
+            // unused low byte is exactly the output alpha lane. Four ordinary loads/stores avoid
+            // the auto-vectorizer's shift/TBL/ST4 sequence.
+            u8* const dst = output + pixel * 4;
+            vst1q_u8(dst, vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input + pixel), alpha_words)));
+            vst1q_u8(dst + 16,
+                     vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input + pixel + 4), alpha_words)));
+            vst1q_u8(dst + 32,
+                     vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input + pixel + 8), alpha_words)));
+            vst1q_u8(dst + 48,
+                     vreinterpretq_u8_u32(vorrq_u32(vld1q_u32(input + pixel + 12), alpha_words)));
+        }
+    } else {
+        const uint8x16_t alpha_bytes = vdupq_n_u8(alpha);
+        for (; pixel + 16 <= pixel_count; pixel += 16) {
+            // The input byte lanes are [0, B, G, R]. One Q-form LD4 extracts all sixteen pixels;
+            // byte masks plus SHLL/SHLL2 build the exact little-endian 16-bit output words.
+            const uint8x16x4_t components = vld4q_u8(reinterpret_cast<const u8*>(input + pixel));
+            uint8x16_t red = vandq_u8(components.val[3], vdupq_n_u8(0xF8));
+            uint8x16_t green;
+            uint8x16_t blue_alpha;
+            if constexpr (output_format == OutputFormat::RGB565) {
+                green = vandq_u8(components.val[2], vdupq_n_u8(0xFC));
+                blue_alpha = vshrq_n_u8(components.val[1], 3);
             } else {
-                UNREACHABLE_MSG("Unknown Y2R output format {}", output_format);
+                green = vandq_u8(components.val[2], vdupq_n_u8(0xF8));
+                blue_alpha = vandq_u8(vshrq_n_u8(components.val[1], 2), vdupq_n_u8(0x3E));
+                blue_alpha = vsraq_n_u8(blue_alpha, alpha_bytes, 7);
             }
 
-            amount_of_data -= 1;
+            const uint16x8_t red_low = vshll_n_u8(vget_low_u8(red), 8);
+            const uint16x8_t red_high = vshll_high_n_u8(red, 8);
+            const uint16x8_t green_low = vshll_n_u8(vget_low_u8(green), 3);
+            const uint16x8_t green_high = vshll_high_n_u8(green, 3);
+            const uint16x8_t blue_alpha_low = vmovl_u8(vget_low_u8(blue_alpha));
+            const uint16x8_t blue_alpha_high = vmovl_high_u8(blue_alpha);
+            vst1q_u8(output + pixel * 2, vreinterpretq_u8_u16(vorrq_u16(
+                                             vorrq_u16(red_low, green_low), blue_alpha_low)));
+            vst1q_u8(
+                output + pixel * 2 + 16,
+                vreinterpretq_u8_u16(vorrq_u16(vorrq_u16(red_high, green_high), blue_alpha_high)));
         }
+    }
+    return pixel;
+}
 
-        output += buf.gap;
+#endif
+
+template <OutputFormat output_format>
+static void EncodeRGBToOutput(const u32* input, u8* output, std::size_t pixel_count, u8 alpha) {
+    std::size_t encoded = 0;
+#if CITRA_ARCH(arm64)
+    encoded = EncodeRGBToOutputA64<output_format>(input, output, pixel_count, alpha);
+#endif
+    if (encoded < pixel_count) {
+        constexpr std::size_t bytes_per_pixel = output_format == OutputFormat::RGBA8  ? 4
+                                                : output_format == OutputFormat::RGB8 ? 3
+                                                                                      : 2;
+        EncodeRGBToOutputScalar<output_format>(input + encoded, output + encoded * bytes_per_pixel,
+                                               pixel_count - encoded, alpha);
+    }
+}
+
+void Testing::EncodeRGBToOutput(OutputFormat output_format, const u32* input, u8* output,
+                                std::size_t pixel_count, u8 alpha) {
+    switch (output_format) {
+    case OutputFormat::RGBA8:
+        ::HW::Y2R::EncodeRGBToOutput<OutputFormat::RGBA8>(input, output, pixel_count, alpha);
+        break;
+    case OutputFormat::RGB8:
+        ::HW::Y2R::EncodeRGBToOutput<OutputFormat::RGB8>(input, output, pixel_count, alpha);
+        break;
+    case OutputFormat::RGB5A1:
+        ::HW::Y2R::EncodeRGBToOutput<OutputFormat::RGB5A1>(input, output, pixel_count, alpha);
+        break;
+    case OutputFormat::RGB565:
+        ::HW::Y2R::EncodeRGBToOutput<OutputFormat::RGB565>(input, output, pixel_count, alpha);
+        break;
+    }
+}
+
+template <OutputFormat output_format>
+static void SendData(Memory::MemorySystem& memory, const u32* input, ConversionBuffer& buf,
+                     std::size_t amount_of_data, u8 alpha) {
+    constexpr std::size_t bytes_per_pixel = output_format == OutputFormat::RGBA8  ? 4
+                                            : output_format == OutputFormat::RGB8 ? 3
+                                                                                  : 2;
+
+    u8* output = memory.GetPointer(buf.address);
+    const std::size_t output_unit = buf.transfer_unit / bytes_per_pixel;
+    ASSERT(output_unit > 0 && buf.transfer_unit % bytes_per_pixel == 0);
+    ASSERT(amount_of_data % output_unit == 0);
+
+    while (amount_of_data > 0) {
+        EncodeRGBToOutput<output_format>(input, output, output_unit, alpha);
+        input += output_unit;
+        output += buf.transfer_unit + buf.gap;
         buf.address += buf.transfer_unit + buf.gap;
         buf.image_size -= buf.transfer_unit;
+        amount_of_data -= output_unit;
     }
 }
 
@@ -543,23 +712,19 @@ void PerformConversion(Memory::MemorySystem& memory, ConversionConfiguration cvt
         switch (cvt.output_format) {
         case OutputFormat::RGBA8:
             SendData<OutputFormat::RGBA8>(memory, reinterpret_cast<u32*>(data_buffer.get()),
-                                          cvt.dst, static_cast<int>(row_data_size),
-                                          static_cast<u8>(cvt.alpha));
+                                          cvt.dst, row_data_size, static_cast<u8>(cvt.alpha));
             break;
         case OutputFormat::RGB8:
             SendData<OutputFormat::RGB8>(memory, reinterpret_cast<u32*>(data_buffer.get()), cvt.dst,
-                                         static_cast<int>(row_data_size),
-                                         static_cast<u8>(cvt.alpha));
+                                         row_data_size, static_cast<u8>(cvt.alpha));
             break;
         case OutputFormat::RGB5A1:
             SendData<OutputFormat::RGB5A1>(memory, reinterpret_cast<u32*>(data_buffer.get()),
-                                           cvt.dst, static_cast<int>(row_data_size),
-                                           static_cast<u8>(cvt.alpha));
+                                           cvt.dst, row_data_size, static_cast<u8>(cvt.alpha));
             break;
         case OutputFormat::RGB565:
             SendData<OutputFormat::RGB565>(memory, reinterpret_cast<u32*>(data_buffer.get()),
-                                           cvt.dst, static_cast<int>(row_data_size),
-                                           static_cast<u8>(cvt.alpha));
+                                           cvt.dst, row_data_size, static_cast<u8>(cvt.alpha));
             break;
         default:
             UNREACHABLE_MSG("Unknown Y2R output format {}", cvt.output_format);

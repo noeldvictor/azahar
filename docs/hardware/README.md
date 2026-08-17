@@ -41,6 +41,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   A715, and A710 list `TBL2` at latency/throughput 2/2 versus 4/`2/3` for `TBL4`; A510 lists
   8/`2/5` versus 16/`1/9`. The relevant Q-form `LD3` entries are on X3 page 34, A715 page 37,
   A710 page 56, and A510 page 46.
+- Apply the same store-side rule to Y2R's final output packing. Numeric `0xRRGGBB00` words can become
+  RGBA8 with ordinary Q loads, alpha ORs, and ordinary Q stores; RGB8 can drop each zero byte with
+  three adjacent-input `TBL2` maps and contiguous stores. RGB5A1/RGB565 can use one Q-form `LD4`,
+  byte masks, `SHLL`/`SHLL2`, and paired Q stores. Keep table constants outside the repeated RGB8
+  loop and verify final ThinLTO contains no `ST3`/`ST4`; the A510 structured-store throughput in the
+  reference table above makes source-level auto-vectorization an unsafe performance assumption.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use

@@ -15,6 +15,7 @@ namespace {
 using HW::Y2R::Testing::ImageTile;
 using Service::Y2R::CoefficientSet;
 using Service::Y2R::InputFormat;
+using Service::Y2R::OutputFormat;
 
 constexpr u32 Canary = 0xC0DEC0DE;
 
@@ -53,6 +54,57 @@ void ConvertReference(InputFormat input_format, const u8* input_y, const u8* inp
             output[x / 8][y * 8 + x % 8] = static_cast<u32>(std::clamp(red >> 5, 0, 0xFF)) << 24 |
                                            static_cast<u32>(std::clamp(green >> 5, 0, 0xFF)) << 16 |
                                            static_cast<u32>(std::clamp(blue >> 5, 0, 0xFF)) << 8;
+        }
+    }
+}
+
+std::size_t OutputBytesPerPixel(OutputFormat format) {
+    switch (format) {
+    case OutputFormat::RGBA8:
+        return 4;
+    case OutputFormat::RGB8:
+        return 3;
+    case OutputFormat::RGB5A1:
+    case OutputFormat::RGB565:
+        return 2;
+    }
+    return 0;
+}
+
+void EncodeOutputReference(OutputFormat format, const u32* input, u8* output,
+                           std::size_t pixel_count, u8 alpha) {
+    const std::size_t bytes_per_pixel = OutputBytesPerPixel(format);
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        const u32 color = input[pixel];
+        const u8 red = static_cast<u8>(color >> 24);
+        const u8 green = static_cast<u8>(color >> 16);
+        const u8 blue = static_cast<u8>(color >> 8);
+        u8* const encoded = output + pixel * bytes_per_pixel;
+        switch (format) {
+        case OutputFormat::RGBA8:
+            encoded[0] = alpha;
+            encoded[1] = blue;
+            encoded[2] = green;
+            encoded[3] = red;
+            break;
+        case OutputFormat::RGB8:
+            encoded[0] = blue;
+            encoded[1] = green;
+            encoded[2] = red;
+            break;
+        case OutputFormat::RGB5A1: {
+            const u16 packed = static_cast<u16>((red >> 3) << 11 | (green >> 3) << 6 |
+                                                (blue >> 3) << 1 | alpha >> 7);
+            encoded[0] = static_cast<u8>(packed);
+            encoded[1] = static_cast<u8>(packed >> 8);
+            break;
+        }
+        case OutputFormat::RGB565: {
+            const u16 packed = static_cast<u16>((red >> 3) << 11 | (green >> 2) << 5 | blue >> 3);
+            encoded[0] = static_cast<u8>(packed);
+            encoded[1] = static_cast<u8>(packed >> 8);
+            break;
+        }
         }
     }
 }
@@ -113,6 +165,45 @@ TEST_CASE("Y2R conversion matches the scalar hardware reference", "[core][hw][y2
                                    << " height=" << height);
                     CHECK(actual == expected);
                 }
+            }
+        }
+    }
+}
+
+TEST_CASE("Y2R output packing matches the scalar format reference", "[core][hw][y2r]") {
+    constexpr std::array formats{
+        OutputFormat::RGBA8,
+        OutputFormat::RGB8,
+        OutputFormat::RGB5A1,
+        OutputFormat::RGB565,
+    };
+    constexpr std::array<u8, 16> channel_edges{
+        0, 1, 7, 8, 31, 32, 63, 64, 127, 128, 247, 248, 249, 252, 254, 255,
+    };
+
+    for (const std::size_t pixel_count :
+         {std::size_t{0}, std::size_t{1}, std::size_t{7}, std::size_t{15}, std::size_t{16},
+          std::size_t{17}, std::size_t{31}, std::size_t{32}, std::size_t{37}}) {
+        std::vector<u32> input(pixel_count);
+        for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+            const u32 red = channel_edges[pixel % channel_edges.size()];
+            const u32 green = channel_edges[(pixel * 5 + 3) % channel_edges.size()];
+            const u32 blue = channel_edges[(pixel * 11 + 7) % channel_edges.size()];
+            input[pixel] = red << 24 | green << 16 | blue << 8;
+        }
+
+        for (const auto format : formats) {
+            const std::size_t output_size = pixel_count * OutputBytesPerPixel(format);
+            for (const u8 alpha : {u8{0}, u8{1}, u8{0x7F}, u8{0x80}, u8{0xFF}}) {
+                std::vector<u8> expected(output_size + 32, 0xCD);
+                std::vector<u8> actual(output_size + 32, 0xCD);
+                EncodeOutputReference(format, input.data(), expected.data(), pixel_count, alpha);
+                HW::Y2R::Testing::EncodeRGBToOutput(format, input.data(), actual.data(),
+                                                    pixel_count, alpha);
+
+                INFO("format=" << static_cast<unsigned int>(format) << " pixel_count="
+                               << pixel_count << " alpha=" << static_cast<unsigned int>(alpha));
+                CHECK(actual == expected);
             }
         }
     }

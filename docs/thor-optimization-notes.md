@@ -2481,6 +2481,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   or temperature measurement was used. The gain applies when titles exercise Y2R video/camera
   conversion and must not be added to unrelated dispatch, texture, audio, or Eco Turbo percentages.
 
+## 2026-08-17 AArch64 Y2R Output Packing
+
+- The completed eight-pixel YUV matrix path still handed every intermediate `0xRRGGBB00` word to
+  scalar output-format helpers. Android AArch64 Clang partly auto-vectorized RGBA8 and RGB8, but the
+  repeated bodies were 62 and 58 instructions per 32 pixels and ended in two Q-form `ST4` or `ST3`
+  structured stores. RGB565 remained a 10-instruction scalar loop per pixel, while RGB5A1 remained
+  13 instructions per pixel. This was the next bottleneck in the same Y2R strip pipeline.
+- The AArch64 path now packs sixteen pixels explicitly. RGBA8 ORs alpha into the known-zero low byte
+  of four ordinary Q-loaded intermediate vectors. RGB8 uses three compile-time-proved adjacent-
+  input `TBL2` maps and ordinary Q stores; its small outlined helper keeps the three constants out
+  of the repeated loop. RGB565 and RGB5A1 deinterleave sixteen `[0,B,G,R]` words with one Q-form
+  `LD4`, apply exact byte masks and shifts, then use `SHLL`/`SHLL2` and paired Q stores. The scalar
+  non-AArch64 path and an at-most-fifteen-pixel scalar remainder are unchanged.
+- In final production ThinLTO, repeated RGB8 work is 12 instructions per sixteen pixels, RGBA8 is
+  20, RGB565 is 21, and RGB5A1 is 23. Normalized to the pre-change release-object bodies, those are
+  reductions of 58.6%, 35.5%, 86.9%, and 88.9%, respectively. The complete production
+  `PerformConversion()` plus outlined RGB8 helper contains no `ST3` or `ST4`. These are instruction-
+  count reductions in output packing, not equivalent cycle-speed ratios or whole-game gains; each
+  CDMA unit also pays fixed setup/control work outside the repeated loops.
+- Independent Catch2 coverage compares all four formats to a scalar byte-level reference at
+  0/1/7/15/16/17/31/32/37 pixels, across 5 alpha edges and 16 channel truncation edges. It compares
+  the complete output including 32-byte canaries. The ARM64 production object and test object
+  compile, and both the full test ELF and `libcitra-android.so` link with ThinLTO. The hidden
+  740-byte test dispatcher remains in the test ELF and is garbage-collected from the production
+  library; the 104-byte RGB8 production helper remains as intended. The test executable was not
+  run because device execution remains excluded.
+- The final incremental `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1 minute 19 seconds,
+  compiling both Y2R objects and linking the ARM64 test ELF and production shared library.
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` then passed in 1 minute 48
+  seconds. The ARM64-only APK is 28,970,251 bytes with SHA-256
+  `497778385D6C494D94158351EA288FB3A1B1A30D1FE8C8D127FD97BBF2228CD6`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,467,481,007 logical bytes of temporary codegen objects, the test ELF/tools, native/JNI staging,
+  mappings, symbols, Kotlin/R8 output, and other reproducible Gradle intermediates. Reported C:
+  free space increased by 2,026,418,176 bytes.
+- The implementation follows the checked X3/A715/A710/A510 load/store and table guidance already
+  indexed in `docs/hardware/README.md`: avoid throughput-limited multiway structured stores on the
+  A510 and confirm the compiler emitted the intended instruction forms. No device, ADB, install,
+  launch, game, FPS, wattage, battery, temperature, or visual measurement was used. A future matched
+  Thor A/B should target video/camera-heavy scenes and hold the standard title, cache, renderer,
+  resolution, driver, performance/fan, brightness, and display-layout controls fixed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
