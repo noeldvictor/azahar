@@ -16,6 +16,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
+- Fetched the later `upstream/master` tip `3392c56ce`. Its two new commits only revise the
+  MSVC workaround in `src/core/hle/service/service.{h,cpp}`; they were applied narrowly as
+  `44b30dc92` and `5f3b01a9f` so the divergent Thor fork could not replace fork-only files.
+  Both service files match the fetched upstream tip exactly.
 - Mirrored the directly relevant sibling-project research under [`research/`](research/README.md), including the chapter-by-chapter notes for Whatcookie's "PS3 emulation is fast on ARM now" video and the follow-up "what didn't make the cut" article.
 - Kept the new PICA command-list lookup, batching, and four-command vectorizable path from `c688076ac`. This is directly relevant to ARM host CPU time and energy because it reduces command-dispatch overhead without changing guest semantics.
 - Kept the shader output register-banking work from `74d38ddcc`, including its A64 shader-JIT changes.
@@ -519,8 +523,11 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   attempt to enable that runner in the Android app tree was stopped after its cross-test
   configuration hung, and `DYNARMIC_TESTS` was restored to `OFF`.
 - `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the modified ARM64 backend and
-  `libcitra-android.so` successfully in 1m13s. No ADB command, install, launch, or device test
-  was performed.
+  `libcitra-android.so` successfully in 1m13s. After the two current Azahar master updates were
+  integrated, `:app:assembleVanillaRelWithDebInfoLite` also passed in 3m28s. The resulting
+  28,965,611-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `BF5E20ABCEE5653CEE82289AE36B97FC1886A08B3338AF3625E4B9C0A92AA124`. No ADB command,
+  install, launch, or device test was performed.
 - These are pervasive generated-instruction reductions, but they are not additive with the
   earlier FastDispatch, page-table, or NZCV-cache percentages. Whole-game FPS, battery watts,
   and thermal-slope effects remain unmeasured until a controlled parent-versus-candidate Thor
