@@ -1969,6 +1969,47 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   contained it and remained 93 commits ahead with no upstream-only commit. No device, ADB, install,
   launch, game run, FPS test, or battery measurement was used for this slice.
 
+## 2026-08-17 AArch64 GC-ADPCM Nibble Decode
+
+- HLE source buffers use the GameCube-style ADPCM decoder for fourteen sequential samples in each
+  eight-byte frame. The original implementation mapped each high and low four-bit value through a
+  sixteen-entry `int` table. Final AArch64 ThinLTO showed two reads of every packed source byte and
+  two indexed 32-bit nibble-table loads in the repeated two-sample body: 28 data loads per complete
+  frame just to obtain fourteen compressed nibbles.
+- The complete relevant instruction pages were checked in Cortex-X3 issue 4.0 page 18,
+  Cortex-A715 issue 5.0 page 20, Cortex-A710 issue 4.0 pages 27-28, and Cortex-A510 issue 6.0 pages
+  22-23. X3/A715/A710 list basic `SBFM` at one-cycle latency and throughput 6/4/4 respectively;
+  A510 lists `SBFX` at two-cycle latency and throughput 3. Direct bitfield sign extension also
+  removes the indexed address work and L1 data accesses. The PDFs remain external and uncommitted.
+- Decode now reads one packed byte, retains it across the high-nibble result and recurrent state
+  update, and sign-extends both four-bit fields directly. Scale, coefficient pair, fixed-point add
+  order, high-before-low history dependency, signed clamp, duplicate stereo stores, partial-frame
+  behavior, and the historical padded second output/state update for odd sample counts are
+  unchanged. This is scalar AArch64 acceleration because the second-order recurrence prevents
+  time-lane SIMD without changing the algorithm.
+- Production ThinLTO changes the repeated two-sample body from 50 to 46 instructions. A full
+  fourteen-sample frame therefore removes 28 inner-loop instructions, fourteen indexed table
+  loads, and seven redundant packed-byte loads. Two one-time table-address setup instructions also
+  disappear per decoder call. `DecodeADPCM()` shrinks from 500 to 476 bytes (4.8%), and its separate
+  64-byte `SIGNED_NIBBLES` constant is removed. Final code retains one post-indexed `LDRSB`, direct
+  `SBFX`/bitfield scaling, the dependent `MADD` chains, exact clamp selects, and duplicate stores.
+- An independent 512-case byte/nibble sweep found zero differences from the former table. New
+  permanent Catch2 coverage compares the complete decoder against an independent table-based
+  reference across sixteen data phases, twelve lengths from zero through nine frames, four initial
+  histories, every scale/coefficient pair, clipping values, partial frames, and odd sample counts:
+  768 complete decode/state comparisons. The full ELF64/AArch64 test executable and production
+  shared library compile and link successfully; the executable is not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 22 seconds and produced an ARM64-only
+  28,966,955-byte APK with SHA-256
+  `949C8F7851C87CF324B482249D7DBAD00EA6A5E6F2DC3BC73CC4DD36910C5F9D`. After verification,
+  2,496,851,053 logical bytes of the temporary disassembly, native test executable, and disposable
+  package intermediates were removed. C: free space increased by 2,059,210,752 bytes; the APK and
+  active ARM64 CMake cache remain in the repository workspace.
+- This reduces HLE DSP-thread work for games that stream GC-ADPCM. It is not a whole-game FPS or
+  battery-watt measurement, and no device, ADB, install, launch, or game run was used. A future
+  allowed matched Thor A/B should instrument ADPCM-decoded samples and DSP-thread time while
+  holding the normal title, scene, renderer, driver, display, thermal, and power controls fixed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

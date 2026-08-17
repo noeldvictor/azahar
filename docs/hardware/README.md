@@ -52,6 +52,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   bytes per cycle for Q form on all four Thor core classes. Do not replace the structured pair with
   ordinary loads plus `UZP`/`ZIP`: that adds permutation work without removing an expensive
   multiway transpose. Confirm Q-form instructions and spill-free loops in final ThinLTO.
+- For recurrent GC-ADPCM, load each packed byte once and use direct signed bitfield extraction for
+  its high and low four-bit samples instead of indexed integer-table reads. X3 page 18, A715 page
+  20, A710 pages 27-28, and A510 pages 22-23 document basic `SBFM`/`SBFX` and load characteristics:
+  the bitfield operation is a short ALU instruction and avoids both address/index work and cache
+  traffic. Preserve sequential filter feedback; this optimization removes representation work,
+  not the recurrence itself, and final ThinLTO must prove the lookup table disappeared.
 - For SoundTouch's integer 64-tap stereo FIR, use an exact 32-bit accumulator on Android LP64 and
   feed both channels from one coefficient vector. Two Q-form `LD2` sample loads plus one paired
   coefficient load per sixteen taps avoid the duplicated coefficient structured loads while eight

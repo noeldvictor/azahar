@@ -15,6 +15,7 @@ add_executable(tests
     audio_core/hle/source.cpp
     audio_core/lle/lle.cpp
     audio_core/audio_fixures.h
+    audio_core/codec.cpp
     audio_core/decoder_tests.cpp
     audio_core/interpolate.cpp
     audio_core/time_stretch.cpp

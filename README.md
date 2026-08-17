@@ -102,6 +102,8 @@ This fork has moved away from stock Azahar in visible ways:
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
+- HLE GC-ADPCM decode loads each compressed byte once for its two recurrent samples and uses
+  native signed bitfield extraction instead of two indexed nibble-table loads.
 - SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
   Android's LP64 ABI. A spill-free AArch64 NEON loop cuts the repeatedly used correlation body by
   20% versus the prior linked code while preserving the rolling-normalizer arithmetic.
@@ -241,6 +243,16 @@ binary. These are path-local generated-code improvements; Thor FPS and battery e
 be measured under controlled conditions.
 
 ## AArch64 Audio Updates
+
+GC-ADPCM source buffers previously decoded every four-bit sample through a sixteen-entry integer
+table and read each packed byte twice. The decoder now retains one packed byte across its high- and
+low-nibble recurrence and expresses signed four-bit expansion directly. Final AArch64 ThinLTO uses
+one packed-byte load and native signed bitfield operations for each two-sample body, with no nibble
+table load or constant. The repeated body falls from 50 to 46 instructions, removing 28 executed
+instructions and 21 data loads per complete 14-sample frame; the function shrinks from 500 to 476
+bytes and its 64-byte table disappears. Permanent table-reference coverage spans all nibble values,
+scales, coefficient pairs, initial histories, clipping edges, partial frames, and odd lengths. This
+reduces DSP decode work when titles stream GC-ADPCM, not whole-game FPS or measured battery watts.
 
 Thor's integer SoundTouch stereo-overlap loop uses explicit baseline AArch64 NEON for four frames
 at a time and eliminates eight `SDIV` instructions over that span. Negative results retain C++

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstring>
 #include "audio_core/audio_types.h"
@@ -13,6 +14,17 @@
 
 namespace AudioCore::Codec {
 
+namespace {
+
+constexpr int SignedNibble(u8 nibble) {
+    // Moving the low nibble into an s8's sign position lets AArch64 Clang lower this to one SBFX
+    // instead of an indexed lookup. The input's upper bits are deliberately discarded.
+    const u8 shifted = static_cast<u8>(nibble << 4);
+    return std::bit_cast<s8>(shifted) / 16;
+}
+
+} // Anonymous namespace
+
 StereoBuffer16 DecodeADPCM(const u8* const data, const std::size_t sample_count,
                            const std::array<s16, 16>& adpcm_coeff, ADPCMState& state) {
     // GC-ADPCM with scale factor and variable coefficients.
@@ -21,10 +33,6 @@ StereoBuffer16 DecodeADPCM(const u8* const data, const std::size_t sample_count,
 
     constexpr std::size_t FRAME_LEN = 8;
     constexpr std::size_t SAMPLES_PER_FRAME = 14;
-    static constexpr std::array<int, 16> SIGNED_NIBBLES{
-        0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1,
-    };
-
     const std::size_t ret_size =
         sample_count % 2 == 0 ? sample_count : sample_count + 1; // Ensure multiple of two.
     StereoBuffer16 ret(ret_size);
@@ -61,15 +69,14 @@ StereoBuffer16 DecodeADPCM(const u8* const data, const std::size_t sample_count,
         std::size_t outputi = framei * SAMPLES_PER_FRAME;
         std::size_t datai = framei * FRAME_LEN + 1;
         for (std::size_t i = 0; i < SAMPLES_PER_FRAME && outputi < sample_count; i += 2) {
-            const s16 sample1 = decode_sample(SIGNED_NIBBLES[data[datai] >> 4]);
+            const u8 nibbles = data[datai++];
+            const s16 sample1 = decode_sample(SignedNibble(nibbles >> 4));
             ret[outputi].fill(sample1);
             outputi++;
 
-            const s16 sample2 = decode_sample(SIGNED_NIBBLES[data[datai] & 0xF]);
+            const s16 sample2 = decode_sample(SignedNibble(nibbles));
             ret[outputi].fill(sample2);
             outputi++;
-
-            datai++;
         }
     }
 

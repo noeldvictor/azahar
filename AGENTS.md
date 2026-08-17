@@ -147,6 +147,14 @@
   reset passthrough coefficients (`1 << 15` and `1 << 14`) plus their final history, and retain the
   scalar non-AArch64 path. Final ThinLTO should continue to show `SMULL`/`SMLAL`, arithmetic shift,
   and `SQXTN`; do not assume source intrinsics are useful without checking the linked library.
+- HLE GC-ADPCM decoding deliberately loads one packed byte for each two recurrent samples and
+  sign-extends both four-bit values without a lookup table. Preserve high-nibble-before-low-nibble
+  feedback order, scale/coefficient selection, signed fixed-point arithmetic, saturation, duplicated
+  stereo output, partial frames, the historical padded second sample for odd lengths, and final
+  `yn1`/`yn2`. Final AArch64 ThinLTO should retain one byte load plus direct signed bitfield
+  extraction per pair and no `SIGNED_NIBBLES` symbol or indexed nibble-table load. Keep the
+  independent table-reference test across all nibble values, scales, histories, clipping, and
+  frame boundaries.
 - AArch64 HLE linear interpolation deliberately evaluates the independent stereo lanes with one
   AdvSIMD `SQDMULH`. Preserve the DSP's signed-16 saturated delta, the unsigned 24-bit phase, the
   exact Q24-to-Q31 `phase << 7` mapping, truncation rather than rounding, and the scalar
