@@ -87,41 +87,18 @@ vk::Filter MakeFilter(VideoCore::PixelFormat pixel_format) {
 }
 
 u32 UnpackDepthStencil(const VideoCore::StagingData& data, vk::Format dest) {
-    u32 depth_offset = 0;
-    u32 stencil_offset = 4 * data.size / 5;
-    const auto& mapped = data.mapped;
-
     switch (dest) {
-    case vk::Format::eD24UnormS8Uint: {
-        for (; stencil_offset < data.size; depth_offset += 4) {
-            u8* ptr = mapped.data() + depth_offset;
-            const u32 d24s8 = VideoCore::MakeInt<u32>(ptr);
-            const u32 d24 = d24s8 >> 8;
-            mapped[stencil_offset] = d24s8 & 0xFF;
-            std::memcpy(ptr, &d24, 4);
-            stencil_offset++;
-        }
-        break;
-    }
-    case vk::Format::eD32SfloatS8Uint: {
-        for (; stencil_offset < data.size; depth_offset += 4) {
-            u8* ptr = mapped.data() + depth_offset;
-            const u32 d24s8 = VideoCore::MakeInt<u32>(ptr);
-            const float d32 = (d24s8 >> 8) / 16777215.f;
-            mapped[stencil_offset] = d24s8 & 0xFF;
-            std::memcpy(ptr, &d32, 4);
-            stencil_offset++;
-        }
-        break;
-    }
+    case vk::Format::eD24UnormS8Uint:
+        return VideoCore::UnpackDepthStencil(data.mapped,
+                                             VideoCore::DepthStencilUnpackMode::D24Unorm);
+    case vk::Format::eD32SfloatS8Uint:
+        return VideoCore::UnpackDepthStencil(data.mapped,
+                                             VideoCore::DepthStencilUnpackMode::D32Float);
     default:
         LOG_ERROR(Render_Vulkan, "Unimplemented convertion for depth format {}",
                   vk::to_string(dest));
         UNREACHABLE();
     }
-
-    ASSERT(depth_offset == 4 * data.size / 5);
-    return depth_offset;
 }
 
 void MakeInitBarriers(vk::ImageAspectFlags aspect, u32 num_images,

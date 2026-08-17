@@ -67,10 +67,25 @@ struct StagingData {
     std::span<u8> mapped;
 };
 
+enum class DepthStencilUnpackMode {
+    D24Unorm,
+    D32Float,
+};
+
 class SurfaceParams;
 struct FramebufferParams;
 
 u32 MipLevels(u32 width, u32 height, u32 max_level);
+
+/**
+ * Splits packed little-endian S8D24 pixels in-place into a four-byte depth plane followed by a
+ * one-byte stencil plane. The supplied span must contain exactly five bytes of staging storage per
+ * pixel. The first 4 * pixel_count bytes contain contiguous packed pixels and the final
+ * pixel_count bytes are scratch space for stencil output.
+ *
+ * @return Size in bytes of the depth plane.
+ */
+u32 UnpackDepthStencil(std::span<u8> data, DepthStencilUnpackMode mode);
 
 /**
  * Encodes a linear texture to the expected linear or tiled format.

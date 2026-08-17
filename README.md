@@ -84,6 +84,9 @@ This fork has moved away from stock Azahar in visible ways:
 - IA8, RG8, I8, A8, and IA4 texture expansion now uses `ZIP` plus ordinary paired Q stores rather
   than D-form `ST4`. Native packed RGB8/D24 Morton output similarly replaces D-form `ST3` with
   exact two-table shuffles and ordinary stores, avoiding the A510's slow structured-store paths.
+- Vulkan D24S8 uploads split sixteen packed pixels per AArch64 loop with ordinary paired loads,
+  shifts, `UZP`, and contiguous depth/stencil stores instead of a scalar loop per pixel. The exact
+  D32-float fallback is vectorized too, without reciprocal approximations.
 - Recycled Vulkan command chunks derive empty state from their actual linked-list head, avoiding
   an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Routine Vulkan timeline-counter polling runs once per four submissions; explicit waits and
@@ -186,6 +189,15 @@ respectively, versus `1/cycle` for a one-register `ST1`. Existing full-tile test
 directions, component order, bottom-up row placement, and padded strides; final ThinLTO confirms
 the target symbols contain no `ST3` or `ST4`. Whole-game and battery effects still require a
 controlled Thor A/B.
+
+Vulkan D24S8 staging deinterleave now processes sixteen packed S8D24 pixels per AArch64 band. The
+primary D24 path uses two ordinary paired Q loads, four `USHR`, three `UZP1`, two paired Q depth
+stores, and one Q stencil store in the final ThinLTO loop. Its core loop falls from ten scalar
+instructions per pixel to seventeen vector/control instructions per sixteen pixels. The exact
+D32-float fallback performs four vector `UCVTF`/`FDIV` operations per band instead of sixteen
+scalar divisions. Boundary, depth-edge, layout, mode, and canary tests compile into the ARM64 test
+binary. These are path-local generated-code improvements; Thor FPS and battery effects remain to
+be measured under controlled conditions.
 
 ## AArch64 Audio Updates
 

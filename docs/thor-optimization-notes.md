@@ -1344,6 +1344,56 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   then record texture-upload CPU time, frametimes, battery power, temperature, thermal slope,
   visual correctness, and stability.
 
+## 2026-08-17 AArch64 Vulkan D24S8 Staging Unpack
+
+- Vulkan uploads reserve five staging bytes per D24S8 pixel, then split contiguous little-endian
+  S8D24 input into a four-byte depth plane followed by a one-byte stencil plane before the buffer
+  copy. Final baseline ARM64 code did this strictly one pixel at a time. The native D24 loop
+  executed ten load/store/shift/bookkeeping instructions per pixel; the D32 fallback executed
+  thirteen and issued one scalar `FDIV` per pixel. This pixel-count-wide Vulkan path ranked above
+  Y2R and crypto setup work because it is in the active renderer, grows directly with uploaded
+  surface area, and had authoritative scalar ThinLTO evidence.
+- The relevant manual pages were visually checked before choosing the data layout. Cortex-A510
+  issue 6.0 pages 23-24 cover ordinary loads, page 43 lists `XTN`, page 44 lists `UZP`, page 45
+  lists one-register `LD1` at `2/cycle`, page 47 lists Q-form byte `LD4` at only `1/3`, and pages
+  39-40 list integer-to-float conversion plus Q-form F32 `FDIV` at `1/10`. Cortex-X3 issue 4.0
+  pages 18-19 cover ordinary loads, page 31 lists `XTN` at `4/cycle`, and page 32 lists `UZP` at
+  `4/cycle`. This favors ordinary vectors plus a narrowing/permute tree over structured `LD4` or
+  table constants on both the prime and efficiency ends of Thor. The external PDFs remain
+  uncommitted and indexed in `docs/hardware/README.md`.
+- `VideoCore::UnpackDepthStencil()` now handles sixteen pixels per AArch64 band. It loads all four
+  packed Q vectors before overwriting the in-place depth plane, shifts exact 24-bit depth values,
+  narrows the four low stencil-byte streams into one Q vector, and writes contiguous planes. The
+  native D24 mode stores shifted integers. The fallback converts with exact vector `UCVTF` and
+  `FDIV` by 16,777,215; it deliberately does not substitute reciprocal multiplication. All
+  non-AArch64 and sub-sixteen-pixel work retains the scalar expression.
+- Final ThinLTO improves on the source intrinsics: Clang folds the six-step narrowing expression
+  into three `UZP1` operations. The D24 loop is two `LDP Q`, four `USHR`, two `UZP1 .8H`, two
+  `STP Q`, one `UZP1 .16B`, one `STR Q`, and five loop/address instructions: seventeen executed
+  instructions per sixteen pixels versus the baseline 160, an 89.4% core-loop instruction-count
+  reduction. The D32 loop is twenty-five instructions per sixteen pixels versus the baseline 208,
+  an 88.0% reduction, and replaces sixteen scalar divisions with four four-lane `FDIV`. The new
+  shared helper is 496 bytes; moving conversion out of the Vulkan command lambda shrinks that
+  lambda from 4,616 to 4,424 bytes.
+- Permanent Catch2 coverage checks both depth modes at 0, 1, 3, 15, 16, 17, 31, 32, 33, 63, 64,
+  and 65 pixels. It includes zero, one, midpoint, top-edge, and patterned 24-bit depths, varied
+  stencil bytes, exact float bit patterns, returned depth-plane size, full output, and 32 bytes of
+  trailing canary. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1 minute 16 seconds,
+  compiling the tests and linking the full ELF64/AArch64 test executable plus final ThinLTO
+  library. The executable was not run because the host is x64 and this slice deliberately did not
+  use the Thor.
+- `:app:assembleVanillaRelWithDebInfoLite` then passed in 2 minutes 25 seconds. The resulting
+  28,964,523-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `65BEBCAF86469FC740A8C8E4D18DA02DA3CF6D31B4FF01E2DFF83C85D4007440`.
+- After verification, exact generated Gradle intermediates, the 444,353,384-byte ARM64 test
+  executable, and repo-local manual renders were removed. The APK and active ARM64 native cache
+  were retained; final cleanup increased free C: space by 2,018,963,456 bytes (about 1.88 GiB).
+  No source, external manual, save, or unrelated file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. Static codegen
+  proves much less CPU work when D24S8 staging is unpacked; it does not prove a whole-game speed or
+  wattage change. A future allowed matched A/B should record D24S8 upload CPU time alongside
+  frametimes, battery power, temperature, thermal slope, visual correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -45,6 +45,13 @@
   component order, bottom-up rows, padded stride, both swizzle directions, the scalar non-AArch64
   path, and the compile-time 24-byte shuffle proof. Final ThinLTO must be checked because
   Cortex-A510 documents these D-form byte stores at only `1/25` (`ST4`) and `1/17` (`ST3`).
+- Vulkan D24S8 staging unpack deliberately handles sixteen packed S8D24 pixels per AArch64 band.
+  Load the complete 64-byte band before overwriting its in-place depth plane, preserve the trailing
+  contiguous stencil plane, exact integer D24 shift, exact D32 `UCVTF`/`FDIV`, scalar tail, zero
+  length, and five-bytes-per-pixel contract. Final ThinLTO should retain ordinary paired Q loads,
+  four `USHR`, three `UZP1`, paired Q depth stores, and one Q stencil store; do not replace this
+  with `LD4`, a table constant, approximate reciprocal math, or per-pixel scalar work. Keep the
+  15/16/17 and 31/32/33 boundaries, depth edges, both modes, and canary coverage.
 - Vulkan `CommandChunk::Empty()` must derive emptiness from its linked-list head: successful first record sets `first`, and `ExecuteAll()` destroys every command before clearing it. Do not add a separate stale counter. Preserve the scheduler's queue-before-execution lock order and shared-condition-variable `notify_all` behavior; they prevent worker/waiter races.
 - Routine Vulkan timeline progress polling is deliberately limited to every fourth submitted tick, matching the command-buffer pool depth. Preserve immediate `Refresh()` calls for explicit waits and exhausted resource pools, monotonic cached completion, and conservative garbage-collection behavior; stale-low progress may delay reuse/deletion but must never permit unfinished GPU resources to be reused or destroyed.
 - Vulkan `current_tick` and `gpu_tick` are numerical sequence/completion caches, not memory-publication primitives. Keep their loads, increment, and monotonic `AdvanceGpuTick()` compare/exchange relaxed unless new side data is explicitly published through a tick; Vulkan submission/completion and the existing queue/fence mutexes provide the required ordering. Query the timeline-semaphore driver counter once per `Refresh()` and fold it into the cache with atomic max so a CAS retry never repeats the driver call or regresses known completion.

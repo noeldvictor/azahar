@@ -2,8 +2,10 @@
 // Licensed under GPLv2 or any later version
 
 #include <array>
+#include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "video_core/rasterizer_cache/texture_codec.h"
+#include "video_core/rasterizer_cache/utils.h"
 
 namespace {
 
@@ -243,6 +245,52 @@ void CheckD24S8() {
     encoded.fill(0xA5);
     VideoCore::MortonCopyTile<false, VideoCore::PixelFormat::D24S8, false>(10, encoded, decoded);
     REQUIRE(encoded == tiled);
+}
+
+template <bool depth_float>
+void CheckDepthStencilUnpack() {
+    constexpr std::array<u32, 12> pixel_counts = {0,  1,  3,  15, 16, 17,
+                                                  31, 32, 33, 63, 64, 65};
+    constexpr std::array<u32, 8> edge_depths = {
+        0, 1, 0x7FFFFF, 0x800000, 0xFFFFFE, 0xFFFFFF, 0x123456, 0xABCDEF,
+    };
+
+    for (const u32 pixel_count : pixel_counts) {
+        constexpr std::size_t canary_size = 32;
+        const std::size_t data_size = pixel_count * 5;
+        std::vector<u8> actual(data_size + canary_size, 0xA5);
+        const auto depth_for_pixel = [&](u32 pixel) {
+            return pixel < edge_depths.size()
+                       ? edge_depths[pixel]
+                       : (pixel * 0x1F123B + 0x654321) & 0xFFFFFF;
+        };
+        for (u32 pixel = 0; pixel < pixel_count; ++pixel) {
+            const u32 depth = depth_for_pixel(pixel);
+            const u8 stencil = static_cast<u8>(pixel * 73 + 19);
+            const u32 packed = depth << 8 | stencil;
+            std::memcpy(actual.data() + pixel * sizeof(packed), &packed, sizeof(packed));
+        }
+
+        auto expected = actual;
+        for (u32 pixel = 0; pixel < pixel_count; ++pixel) {
+            const u32 depth = depth_for_pixel(pixel);
+            expected[pixel_count * sizeof(u32) + pixel] = static_cast<u8>(pixel * 73 + 19);
+            if constexpr (depth_float) {
+                const float normalized = static_cast<float>(depth) / 16777215.0f;
+                std::memcpy(expected.data() + pixel * sizeof(u32), &normalized,
+                            sizeof(normalized));
+            } else {
+                std::memcpy(expected.data() + pixel * sizeof(u32), &depth, sizeof(depth));
+            }
+        }
+
+        const auto mode = depth_float ? VideoCore::DepthStencilUnpackMode::D32Float
+                                      : VideoCore::DepthStencilUnpackMode::D24Unorm;
+        const u32 depth_size = VideoCore::UnpackDepthStencil(
+            std::span{actual.data(), data_size}, mode);
+        REQUIRE(depth_size == pixel_count * sizeof(u32));
+        REQUIRE(actual == expected);
+    }
 }
 
 void CheckLinearConvertedRGBA8() {
@@ -545,5 +593,14 @@ TEST_CASE("PICA linear converted codec preserves pixel layout", "[video_core][te
     }
     SECTION("RGBA4 converted to RGBA8") {
         CheckLinearConverted16<VideoCore::PixelFormat::RGBA4>();
+    }
+}
+
+TEST_CASE("Vulkan depth-stencil staging unpack preserves planes", "[video_core][texture]") {
+    SECTION("D24 unorm depth") {
+        CheckDepthStencilUnpack<false>();
+    }
+    SECTION("D32 float depth") {
+        CheckDepthStencilUnpack<true>();
     }
 }

@@ -24,6 +24,8 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
 - Prefer vector permutation plus ordinary contiguous stores over byte/halfword `ST3` or `ST4`
   when the exact layout permits it; the A510 structured-store path is exceptionally slow.
+- For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
+  stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 
