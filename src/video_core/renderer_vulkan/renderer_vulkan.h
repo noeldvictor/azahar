@@ -91,7 +91,7 @@ private:
     void ConfigureFramebufferTexture(TextureInfo& texture,
                                      const Pica::FramebufferConfig& framebuffer);
     void ConfigureRenderPipeline();
-    void PrepareRendertarget();
+    void PrepareRendertarget(bool prepare_right_eye);
     void RenderScreenshot();
     void RenderScreenshotWithStagingCopy();
     bool TryRenderScreenshotWithHostMemory();

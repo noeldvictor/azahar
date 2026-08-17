@@ -25,6 +25,19 @@ enum class ScreenId : u32 {
     Bottom,
 };
 
+/// Returns whether drawing this layout can sample the top-screen right-eye image.
+constexpr bool PresentationNeedsRightEye(const Layout::FramebufferLayout& layout,
+                                         Settings::MonoRenderOption mono_render_option) {
+    const bool presents_top = layout.top_screen_enabled || (layout.additional_screen_enabled &&
+                                                            !layout.additional_screen_is_bottom);
+    if (!presents_top) {
+        return false;
+    }
+
+    return layout.render_3d_mode != Settings::StereoRenderOption::Off ||
+           mono_render_option == Settings::MonoRenderOption::RightEye;
+}
+
 struct RendererSettings {
     // Screenshot
     std::atomic_bool screenshot_requested{false};

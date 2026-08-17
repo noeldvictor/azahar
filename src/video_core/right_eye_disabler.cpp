@@ -59,6 +59,7 @@ void RightEyeDisabler::ReportEndFrame() {
     if (!enabled)
         return;
 
+    right_eye_skipped_for_presentation |= enable_for_frame && top_screen_blocked;
     enable_for_frame = Settings::values.disable_right_eye_render.GetValue();
 
     if (display_tranfer_happened) {

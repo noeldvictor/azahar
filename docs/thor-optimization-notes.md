@@ -2709,6 +2709,53 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `.cxx` cache is 2,786,934,832 bytes and `app/build` contains only the 28,969,947-byte APK. No
   device, ADB, install, launch, game, FPS, battery, wattage, temperature, or visual run was used.
 
+## 2026-08-17 Layout-Aware Right-Eye Presentation Elision
+
+- Command-line Git over SSH fetched upstream Azahar `fb1c1a710` (`video_core: Fix some pica
+  command handling issues (#2412)`) and merged it directly into `master` as `d60d706e8`. The
+  upstream fix hardens PICA LUT wrapping, out-of-range float-uniform writes, and sequential-register
+  batches. The fork's AArch64 PICA paths survived the merge, and the post-merge ARM64 native build
+  passed before this optimization began.
+- OpenGL and Vulkan previously prepared all three presentation images whenever any frame,
+  screenshot, or OpenGL frame dump was due. Normal mono-left output cannot sample the top-right
+  image, and a bottom-only layout cannot sample either top image, yet the renderer still performed
+  the right framebuffer surface lookup and `AccelerateDisplay()`/fallback upload path every
+  qualifying presentation.
+- Presentation now forms the union of the main, secondary, screenshot, and frame-dump layouts.
+  Top stereo modes and explicit mono-right retain the real right-eye resolve; mono-left and
+  bottom-only output alias the current left presentation image and texture coordinates into the
+  still-valid right descriptor slot and skip the right-eye load. Additional-top layouts count as a
+  top consumer. The right fallback texture remains configured so a later mode change is safe.
+- `RightEyeDisabler` records whether the completed frame actually blocked its right-eye transfer.
+  Presentation consumes that fact once, only when a render target is actually prepared, and aliases
+  left even if a stereo layout is selected. A throttled/non-presented VBlank leaves it pending, so a
+  later presentation cannot sample the deliberately stale right buffer. This deliberately does not
+  key off the checkbox alone because the hack's per-title detection may turn itself off.
+- Permanent Catch2 coverage exercises mono-left, mono-right, all six stereo modes, disabled top,
+  additional top, and additional bottom layouts. The full ARM64 native target compiled both
+  renderers and the new test translation unit, then linked the ELF64/AArch64 test executable and
+  production `libcitra-android.so` successfully after the final lifecycle hardening in 1 minute
+  29 seconds. The ARM64 tests were not run
+  because device execution remains excluded.
+- Final AArch64 ThinLTO disassembly retains the boolean branch in both
+  `PrepareRendertarget(bool)` implementations. On the false branch, OpenGL copies the left texture
+  handle plus coordinates and bypasses `LoadFBToScreenInfo`; Vulkan copies the left image view plus
+  coordinates and bypasses its corresponding load. `RightEyeDisabler::ReportEndFrame()` lowers to
+  compact byte tests and an OR/store for the consumed presentation state.
+- This removes one right-eye surface lookup/resolve per qualifying presented frame. A CPU fallback
+  would also avoid its flush and texture upload. Exact time and power saved depend on whether the
+  framebuffer is accelerated and on the active display layout, so this is not a defensible
+  whole-game FPS or wattage percentage without a controlled Thor A/B run.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 1 minute
+  49 seconds. The package contains only `arm64-v8a`, is 28,969,603 bytes, and has SHA-256
+  `7DC1E017576271CE78E71644AD7290062D7EF09D6B5544DA1AB9D23CFFBC0129`.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while removing
+  2,469,127,412 logical bytes of APK/JNI/native staging, the 446,510,544-byte ARM64 test ELF, helper
+  executables, mappings, symbols, Kotlin/R8 output, and local Gradle state. Reported C: free space
+  increased by 2,029,428,736 bytes to 109,022,683,136. The retained `.cxx` cache is
+  2,781,397,898 bytes and `app/build` contains only the final APK. No device, ADB, install, launch,
+  game, FPS, battery, wattage, temperature, or visual run was used.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

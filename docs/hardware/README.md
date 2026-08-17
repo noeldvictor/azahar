@@ -20,6 +20,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 ## Guidance already applied
 
 - Keep compatible render work inside render passes/GMEM and avoid unnecessary resolves or mid-pass dependencies.
+- Do not resolve a stereo presentation surface that no active layout can sample. For mono-left or
+  bottom-only output, preserve a valid descriptor by aliasing the current left image and skip the
+  right-eye surface lookup/upload. This applies the Adreno guide's avoid-unnecessary-resolve rule
+  directly and removes CPU/cache/driver work without assuming a specific Arm instruction. Retain
+  the real right-eye resolve for stereo and mono-right output, and use actual frame-skip state rather
+  than a settings checkbox when a compatibility hack can be disabled per title.
 - Use Snapdragon Profiler to verify concurrent binning; do not infer it from source structure alone.
 - Treat memory writes, texture uploads, and CPU wakeups as power costs, not only frame-time costs.
 - Prefer vector permutation plus ordinary contiguous stores over byte/halfword `ST3` or `ST4`

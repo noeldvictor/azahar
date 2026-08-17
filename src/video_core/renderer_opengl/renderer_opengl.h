@@ -57,7 +57,7 @@ public:
 private:
     void InitOpenGLObjects();
     void ReloadShader(Settings::StereoRenderOption render_3d);
-    void PrepareRendertarget();
+    void PrepareRendertarget(bool prepare_right_eye);
     void RenderScreenshot();
     void RenderToMailbox(const Layout::FramebufferLayout& layout,
                          std::unique_ptr<Frontend::TextureMailbox>& mailbox, bool flipped);

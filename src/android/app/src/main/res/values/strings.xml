@@ -342,7 +342,7 @@
     <string name="factor3d">Depth</string>
     <string name="factor3d_description">Specifies the value of the 3D slider. This should be set to higher than 0% when Stereoscopic 3D is enabled.\nNote: Depth values over 100% are not possible on real hardware and may cause graphical issues</string>
     <string name="disable_right_eye_render">Disable Right Eye Render</string>
-    <string name="disable_right_eye_render_description">Greatly improves performance in some applications, but can cause flickering in others.</string>
+    <string name="disable_right_eye_render_description">Skips compatible games\' right-eye draw and transfer work. A skipped eye displays the current left image instead of stale data, but some games may still flicker.</string>
     <string name="swap_eyes_3d">Swap Eyes</string>
     <string name="swap_eyes_3d_description">Swaps which eye is shown in which side. Combined with Side by Side mode makes it possible to see 3D by crossing your eyes!</string>
     <string name="render_3d_which_display">Render Stereoscopic 3D</string>

@@ -9,11 +9,13 @@
 #include "core/frontend/emu_window.h"
 #include "core/frontend/framebuffer_layout.h"
 #include "core/memory.h"
+#include "video_core/gpu.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_opengl/gl_state.h"
 #include "video_core/renderer_opengl/gl_texture_mailbox.h"
 #include "video_core/renderer_opengl/post_processing_opengl.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
+#include "video_core/right_eye_disabler.h"
 #include "video_core/shader/generator/glsl_shader_gen.h"
 
 #include "video_core/host_shaders/opengl_present_anaglyph_frag.h"
@@ -112,8 +114,29 @@ void RendererOpenGL::SwapBuffers() {
 
     render_window.SetupFramebuffer();
 
-    if (should_present || IsScreenshotPending() || frame_dumper.IsDumping()) {
-        PrepareRendertarget();
+    const auto& main_layout = render_window.GetFramebufferLayout();
+    const bool screenshot_pending = IsScreenshotPending();
+    const bool frame_dumping = frame_dumper.IsDumping();
+    const auto mono_render_option = Settings::values.mono_render_option.GetValue();
+    bool prepare_right_eye =
+        should_present && VideoCore::PresentationNeedsRightEye(main_layout, mono_render_option);
+    if (should_present && secondaryWindowEnabled) {
+        prepare_right_eye |= VideoCore::PresentationNeedsRightEye(
+            secondary_window->GetFramebufferLayout(), mono_render_option);
+    }
+    if (screenshot_pending) {
+        prepare_right_eye |= VideoCore::PresentationNeedsRightEye(
+            settings.screenshot_framebuffer_layout, mono_render_option);
+    }
+    if (frame_dumping) {
+        prepare_right_eye |=
+            VideoCore::PresentationNeedsRightEye(frame_dumper.GetLayout(), mono_render_option);
+    }
+    const bool prepare_rendertarget = should_present || screenshot_pending || frame_dumping;
+    if (prepare_rendertarget) {
+        prepare_right_eye &=
+            !system.GPU().GetRightEyeDisabler().ConsumeRightEyeSkippedForPresentation();
+        PrepareRendertarget(prepare_right_eye);
         RenderScreenshot();
     }
     isSecondaryWindow = false;
@@ -121,7 +144,6 @@ void RendererOpenGL::SwapBuffers() {
     DrawScreens(render_window.GetFramebufferLayout(), false);
     render_window.SwapBuffers();
 #else
-    const auto& main_layout = render_window.GetFramebufferLayout();
     if (should_present) {
         RenderToMailbox(main_layout, render_window.mailbox, false);
     }
@@ -147,7 +169,7 @@ void RendererOpenGL::SwapBuffers() {
     }
 #endif
 
-    if (frame_dumper.IsDumping()) {
+    if (frame_dumping) {
         try {
             RenderToMailbox(frame_dumper.GetLayout(), frame_dumper.mailbox, true);
         } catch (const OGLTextureMailboxException& exception) {
@@ -195,7 +217,7 @@ void RendererOpenGL::RenderScreenshot() {
     }
 }
 
-void RendererOpenGL::PrepareRendertarget() {
+void RendererOpenGL::PrepareRendertarget(bool prepare_right_eye) {
     const auto& framebuffer_config = pica.regs.framebuffer_config;
     const auto& regs_lcd = pica.regs_lcd;
     for (u32 i = 0; i < 3; i++) {
@@ -213,6 +235,14 @@ void RendererOpenGL::PrepareRendertarget() {
         if (texture.width != framebuffer.width || texture.height != framebuffer.height ||
             texture.format != framebuffer.color_format) {
             ConfigureFramebufferTexture(texture, framebuffer, color_fill);
+        }
+
+        if (i == static_cast<u32>(VideoCore::ScreenId::TopRight) && !prepare_right_eye) {
+            // Keep the right texture object available for later mode changes, but avoid the
+            // per-frame surface lookup/upload and present the current left eye through this slot.
+            screen_infos[i].display_texture = screen_infos[0].display_texture;
+            screen_infos[i].display_texcoords = screen_infos[0].display_texcoords;
+            continue;
         }
         LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1, color_fill);
     }

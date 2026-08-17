@@ -14,6 +14,7 @@
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
 #include "video_core/renderer_vulkan/vk_memory_util.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/right_eye_disabler.h"
 
 #include "video_core/host_shaders/vulkan_present_anaglyph_frag.h"
 #include "video_core/host_shaders/vulkan_present_anime4k_frag.h"
@@ -163,15 +164,29 @@ RendererVulkan::~RendererVulkan() {
     device.destroyShaderModule(cursor_fragment_shader);
 }
 
-void RendererVulkan::PrepareRendertarget() {
+void RendererVulkan::PrepareRendertarget(bool prepare_right_eye) {
     const auto& framebuffer_config = pica.regs.framebuffer_config;
     const auto& regs_lcd = pica.regs_lcd;
     for (u32 i = 0; i < 3; i++) {
         const u32 fb_id = i == 2 ? 1 : 0;
         const auto& framebuffer = framebuffer_config[fb_id];
         auto& texture = screen_infos[i].texture;
-
         const auto color_fill = fb_id == 0 ? regs_lcd.color_fill_top : regs_lcd.color_fill_bottom;
+
+        if (i == static_cast<u32>(VideoCore::ScreenId::TopRight) && !prepare_right_eye) {
+            // The descriptor array still needs a valid entry for every screen. Alias the current
+            // left image instead of resolving a right-eye surface that no active layout consumes.
+            // When the right-eye rendering hack is enabled this also prevents presentation from
+            // sampling the deliberately stale right-eye framebuffer.
+            if (texture.width != framebuffer.width || texture.height != framebuffer.height ||
+                texture.format != framebuffer.color_format) {
+                ConfigureFramebufferTexture(texture, framebuffer);
+            }
+            screen_infos[i].image_view = screen_infos[0].image_view;
+            screen_infos[i].texcoords = screen_infos[0].texcoords;
+            continue;
+        }
+
         if (color_fill.is_enabled) {
             screen_infos[i].image_view = texture.image_view;
             FillScreen(color_fill.AsVector(), texture);
@@ -1154,8 +1169,23 @@ void RendererVulkan::SwapBuffers() {
 #endif
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
-    if (should_present || IsScreenshotPending()) {
-        PrepareRendertarget();
+    const bool screenshot_pending = IsScreenshotPending();
+    const auto mono_render_option = Settings::values.mono_render_option.GetValue();
+    bool prepare_right_eye =
+        should_present && VideoCore::PresentationNeedsRightEye(layout, mono_render_option);
+    if (should_present && secondaryWindowEnabled) {
+        prepare_right_eye |= VideoCore::PresentationNeedsRightEye(
+            secondary_window->GetFramebufferLayout(), mono_render_option);
+    }
+    if (screenshot_pending) {
+        prepare_right_eye |= VideoCore::PresentationNeedsRightEye(
+            settings.screenshot_framebuffer_layout, mono_render_option);
+    }
+    const bool prepare_rendertarget = should_present || screenshot_pending;
+    if (prepare_rendertarget) {
+        prepare_right_eye &=
+            !system.GPU().GetRightEyeDisabler().ConsumeRightEyeSkippedForPresentation();
+        PrepareRendertarget(prepare_right_eye);
         RenderScreenshot();
     }
     isSecondaryWindow = false;

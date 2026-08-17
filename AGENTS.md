@@ -295,6 +295,16 @@
   gap/output-condition predicate tests plus null-staging transfer/state coverage, and keep the
   hidden test hook absent from the production library.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
+- OpenGL and Vulkan presentation deliberately resolve the top-screen right eye only when an active
+  main, secondary, screenshot, or frame-dump layout can sample it. Mono-left and bottom-only
+  layouts must skip the per-frame right surface lookup/upload; stereo modes and explicit mono-right
+  must retain it. If `RightEyeDisabler` actually blocked the just-finished eye, consume that fact
+  once only when preparing a render target, and alias the current left presentation image plus
+  coordinates into the right descriptor slot. A throttled/non-presented VBlank must leave the fact
+  pending. Do not infer a skipped eye from the setting alone: per-title detection can disable the hack.
+  Keep the fallback right texture allocated/configured for later mode changes, include additional-
+  top layouts in the predicate, and retain focused layout coverage plus final AArch64 branch/codegen
+  inspection.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

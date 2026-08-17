@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <utility>
 #include "common/common_types.h"
 
 namespace VideoCore {
@@ -22,6 +23,12 @@ public:
         enabled = enable;
     }
 
+    /// Returns whether the just-finished frame deliberately skipped its right eye. The result is
+    /// consumed once by presentation so a later frame cannot inherit stale skip state.
+    bool ConsumeRightEyeSkippedForPresentation() {
+        return std::exchange(right_eye_skipped_for_presentation, false);
+    }
+
 private:
     bool enabled = true;
     bool enable_for_frame = true;
@@ -35,6 +42,7 @@ private:
     bool cmd_queue_trigger_happened = false;
     bool display_tranfer_happened = false;
     bool report_end_frame_pending = false;
+    bool right_eye_skipped_for_presentation = false;
 
     GPU& gpu;
 };

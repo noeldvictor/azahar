@@ -133,6 +133,11 @@ This fork has moved away from stock Azahar in visible ways:
   resource-pool pressure still refresh immediately, removing up to 75% of scheduled driver polls.
 - Vulkan sequence/completion counters now use numerical-only relaxed ARM64 atomics and a monotonic
   atomic max; a refresh queries the driver once even if its cache update races.
+- OpenGL and Vulkan presentation skip the top-right framebuffer resolve when every active layout
+  uses mono-left or bottom-only output. When the right-eye rendering hack actually skips an eye,
+  presentation duplicates the current left image instead of sampling the stale right buffer. This
+  removes one right-eye surface lookup/resolve per qualifying presented frame; it is a renderer-work
+  reduction, not a measured whole-game FPS or battery-watt result.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
