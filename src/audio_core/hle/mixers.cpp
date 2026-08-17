@@ -11,6 +11,7 @@
 #endif
 #include "audio_core/hle/mixers.h"
 #include "common/assert.h"
+#include "common/common_funcs.h"
 #include "common/logging/log.h"
 
 namespace AudioCore::HLE {
@@ -136,6 +137,7 @@ static void CopyPlanarToShared(s32_le (&output)[4][samples_per_frame],
 }
 
 #if defined(__aarch64__)
+template <bool Accumulate>
 static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
                               const PlanarQuadFrame32& samples) {
     static_assert(samples_per_frame % 8 == 0);
@@ -143,8 +145,6 @@ static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
-        int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
-
         const float32x4_t front_left_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
         const float32x4_t front_left_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
         const float32x4_t front_right_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
@@ -165,17 +165,24 @@ static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
         right_1 = vfmaq_f32(right_1, front_right_1, gain_vec);
 
         const int16x8_t left_s16 =
-            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(left_0)),
-                         vqmovn_s32(vcvtq_s32_f32(left_1)));
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(left_0)), vqmovn_s32(vcvtq_s32_f32(left_1)));
         const int16x8_t right_s16 =
-            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(right_0)),
-                         vqmovn_s32(vcvtq_s32_f32(right_1)));
-        accumulator.val[0] = vqaddq_s16(accumulator.val[0], left_s16);
-        accumulator.val[1] = vqaddq_s16(accumulator.val[1], right_s16);
-        vst2q_s16(current_frame[sample].data(), accumulator);
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(right_0)), vqmovn_s32(vcvtq_s32_f32(right_1)));
+
+        int16x8x2_t output;
+        if constexpr (Accumulate) {
+            const int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
+            output.val[0] = vqaddq_s16(accumulator.val[0], left_s16);
+            output.val[1] = vqaddq_s16(accumulator.val[1], right_s16);
+        } else {
+            output.val[0] = left_s16;
+            output.val[1] = right_s16;
+        }
+        vst2q_s16(current_frame[sample].data(), output);
     }
 }
 
+template <bool Accumulate>
 static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
                             const PlanarQuadFrame32& samples) {
     static_assert(samples_per_frame % 8 == 0);
@@ -183,8 +190,6 @@ static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
     for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
-        int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
-
         const float32x4_t channel_0_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
         const float32x4_t channel_0_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
         const float32x4_t channel_1_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
@@ -207,29 +212,43 @@ static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
         mono_1 = vmulq_n_f32(mono_1, 0.5f);
 
         const int16x8_t mono_s16 =
-            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(mono_0)),
-                         vqmovn_s32(vcvtq_s32_f32(mono_1)));
-        accumulator.val[0] = vqaddq_s16(accumulator.val[0], mono_s16);
-        accumulator.val[1] = vqaddq_s16(accumulator.val[1], mono_s16);
-        vst2q_s16(current_frame[sample].data(), accumulator);
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(mono_0)), vqmovn_s32(vcvtq_s32_f32(mono_1)));
+
+        int16x8x2_t output;
+        if constexpr (Accumulate) {
+            const int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
+            output.val[0] = vqaddq_s16(accumulator.val[0], mono_s16);
+            output.val[1] = vqaddq_s16(accumulator.val[1], mono_s16);
+        } else {
+            output.val[0] = mono_s16;
+            output.val[1] = mono_s16;
+        }
+        vst2q_s16(current_frame[sample].data(), output);
     }
 }
 #endif
 
-void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples) {
+void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples,
+                                           bool accumulate) {
     // TODO(merry): Limiter. (Currently we're performing final mixing assuming a disabled limiter.)
 
     switch (state.output_format) {
     case OutputFormat::Mono:
 #if defined(__aarch64__)
-        DownmixMonoNEON(current_frame, gain, samples);
+        if (accumulate) {
+            DownmixMonoNEON<true>(current_frame, gain, samples);
+        } else {
+            DownmixMonoNEON<false>(current_frame, gain, samples);
+        }
 #else
         for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
-            const s16 mono = ClampToS16(static_cast<s32>(
-                (gain * samples[0][sample] + gain * samples[1][sample] +
-                 gain * samples[2][sample] + gain * samples[3][sample]) /
-                2));
-            current_frame[sample] = AddAndClampToS16(current_frame[sample], {mono, mono});
+            const s16 mono = ClampToS16(
+                static_cast<s32>((gain * samples[0][sample] + gain * samples[1][sample] +
+                                  gain * samples[2][sample] + gain * samples[3][sample]) /
+                                 2));
+            const std::array<s16, 2> mixed{mono, mono};
+            current_frame[sample] =
+                accumulate ? AddAndClampToS16(current_frame[sample], mixed) : mixed;
         }
 #endif
         return;
@@ -240,14 +259,20 @@ void Mixers::DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& 
 
     case OutputFormat::Stereo:
 #if defined(__aarch64__)
-        DownmixStereoNEON(current_frame, gain, samples);
+        if (accumulate) {
+            DownmixStereoNEON<true>(current_frame, gain, samples);
+        } else {
+            DownmixStereoNEON<false>(current_frame, gain, samples);
+        }
 #else
         for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
             const s16 left =
                 ClampToS16(static_cast<s32>(gain * samples[0][sample] + gain * samples[2][sample]));
             const s16 right =
                 ClampToS16(static_cast<s32>(gain * samples[1][sample] + gain * samples[3][sample]));
-            current_frame[sample] = AddAndClampToS16(current_frame[sample], {left, right});
+            const std::array<s16, 2> mixed{left, right};
+            current_frame[sample] =
+                accumulate ? AddAndClampToS16(current_frame[sample], mixed) : mixed;
         }
 #endif
         return;
@@ -283,8 +308,8 @@ void Mixers::AuxSend(IntermediateMixSamples& write_samples,
     }
 }
 
-void Mixers::MixCurrentFrame() {
-    current_frame.fill({});
+CITRA_NO_INLINE void Mixers::MixCurrentFrame() {
+    bool has_output = false;
 
     // TODO(SachinV): This is probably not accurate, based on symbols from FE:Fates,
     // state.intermediate_mixer_volume[0] represents the master volume
@@ -293,8 +318,16 @@ void Mixers::MixCurrentFrame() {
         // Integer mix samples multiplied by either sign of zero cannot affect the s16 output.
         // Keep NaN on the arithmetic path so the existing conversion behavior remains unchanged.
         if (gain != 0.0f) {
-            DownmixAndMixIntoCurrentFrame(gain, state.intermediate_mix_buffer[mix]);
+            // The first audible bus can define the complete frame directly. Later buses retain
+            // the original per-bus clamp followed by saturating accumulation.
+            DownmixAndMixIntoCurrentFrame(gain, state.intermediate_mix_buffer[mix], has_output);
+            has_output = true;
         }
+    }
+
+    // Preserve silence when every bus is zero, including after a previously audible frame.
+    if (!has_output) {
+        current_frame.fill({});
     }
 
     // TODO(merry): Compressor. (We currently assume a disabled compressor.)

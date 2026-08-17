@@ -15,31 +15,27 @@ s16 ClampToS16(s32 value) {
     return static_cast<s16>(std::clamp(value, -32768, 32767));
 }
 
-AudioCore::StereoFrame16 ReferenceMix(
-    DspConfiguration::OutputFormat format, const std::array<float, 3>& gains,
-    const std::array<AudioCore::PlanarQuadFrame32, 3>& input) {
+AudioCore::StereoFrame16 ReferenceMix(DspConfiguration::OutputFormat format,
+                                      const std::array<float, 3>& gains,
+                                      const std::array<AudioCore::PlanarQuadFrame32, 3>& input) {
     AudioCore::StereoFrame16 output{};
     for (std::size_t mix = 0; mix < input.size(); ++mix) {
         const float gain = gains[mix];
         for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
             if (format == DspConfiguration::OutputFormat::Mono) {
-                const s16 mono = ClampToS16(static_cast<s32>(
-                    (gain * input[mix][0][sample] + gain * input[mix][1][sample] +
-                     gain * input[mix][2][sample] + gain * input[mix][3][sample]) /
-                    2));
-                output[sample][0] =
-                    ClampToS16(static_cast<s32>(output[sample][0]) + mono);
-                output[sample][1] =
-                    ClampToS16(static_cast<s32>(output[sample][1]) + mono);
+                const s16 mono = ClampToS16(
+                    static_cast<s32>((gain * input[mix][0][sample] + gain * input[mix][1][sample] +
+                                      gain * input[mix][2][sample] + gain * input[mix][3][sample]) /
+                                     2));
+                output[sample][0] = ClampToS16(static_cast<s32>(output[sample][0]) + mono);
+                output[sample][1] = ClampToS16(static_cast<s32>(output[sample][1]) + mono);
             } else {
-                const s16 left = ClampToS16(static_cast<s32>(
-                    gain * input[mix][0][sample] + gain * input[mix][2][sample]));
-                const s16 right = ClampToS16(static_cast<s32>(
-                    gain * input[mix][1][sample] + gain * input[mix][3][sample]));
-                output[sample][0] =
-                    ClampToS16(static_cast<s32>(output[sample][0]) + left);
-                output[sample][1] =
-                    ClampToS16(static_cast<s32>(output[sample][1]) + right);
+                const s16 left = ClampToS16(
+                    static_cast<s32>(gain * input[mix][0][sample] + gain * input[mix][2][sample]));
+                const s16 right = ClampToS16(
+                    static_cast<s32>(gain * input[mix][1][sample] + gain * input[mix][3][sample]));
+                output[sample][0] = ClampToS16(static_cast<s32>(output[sample][0]) + left);
+                output[sample][1] = ClampToS16(static_cast<s32>(output[sample][1]) + right);
             }
         }
     }
@@ -78,6 +74,37 @@ void CheckMix(DspConfiguration::OutputFormat format,
     mixers.Tick(config, read_samples, write_samples, input);
 
     REQUIRE(mixers.GetOutput() == ReferenceMix(format, gains, input));
+}
+
+void CheckSilentAfterAudible(DspConfiguration::OutputFormat format) {
+    std::array<AudioCore::PlanarQuadFrame32, 3> input{};
+    for (std::size_t mix = 0; mix < input.size(); ++mix) {
+        for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+            for (std::size_t channel = 0; channel < 4; ++channel) {
+                input[mix][channel][sample] = static_cast<s32>((mix + 1) * 100000) +
+                                              static_cast<s32>(sample * 997) +
+                                              static_cast<s32>(channel * 7919) - 170000;
+            }
+        }
+    }
+
+    DspConfiguration config{};
+    config.master_volume = 0.5f;
+    config.master_volume_dirty.Assign(1);
+    config.output_format = format;
+    config.output_format_dirty.Assign(1);
+
+    AudioCore::HLE::IntermediateMixSamples read_samples{};
+    AudioCore::HLE::IntermediateMixSamples write_samples{};
+    AudioCore::HLE::Mixers mixers;
+    mixers.Tick(config, read_samples, write_samples, input);
+    REQUIRE(mixers.GetOutput() != AudioCore::StereoFrame16{});
+
+    config.master_volume = -0.0f;
+    config.master_volume_dirty.Assign(1);
+    mixers.Tick(config, read_samples, write_samples, input);
+
+    REQUIRE(mixers.GetOutput() == AudioCore::StereoFrame16{});
 }
 
 TEST_CASE("HLE mixer auxiliary buses preserve planar samples", "[audio_core][hle][mixers]") {
@@ -148,5 +175,17 @@ TEST_CASE("HLE mixer downmix matches scalar saturation", "[audio_core][hle][mixe
     }
     SECTION("Stereo skips signed-zero buses") {
         CheckMix(DspConfiguration::OutputFormat::Stereo, {0.5f, -0.0f, 0.0f});
+    }
+    SECTION("Mono first audible auxiliary bus defines output") {
+        CheckMix(DspConfiguration::OutputFormat::Mono, {-0.0f, 0.25f, 0.0f});
+    }
+    SECTION("Stereo first audible final bus defines output") {
+        CheckMix(DspConfiguration::OutputFormat::Stereo, {0.0f, -0.0f, 0.125f});
+    }
+    SECTION("Mono all-silent frame clears prior output") {
+        CheckSilentAfterAudible(DspConfiguration::OutputFormat::Mono);
+    }
+    SECTION("Stereo all-silent frame clears prior output") {
+        CheckSilentAfterAudible(DspConfiguration::OutputFormat::Stereo);
     }
 }

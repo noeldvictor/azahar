@@ -2130,6 +2130,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   time and placement, underruns, frametimes, battery power, temperature, and thermal slope with the
   title, scene, renderer, driver, resolution, display layout, fan, and performance mode fixed.
 
+## 2026-08-17 First-Audible-Bus Final Mix
+
+- `Mixers::MixCurrentFrame()` previously cleared its complete 640-byte stereo output before
+  examining three intermediate buses. The first audible bus then loaded those zeros through
+  twenty Q-form `LD2` instructions and executed forty lane-wise saturating adds. Each bus
+  contribution is already independently clamped to signed 16-bit, so its saturating addition to
+  known zero is exactly the contribution itself.
+- The mixer now skips leading signed-zero buses and lets the first audible main or auxiliary bus
+  define the output directly. Every nonzero or NaN gain still takes the arithmetic path. Later
+  audible buses retain the original per-bus clamp followed by saturating accumulation, preserving
+  order-dependent clipping. If all three buses are silent, the complete output is cleared so an
+  audible previous frame cannot leak. Aux send/return, persistent intermediate buffers, Mono,
+  Stereo, and Surround-as-Stereo behavior are unchanged.
+- The AArch64 Stereo and Mono downmixers use compile-time direct and accumulated variants, with the
+  choice made once outside the 160-sample loop. The non-AArch64 scalar path implements the same
+  distinction. `MixCurrentFrame()` is deliberately `CITRA_NO_INLINE`; without that barrier ThinLTO
+  duplicated the full mixer into `Tick()`, while the retained form keeps `Tick()` at its baseline
+  236 bytes.
+- Production ThinLTO immediately before the change emitted common inlined Stereo/Mono bodies of
+  40/38 instructions per eight samples. The direct first-main-bus bodies are now 36/35, with no
+  output `LD2` or `SQADD`, removing 80/60 repeated instructions per 160-sample frame. This also
+  removes the 640-byte initial clear and 640 bytes of output reloads: 1,280 bytes per frame, or
+  261,824 bytes/second at 32,728 Hz. Later accumulated Stereo/Mono paths remain 38/36 instructions
+  and retain their output load plus two saturating adds.
+- The code-size trade is 372 bytes across the outlined implementation: `MixCurrentFrame()` grows
+  by 80 bytes and the downmix dispatcher by 292 bytes. That prevents work in the common path at a
+  small instruction-cache cost while avoiding the much larger ThinLTO duplication into `Tick()`.
+- Focused Catch2 coverage retains exact scalar saturation checks for Mono, Stereo, Surround, and
+  multiple active buses, and adds first-audible auxiliary/final-bus cases plus an audible frame
+  followed by an all-silent frame for both Mono and Stereo. The production shared library and full
+  ELF64/AArch64 test executable compile and link successfully; the executable was not run on this
+  x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 22 seconds and produced an ARM64-only
+  28,966,155-byte APK with SHA-256
+  `EB4E9DA3446929B240BDA3CFC97D8818160C5869B526C7DC67F42F06B7B0AC8F`.
+- After verification, 2,334,803,746 logical bytes of the native test executable and disposable
+  Gradle intermediates were removed. Reported C: free space increased by 1,818,783,744 bytes; the
+  final APK and active ARM64 RelWithDebInfo CMake cache remain in the repository workspace.
+- No device, ADB, install, launch, game run, FPS test, or battery measurement was used. This is an
+  exact final-mixer instruction and memory-traffic reduction, not a whole-game speed or wattage
+  result. A future allowed Thor A/B should hold title, scene, save, caches, renderer, resolution,
+  driver, display layout, performance/fan mode, brightness, audio backend, speed limit, and
+  duration constant, then record DSP/audio-thread time, audio underruns, frametimes, battery power,
+  temperature, thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -133,14 +133,18 @@
   nested `std::array` pointer within its own array object instead of relying on cross-subarray
   pointer arithmetic. Recheck final ThinLTO and the front/rear destination canaries after edits.
 - The final HLE mixer skips a 160-sample downmix only when that bus's frame-wide mixer volume
-  compares equal to exact signed zero. Preserve `current_frame` clearing, aux send/return copies,
-  saved intermediate buffers, and every nonzero or NaN volume's arithmetic path. Final AArch64
-  ThinLTO should retain one `FCMP`/`B.EQ` before the output-format dispatch in both `Mixers::Tick()`
-  and the outlined `MixCurrentFrame()`. Active AArch64 stereo/mono downmix deliberately handles
-  eight samples with Q-form `LD2`/`ST2`, `SQXTN2`, and `.8h` saturating adds; keep the exact scalar
-  multiply/FMA order in each four-lane half. Final linked loops should remain 39/37 instructions
-  per eight samples with no D-form structured memory operation, extra `UZP`/`ZIP`, or vector spill.
-  Keep signed-zero Mono and Stereo regression coverage.
+  compares equal to exact signed zero; every nonzero or NaN volume retains the arithmetic path.
+  The first audible bus, including an auxiliary bus after leading signed-zero buses, must define
+  `current_frame` directly from its already-clamped contribution. Later audible buses retain the
+  original per-bus clamp followed by saturating accumulation, and an all-silent frame must clear
+  the complete output even after an audible prior frame. Preserve aux send/return copies, saved
+  intermediate buffers, Surround's Stereo behavior, and exact multiply/FMA/conversion order.
+  Keep `MixCurrentFrame()` `CITRA_NO_INLINE`: final ThinLTO should leave `Mixers::Tick()` at 236
+  bytes rather than duplicating the full mixer. The common first-bus AArch64 Stereo/Mono loops
+  should remain 36/35 instructions per eight samples with Q-form `ST2` and no output `LD2` or
+  `SQADD`; later accumulated paths deliberately retain their output `LD2` and two `SQADD` at 38/36
+  instructions. Keep multiple-bus saturation, signed-zero, first-audible-aux, and silent-after-
+  audible Mono/Stereo regression coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

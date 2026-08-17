@@ -89,8 +89,9 @@ private:
     /// INTERNAL: Mix current_frame.
     void MixCurrentFrame();
     /// INTERNAL: Downmix from quadraphonic to stereo based on status.output_format and accumulate
-    /// into current_frame.
-    void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples);
+    /// into current_frame, or define it directly for the first audible bus.
+    void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples,
+                                       bool accumulate);
     /// INTERNAL: Generate DspStatus based on internal state.
     DspStatus GetCurrentStatus() const;
 

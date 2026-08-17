@@ -354,15 +354,21 @@ verify exact front output and untouched rear buffers for steady and ramped routi
 and battery effects still require a matched Thor run.
 
 The final HLE mixer also bypasses a bus's complete 160-sample downmix when its frame-wide volume is
-exact `+0` or `-0`. NaN and every nonzero volume retain the original arithmetic, while aux exchange,
-intermediate state, and output clearing remain unchanged. Final ThinLTO adds only `FCMP`/`B.EQ` per
-bus. The active AArch64 downmix now handles eight samples per loop with Q-form `LD2`/`ST2`, while
-preserving the exact multiply/FMA, conversion, saturation, and accumulation order in each half.
-Final linked stereo work falls from 48 to 39 instructions per eight samples (960 to 780 per active
-bus/frame, 18.75%); mono falls from 46 to 37 (920 to 740, 19.6%). Buffer traffic remains 3,840 bytes
-per active bus/frame. A zero bus now skips those smaller bodies completely; MerryAudio's one-audible,
-two-zero stereo shape still removes 66.7% of final downmix-loop work and 7,680 bytes per frame.
-These are path-local code-generation results, not measured whole-game or battery gains.
+exact `+0` or `-0`. NaN and every nonzero volume retain the original arithmetic, while aux exchange
+and intermediate state remain unchanged. The earlier AArch64 rewrite reduced the then-scalar
+Stereo/Mono loops from 48/46 to 39/37 instructions per eight samples; current ThinLTO immediately
+before the next change measured the inlined loops at 40/38. A zero bus skips the downmix completely,
+so MerryAudio's one-audible, two-zero Stereo shape still removes two thirds of this final-mix work.
+
+The first audible bus now defines the output directly from its already-clamped samples instead of
+first clearing 640 bytes, reloading those zeros through twenty `LD2` instructions, and performing
+forty `SQADD` operations. The common first-main-bus Stereo/Mono loops fall from the current 40/38
+instructions to 36/35 per eight samples, saving 80/60 repeated instructions per DSP frame. It also
+avoids 1,280 bytes of clear-plus-reload traffic per frame, or 261,824 bytes/second at the native DSP
+cadence. Leading signed-zero buses are allowed, later audible buses retain exact clamp-then-
+saturating-add order, and an all-silent frame still clears stale output. `MixCurrentFrame()` remains
+outlined so ThinLTO does not duplicate it into `Tick()`. These are exact path-local code-generation
+results, not measured whole-game FPS or battery-watt gains.
 
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one

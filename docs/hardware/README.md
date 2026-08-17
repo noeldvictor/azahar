@@ -103,6 +103,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   resources; eliminating the operation is portable across Thor's heterogeneous cores. Preserve a
   full path for every nonzero or NaN value and verify the linked loop rather than assuming template
   specialization removed the memory traffic.
+- When the destination is known to be zero and the first contribution is already clamped to its
+  final lane width, store that contribution directly instead of clearing, reloading, and performing
+  a saturating add against zero. This equivalence applies only to the first contribution: retain
+  the original clamp-and-saturating-add order for every later contribution, preserve NaN routing,
+  and explicitly clear the destination when no contribution is active. Keep the branch outside the
+  sample loop and inspect final ThinLTO to confirm the direct variant has no destination load/add.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 
