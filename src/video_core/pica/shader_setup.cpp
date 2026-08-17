@@ -204,6 +204,41 @@ static inline u32 ProcessBlockNEON(u32* dst, const u32* values) {
     const uint32x4_t indices = vld1q_u32(index_arr);
     return vmaxvq_u32(vandq_u32(neq, indices));
 }
+
+#if defined(__aarch64__)
+// Process two adjacent NEON vectors with one unchanged-block reduction. UMAXV is a relatively
+// expensive dependency on every CPU in the Snapdragon 8 Gen 2, especially the Cortex-A510, so
+// sharing it across eight words reduces the common unchanged-upload path without requiring an
+// optional ISA extension.
+static inline u32 ProcessBlockNEON8(u32* __restrict dst, const u32* __restrict values) {
+    const uint32x4_t old_low = vld1q_u32(dst);
+    const uint32x4_t old_high = vld1q_u32(dst + 4);
+    const uint32x4_t new_low = vld1q_u32(values);
+    const uint32x4_t new_high = vld1q_u32(values + 4);
+    const uint32x4_t neq_low = vmvnq_u32(vceqq_u32(old_low, new_low));
+    const uint32x4_t neq_high = vmvnq_u32(vceqq_u32(old_high, new_high));
+
+    if (vmaxvq_u32(vorrq_u32(neq_low, neq_high)) == 0) {
+        return std::numeric_limits<u32>::max();
+    }
+
+    vst1q_u32(dst, new_low);
+    vst1q_u32(dst + 4, new_high);
+
+    // High-half indices start at four, so zero unambiguously means that the high half is equal.
+    // Low lane zero remains valid because the combined reduction above proved that some lane
+    // changed before this point.
+    alignas(16) static constexpr u32 index_arr[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    const uint32x4_t high_indices = vld1q_u32(index_arr + 4);
+    const u32 high_index = vmaxvq_u32(vandq_u32(neq_high, high_indices));
+    if (high_index != 0) {
+        return high_index;
+    }
+
+    const uint32x4_t low_indices = vld1q_u32(index_arr);
+    return vmaxvq_u32(vandq_u32(neq_low, low_indices));
+}
+#endif
 #endif
 
 void ShaderSetup::UpdateProgramCodeRange(size_t offset, const u32* __restrict values, u32 count) {
@@ -216,7 +251,18 @@ void ShaderSetup::UpdateProgramCodeRange(size_t offset, const u32* __restrict va
     size_t last_changed_offset = offset;
     u32 i = 0;
 
-    // SIMD block.
+    // AArch64 can share the unchanged-block reduction across two adjacent NEON vectors.
+#if defined(CITRA_HAS_NEON) && defined(__aarch64__)
+    for (; i + 8 <= count; i += 8) {
+        const u32 index = ProcessBlockNEON8(dst + i, values + i);
+        if (index != std::numeric_limits<u32>::max()) {
+            any_changed = true;
+            last_changed_offset = offset + i + index;
+        }
+    }
+#endif
+
+    // Four-word SIMD block and tail.
 #if defined(CITRA_HAS_SSE42) || defined(CITRA_HAS_NEON)
     for (; i + 4 <= count; i += 4) {
 #if defined(CITRA_HAS_SSE42)
@@ -263,7 +309,18 @@ void ShaderSetup::UpdateSwizzleDataRange(size_t offset, const u32* __restrict va
     size_t last_changed_offset = offset;
     u32 i = 0;
 
-    // SIMD block.
+    // AArch64 can share the unchanged-block reduction across two adjacent NEON vectors.
+#if defined(CITRA_HAS_NEON) && defined(__aarch64__)
+    for (; i + 8 <= count; i += 8) {
+        const u32 index = ProcessBlockNEON8(dst + i, values + i);
+        if (index != std::numeric_limits<u32>::max()) {
+            any_changed = true;
+            last_changed_offset = offset + i + index;
+        }
+    }
+#endif
+
+    // Four-word SIMD block and tail.
 #if defined(CITRA_HAS_SSE42) || defined(CITRA_HAS_NEON)
     for (; i + 4 <= count; i += 4) {
 #if defined(CITRA_HAS_SSE42)

@@ -19,6 +19,7 @@ add_executable(tests
     video_core/command_list.cpp
     video_core/pica_types.cpp
     video_core/shader.cpp
+    video_core/shader_setup.cpp
     video_core/texture_codec.cpp
     audio_core/merryhime_3ds_audio/merry_audio/merry_audio.cpp
     audio_core/merryhime_3ds_audio/merry_audio/merry_audio.h
