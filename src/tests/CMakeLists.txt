@@ -15,6 +15,7 @@ add_executable(tests
     audio_core/lle/lle.cpp
     audio_core/audio_fixures.h
     audio_core/decoder_tests.cpp
+    audio_core/time_stretch.cpp
     video_core/pica_types.cpp
     video_core/shader.cpp
     video_core/texture_codec.cpp
@@ -33,7 +34,8 @@ if (BSD STREQUAL "NetBSD")
 endif()
 
 target_link_libraries(tests PRIVATE citra_common citra_core video_core audio_core)
-target_link_libraries(tests PRIVATE ${PLATFORM_LIBRARIES} catch2 nihstro-headers Threads::Threads)
+target_link_libraries(tests PRIVATE SoundTouch ${PLATFORM_LIBRARIES} catch2 nihstro-headers Threads::Threads)
+target_include_directories(tests PRIVATE ${PROJECT_SOURCE_DIR}/externals/soundtouch/source/SoundTouch)
 
 if (ENABLE_LIBRETRO)
     target_link_libraries(tests PRIVATE $<TARGET_OBJECTS:citra_libretro_common>)
