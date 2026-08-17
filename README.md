@@ -104,6 +104,8 @@ This fork has moved away from stock Azahar in visible ways:
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
 - HLE GC-ADPCM decode loads each compressed byte once for its two recurrent samples and uses
   native signed bitfield extraction instead of two indexed nibble-table loads.
+- PCM8/PCM16 source decoding advances one sequential deque iterator instead of rebuilding and
+  loading the destination block-map entry for every decoded sample.
 - Exact aligned 1x HLE linear resampling routes through the existing sample-copy loop, avoiding the
   otherwise redundant NEON interpolation and packing sequence for every output sample.
 - SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
@@ -255,6 +257,16 @@ instructions and 21 data loads per complete 14-sample frame; the function shrink
 bytes and its 64-byte table disappears. Permanent table-reference coverage spans all nibble values,
 scales, coefficient pairs, initial histories, clipping edges, partial frames, and odd lengths. This
 reduces DSP decode work when titles stream GC-ADPCM, not whole-game FPS or measured battery watts.
+
+PCM8 and PCM16 source buffers also used `std::deque::operator[]` for every decoded sample. Final
+AArch64 code repeatedly recalculated the destination block and loaded its block-map entry even
+though every write moves forward by exactly one stereo sample. A counted sequential iterator now
+keeps the current destination pointer live and performs the rare 4 KiB block transition directly.
+The repeated PCM8 mono/stereo bodies fall from 12/14 to 10/13 instructions, while PCM16 mono/stereo
+fall from 11/11 to 9/8. Per-iteration data loads fall from 2/3/2/4 to 1/2/1/2 respectively. Exact
+mono duplication, stereo ordering, byte expansion, little-endian PCM16 values, zero-length input,
+and 1023/1024/1025-sample deque boundaries have permanent coverage. This is a sustained source-
+decode reduction when games use PCM buffers, not measured whole-game FPS or battery watts.
 
 Thor's integer SoundTouch stereo-overlap loop uses explicit baseline AArch64 NEON for four frames
 at a time and eliminates eight `SDIV` instructions over that span. Negative results retain C++

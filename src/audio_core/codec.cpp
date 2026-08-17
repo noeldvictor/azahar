@@ -95,15 +95,18 @@ StereoBuffer16 DecodePCM8(const unsigned num_channels, const u8* const data,
     };
 
     StereoBuffer16 ret(sample_count);
+    auto output = ret.begin();
 
     if (num_channels == 1) {
-        for (std::size_t i = 0; i < sample_count; i++) {
-            ret[i].fill(decode_sample(data[i]));
+        const u8* input = data;
+        for (std::size_t remaining = sample_count; remaining != 0; --remaining, ++output) {
+            output->fill(decode_sample(*input++));
         }
     } else {
-        for (std::size_t i = 0; i < sample_count; i++) {
-            ret[i][0] = decode_sample(data[i * 2 + 0]);
-            ret[i][1] = decode_sample(data[i * 2 + 1]);
+        const u8* input = data;
+        for (std::size_t remaining = sample_count; remaining != 0; --remaining, ++output) {
+            (*output)[0] = decode_sample(*input++);
+            (*output)[1] = decode_sample(*input++);
         }
     }
 
@@ -115,16 +118,21 @@ StereoBuffer16 DecodePCM16(const unsigned num_channels, const u8* const data,
     ASSERT(num_channels == 1 || num_channels == 2);
 
     StereoBuffer16 ret(sample_count);
+    auto output = ret.begin();
 
     if (num_channels == 1) {
-        for (std::size_t i = 0; i < sample_count; i++) {
+        const u8* input = data;
+        for (std::size_t remaining = sample_count; remaining != 0; --remaining, ++output) {
             s16 sample;
-            std::memcpy(&sample, data + i * sizeof(s16), sizeof(s16));
-            ret[i].fill(sample);
+            std::memcpy(&sample, input, sizeof(sample));
+            input += sizeof(sample);
+            output->fill(sample);
         }
     } else {
-        for (std::size_t i = 0; i < sample_count; ++i) {
-            std::memcpy(&ret[i], data + i * sizeof(s16) * 2, 2 * sizeof(s16));
+        const u8* input = data;
+        for (std::size_t remaining = sample_count; remaining != 0; --remaining, ++output) {
+            std::memcpy(&*output, input, sizeof(*output));
+            input += sizeof(*output);
         }
     }
 

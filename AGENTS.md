@@ -155,6 +155,13 @@
   extraction per pair and no `SIGNED_NIBBLES` symbol or indexed nibble-table load. Keep the
   independent table-reference test across all nibble values, scales, histories, clipping, and
   frame boundaries.
+- HLE PCM8/PCM16 decoding deliberately fills its `StereoBuffer16` deque through one counted,
+  sequential output iterator. Preserve PCM8's exact unsigned-byte-to-high-byte mapping, native
+  little-endian PCM16 loads, mono duplication, stereo ordering, zero length, and the scalar data
+  representation. Do not restore per-sample `deque::operator[]`: final AArch64 ThinLTO should
+  advance the destination pointer directly and check only the 4 KiB deque-block boundary, without
+  reconstructing the destination from the deque start/map on every sample. Keep the 1023/1024/1025
+  and multi-block regression cases.
 - AArch64 HLE linear interpolation deliberately evaluates the independent stereo lanes with one
   AdvSIMD `SQDMULH`. Preserve the DSP's signed-16 saturated delta, the unsigned 24-bit phase, the
   exact Q24-to-Q31 `phase << 7` mapping, truncation rather than rounding, and the scalar

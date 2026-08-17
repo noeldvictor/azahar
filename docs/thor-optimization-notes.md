@@ -2049,6 +2049,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   sources take the route and record DSP-thread time/placement, underruns, frametimes, battery power,
   temperature, and thermal slope with title, scene, renderer, driver, display, and fan mode fixed.
 
+## 2026-08-17 Sequential HLE PCM Decode Output
+
+- PCM8 and PCM16 decode allocate a `StereoBuffer16` deque and fill it in strict sample order before
+  the source resampler consumes from the front. The old loops nevertheless used indexed
+  `deque::operator[]` for every output. Final AArch64 ThinLTO recalculated the logical start plus
+  index, shifted/masked it into a block number and offset, loaded the deque block-map entry, and only
+  then formed the destination address for each sample.
+- Decode now obtains the output iterator once and advances it with a counted loop. PCM8 still maps
+  each unsigned byte into the high byte of signed 16-bit output. PCM16 still performs native
+  little-endian unaligned-safe loads. Mono duplicates exactly into both lanes, stereo keeps left/
+  right order, the returned deque size is unchanged, and no input byte or output format changes.
+- The four Thor core manuals confirm why removing the map dependency matters even for an L1 hit.
+  Cortex-X3 pages 18-19, Cortex-A715 pages 20-21, and Cortex-A710 pages 28-29 list ordinary integer
+  load latency 4 and throughput 3; Cortex-A510 pages 23-24 list latency 2 and throughput 2. These are
+  the manuals' L1-hit figures. The retained code does not depend on those estimates: linked output
+  directly proves that the destination pointer now advances between samples and the deque map no
+  longer reconstructs each store address. Three loops retain the current block base across samples;
+  PCM16 stereo's remaining per-sample base load only checks the boundary and is not on the store-
+  address dependency chain.
+- Production ThinLTO changes the repeated PCM8 mono loop from 12 to 10 instructions (16.7%) and
+  stereo from 14 to 13 (7.1%). PCM16 mono falls from 11 to 9 (18.2%) and stereo from 11 to 8
+  (27.3%). Per-iteration data loads fall from 2/3/2/4 to 1/2/1/2 in the same order. Over 160 decoded
+  samples this removes 160-480 loop instructions and 160-320 data loads, depending on format and
+  channel count, before the rare block transition. PCM8 grows from 240 to 288 bytes and PCM16 from
+  228 to 268 bytes; the 88-byte total code-size trade avoids repeatedly executing the indexed path.
+- New permanent Catch2 coverage independently generates PCM8 and little-endian PCM16 inputs for
+  mono and stereo, verifies both output lanes, and covers counts 0, 1, 7, 159, 1023, 1024, 1025,
+  and 2049. This crosses the Android libc++ 1024-element/4 KiB deque boundary and a second block.
+  The complete ELF64/AArch64 test executable and production shared library compile and link
+  successfully in 58 seconds; the executable is not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 28 seconds and produced an ARM64-only
+  28,966,767-byte APK with SHA-256
+  `1F08973FEFA3460C1F1D220F26622A097BC70DBCC921B1C05F569D92DBDA8CF3`. After verification,
+  2,457,624,332 logical bytes of the native test executable and disposable package intermediates
+  were removed. C: free space increased by 2,019,819,520 bytes; the APK and active ARM64 CMake
+  cache remain in the repository workspace.
+- This reduces HLE audio decoding work when a title submits PCM8 or PCM16 buffers. It is not a
+  whole-game FPS or battery-watt measurement, and no device, ADB, install, launch, game run, or
+  battery measurement was used. A future allowed matched Thor A/B should count decoded PCM samples
+  and record DSP-thread time/placement, underruns, frametimes, battery power, temperature, and
+  thermal slope with the usual title, scene, renderer, driver, display, and fan controls fixed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

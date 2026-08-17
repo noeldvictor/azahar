@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
+#include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "audio_core/codec.h"
 
@@ -96,6 +98,52 @@ TEST_CASE("GC-ADPCM bitfield nibbles match the table reference", "[audio_core][c
                 REQUIRE(actual == expected);
                 REQUIRE(actual_state.yn1 == expected_state.yn1);
                 REQUIRE(actual_state.yn2 == expected_state.yn2);
+            }
+        }
+    }
+}
+
+TEST_CASE("PCM decoding preserves samples across deque blocks", "[audio_core][codec]") {
+    constexpr std::array<std::size_t, 8> SampleCounts{0, 1, 7, 159, 1023, 1024, 1025, 2049};
+
+    for (unsigned channels = 1; channels <= 2; ++channels) {
+        for (const std::size_t sample_count : SampleCounts) {
+            CAPTURE(channels, sample_count);
+
+            std::vector<u8> pcm8(sample_count * channels);
+            std::vector<u8> pcm16(sample_count * channels * sizeof(s16));
+            for (std::size_t sample = 0; sample < sample_count; ++sample) {
+                for (unsigned channel = 0; channel < channels; ++channel) {
+                    const std::size_t input_index = sample * channels + channel;
+                    pcm8[input_index] = static_cast<u8>(sample * 37 + channel * 113 + sample_count);
+
+                    const u16 pcm16_bits =
+                        static_cast<u16>(sample * 40503 + channel * 32771 + sample_count * 17);
+                    pcm16[input_index * sizeof(s16)] = static_cast<u8>(pcm16_bits);
+                    pcm16[input_index * sizeof(s16) + 1] = static_cast<u8>(pcm16_bits >> 8);
+                }
+            }
+
+            const auto decoded8 = AudioCore::Codec::DecodePCM8(channels, pcm8.data(), sample_count);
+            const auto decoded16 =
+                AudioCore::Codec::DecodePCM16(channels, pcm16.data(), sample_count);
+
+            REQUIRE(decoded8.size() == sample_count);
+            REQUIRE(decoded16.size() == sample_count);
+            for (std::size_t sample = 0; sample < sample_count; ++sample) {
+                for (unsigned output_channel = 0; output_channel < 2; ++output_channel) {
+                    const unsigned input_channel = channels == 1 ? 0 : output_channel;
+                    const std::size_t input_index = sample * channels + input_channel;
+                    const s16 expected8 =
+                        static_cast<s16>(static_cast<u16>(pcm8[input_index]) << 8);
+                    const u16 expected16_bits =
+                        static_cast<u16>(pcm16[input_index * sizeof(s16)]) |
+                        static_cast<u16>(pcm16[input_index * sizeof(s16) + 1] << 8);
+
+                    REQUIRE(decoded8[sample][output_channel] == expected8);
+                    REQUIRE(decoded16[sample][output_channel] ==
+                            std::bit_cast<s16>(expected16_bits));
+                }
             }
         }
     }

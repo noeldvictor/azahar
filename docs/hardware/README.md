@@ -58,6 +58,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   the bitfield operation is a short ALU instruction and avoids both address/index work and cache
   traffic. Preserve sequential filter feedback; this optimization removes representation work,
   not the recurrence itself, and final ThinLTO must prove the lookup table disappeared.
+- For sequential PCM8/PCM16 output into libc++'s deque, keep one output iterator and a counted loop
+  instead of calling indexed `operator[]` for every sample. The indexed AArch64 code makes the
+  destination store depend on another block-map load; X3 pages 18-19, A715 pages 20-21, and A710
+  pages 28-29 list ordinary L1-hit integer loads at four-cycle latency and throughput three, while
+  A510 pages 23-24 list two-cycle latency and throughput two. Advancing the current element pointer
+  removes that dependent load/address chain until the rare deque-block transition without assuming
+  any optional ISA extension. Preserve the portable deque abstraction and verify the final linked
+  loop because source-level iterators alone do not prove the compiler retained the pointer.
 - For SoundTouch's integer 64-tap stereo FIR, use an exact 32-bit accumulator on Android LP64 and
   feed both channels from one coefficient vector. Two Q-form `LD2` sample loads plus one paired
   coefficient load per sixteen taps avoid the duplicated coefficient structured loads while eight
