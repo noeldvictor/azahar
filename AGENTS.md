@@ -90,8 +90,11 @@
   compares equal to exact signed zero. Preserve `current_frame` clearing, aux send/return copies,
   saved intermediate buffers, and every nonzero or NaN volume's arithmetic path. Final AArch64
   ThinLTO should retain one `FCMP`/`B.EQ` before the output-format dispatch in both `Mixers::Tick()`
-  and the outlined `MixCurrentFrame()`, while active stereo/mono loops remain 24/23 instructions
-  per four samples. Keep signed-zero Mono and Stereo regression coverage.
+  and the outlined `MixCurrentFrame()`. Active AArch64 stereo/mono downmix deliberately handles
+  eight samples with Q-form `LD2`/`ST2`, `SQXTN2`, and `.8h` saturating adds; keep the exact scalar
+  multiply/FMA order in each four-lane half. Final linked loops should remain 39/37 instructions
+  per eight samples with no D-form structured memory operation, extra `UZP`/`ZIP`, or vector spill.
+  Keep signed-zero Mono and Stereo regression coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

@@ -138,57 +138,80 @@ static void CopyPlanarToShared(s32_le (&output)[4][samples_per_frame],
 #if defined(__aarch64__)
 static void DownmixStereoNEON(StereoFrame16& current_frame, float gain,
                               const PlanarQuadFrame32& samples) {
-    static_assert(samples_per_frame % 4 == 0);
+    static_assert(samples_per_frame % 8 == 0);
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
-    for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
-        int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
+    for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
+        int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
 
-        const float32x4_t front_left = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
-        const float32x4_t front_right = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
-        const float32x4_t back_left = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
-        const float32x4_t back_right = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
+        const float32x4_t front_left_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
+        const float32x4_t front_left_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
+        const float32x4_t front_right_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
+        const float32x4_t front_right_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample + 4]));
+        const float32x4_t back_left_0 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
+        const float32x4_t back_left_1 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample + 4]));
+        const float32x4_t back_right_0 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
+        const float32x4_t back_right_1 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample + 4]));
 
         // Keep the same multiply/FMA order emitted for the scalar AArch64 path.
-        float32x4_t left = vmulq_f32(back_left, gain_vec);
-        float32x4_t right = vmulq_f32(back_right, gain_vec);
-        left = vfmaq_f32(left, front_left, gain_vec);
-        right = vfmaq_f32(right, front_right, gain_vec);
+        float32x4_t left_0 = vmulq_f32(back_left_0, gain_vec);
+        float32x4_t left_1 = vmulq_f32(back_left_1, gain_vec);
+        float32x4_t right_0 = vmulq_f32(back_right_0, gain_vec);
+        float32x4_t right_1 = vmulq_f32(back_right_1, gain_vec);
+        left_0 = vfmaq_f32(left_0, front_left_0, gain_vec);
+        left_1 = vfmaq_f32(left_1, front_left_1, gain_vec);
+        right_0 = vfmaq_f32(right_0, front_right_0, gain_vec);
+        right_1 = vfmaq_f32(right_1, front_right_1, gain_vec);
 
-        const int16x4_t left_s16 = vqmovn_s32(vcvtq_s32_f32(left));
-        const int16x4_t right_s16 = vqmovn_s32(vcvtq_s32_f32(right));
-        accumulator.val[0] = vqadd_s16(accumulator.val[0], left_s16);
-        accumulator.val[1] = vqadd_s16(accumulator.val[1], right_s16);
-        vst2_s16(current_frame[sample].data(), accumulator);
+        const int16x8_t left_s16 =
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(left_0)),
+                         vqmovn_s32(vcvtq_s32_f32(left_1)));
+        const int16x8_t right_s16 =
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(right_0)),
+                         vqmovn_s32(vcvtq_s32_f32(right_1)));
+        accumulator.val[0] = vqaddq_s16(accumulator.val[0], left_s16);
+        accumulator.val[1] = vqaddq_s16(accumulator.val[1], right_s16);
+        vst2q_s16(current_frame[sample].data(), accumulator);
     }
 }
 
 static void DownmixMonoNEON(StereoFrame16& current_frame, float gain,
                             const PlanarQuadFrame32& samples) {
-    static_assert(samples_per_frame % 4 == 0);
+    static_assert(samples_per_frame % 8 == 0);
     static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
 
     const float32x4_t gain_vec = vdupq_n_f32(gain);
-    for (std::size_t sample = 0; sample < samples_per_frame; sample += 4) {
-        int16x4x2_t accumulator = vld2_s16(current_frame[sample].data());
+    for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
+        int16x8x2_t accumulator = vld2q_s16(current_frame[sample].data());
 
-        const float32x4_t channel_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
-        const float32x4_t channel_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
-        const float32x4_t channel_2 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
-        const float32x4_t channel_3 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
+        const float32x4_t channel_0_0 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample]));
+        const float32x4_t channel_0_1 = vcvtq_f32_s32(vld1q_s32(&samples[0][sample + 4]));
+        const float32x4_t channel_1_0 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample]));
+        const float32x4_t channel_1_1 = vcvtq_f32_s32(vld1q_s32(&samples[1][sample + 4]));
+        const float32x4_t channel_2_0 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample]));
+        const float32x4_t channel_2_1 = vcvtq_f32_s32(vld1q_s32(&samples[2][sample + 4]));
+        const float32x4_t channel_3_0 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample]));
+        const float32x4_t channel_3_1 = vcvtq_f32_s32(vld1q_s32(&samples[3][sample + 4]));
 
         // Match the scalar AArch64 operation order before dividing the mono sum by two.
-        float32x4_t mono = vmulq_f32(channel_1, gain_vec);
-        mono = vfmaq_f32(mono, channel_0, gain_vec);
-        mono = vfmaq_f32(mono, channel_2, gain_vec);
-        mono = vfmaq_f32(mono, channel_3, gain_vec);
-        mono = vmulq_n_f32(mono, 0.5f);
+        float32x4_t mono_0 = vmulq_f32(channel_1_0, gain_vec);
+        float32x4_t mono_1 = vmulq_f32(channel_1_1, gain_vec);
+        mono_0 = vfmaq_f32(mono_0, channel_0_0, gain_vec);
+        mono_1 = vfmaq_f32(mono_1, channel_0_1, gain_vec);
+        mono_0 = vfmaq_f32(mono_0, channel_2_0, gain_vec);
+        mono_1 = vfmaq_f32(mono_1, channel_2_1, gain_vec);
+        mono_0 = vfmaq_f32(mono_0, channel_3_0, gain_vec);
+        mono_1 = vfmaq_f32(mono_1, channel_3_1, gain_vec);
+        mono_0 = vmulq_n_f32(mono_0, 0.5f);
+        mono_1 = vmulq_n_f32(mono_1, 0.5f);
 
-        const int16x4_t mono_s16 = vqmovn_s32(vcvtq_s32_f32(mono));
-        accumulator.val[0] = vqadd_s16(accumulator.val[0], mono_s16);
-        accumulator.val[1] = vqadd_s16(accumulator.val[1], mono_s16);
-        vst2_s16(current_frame[sample].data(), accumulator);
+        const int16x8_t mono_s16 =
+            vcombine_s16(vqmovn_s32(vcvtq_s32_f32(mono_0)),
+                         vqmovn_s32(vcvtq_s32_f32(mono_1)));
+        accumulator.val[0] = vqaddq_s16(accumulator.val[0], mono_s16);
+        accumulator.val[1] = vqaddq_s16(accumulator.val[1], mono_s16);
+        vst2q_s16(current_frame[sample].data(), accumulator);
     }
 }
 #endif

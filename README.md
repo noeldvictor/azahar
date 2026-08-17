@@ -247,11 +247,13 @@ and battery effects still require a matched Thor run.
 The final HLE mixer also bypasses a bus's complete 160-sample downmix when its frame-wide volume is
 exact `+0` or `-0`. NaN and every nonzero volume retain the original arithmetic, while aux exchange,
 intermediate state, and output clearing remain unchanged. Final ThinLTO adds only `FCMP`/`B.EQ` per
-bus and preserves the active loops. A skipped stereo bus avoids 960 loop instructions and 3,840
-bytes of buffer traffic; a skipped mono bus avoids 920 and the same traffic. The MerryAudio fixture
-uses one audible master bus plus two zero-volume aux returns, so that representative shape removes
-66.7% of final stereo downmix-loop instructions and 7,680 bytes per audio frame. These are path-local
-code-generation results, not measured whole-game or battery gains.
+bus. The active AArch64 downmix now handles eight samples per loop with Q-form `LD2`/`ST2`, while
+preserving the exact multiply/FMA, conversion, saturation, and accumulation order in each half.
+Final linked stereo work falls from 48 to 39 instructions per eight samples (960 to 780 per active
+bus/frame, 18.75%); mono falls from 46 to 37 (920 to 740, 19.6%). Buffer traffic remains 3,840 bytes
+per active bus/frame. A zero bus now skips those smaller bodies completely; MerryAudio's one-audible,
+two-zero stereo shape still removes 66.7% of final downmix-loop work and 7,680 bytes per frame.
+These are path-local code-generation results, not measured whole-game or battery gains.
 
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one

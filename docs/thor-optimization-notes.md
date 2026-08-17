@@ -1586,6 +1586,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   time/placement, audio underruns, frametimes, battery power, temperature, thermal slope, output
   correctness, and stability.
 
+## 2026-08-17 AArch64 Eight-Sample Final Downmix
+
+- The active final stereo and mono downmix loops still handled only four output samples per
+  iteration after their inputs became planar. Their interleaved signed-16 accumulator made D-form
+  `LD2`/`ST2` natural, but repeated the structured memory instructions and loop control 40 times per
+  active bus/frame.
+- The decision to widen the structured pair comes from the actual Snapdragon 8 Gen 2 core manuals.
+  Cortex-A510 issue 6.0 pages 46/49 list D-form halfword `LD2`/`ST2` at throughput 1 and Q form at
+  `1/2`, so Q form moves twice the samples with proportional execution cost. Cortex-A710 issue 4.0
+  pages 55/59 and Cortex-X3 issue 4.0 pages 33/35 list D/Q `LD2` at 2 versus `3/2` and D/Q `ST2` at
+  1 versus `1/2`; Q form improves load bytes per cycle and preserves store bytes per cycle.
+  Cortex-A715 issue 5.0 pages 36/38 lists `LD2` at 2 versus `3/2` and `ST2` at 2 for both widths, so
+  Q form improves useful bytes per cycle for both. Ordinary loads plus `UZP`/`ZIP` were rejected:
+  they add permutation instructions to a two-way interleave whose structured operations are already
+  efficient across every Thor core class.
+- AArch64 stereo and mono now handle eight samples per iteration. Each half retains the exact prior
+  conversion and multiply/FMA sequence; `SQXTN`/`SQXTN2` combines the halves, `.8h` `SQADD` retains
+  saturating accumulation, and Q-form `LD2`/`ST2` preserves interleaved output. The non-AArch64 path
+  is unchanged, and 160 samples has no tail.
+- Final ThinLTO contains Q-form `LD2 {v?.8h, v?.8h}` and `ST2 {v?.8h, v?.8h}`, `SQXTN2`, and `.8h`
+  saturated adds with no D-form structured operation, extra `UZP`/`ZIP`, or vector spill in either
+  hot loop. Stereo falls from two 24-instruction four-sample iterations to one 39-instruction
+  eight-sample iteration: 960 to 780 instructions per active bus/frame, an 18.75% reduction. Mono
+  falls from two 23-instruction iterations to one 37-instruction iteration: 920 to 740, a 19.6%
+  reduction. Input/output traffic remains 3,840 bytes per active bus/frame; exact zero-volume buses
+  still bypass the active body entirely.
+- Existing differential Catch2 coverage exercises Mono, Stereo, and Surround output, signed-zero
+  buses, all-active gains, saturation edges, aux exchange, and all 160 sample positions against an
+  independent scalar reference. The ARM64 native build compiled and linked that test executable and
+  the final ThinLTO library successfully; the ARM64 executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 21 seconds. The resulting
+  28,966,095-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `B7C89A4157658BFBE4F9054F0C6182280346A7D934487E7E68D33BCB4E41B1C0`.
+- After verification, exact Gradle intermediates, downloaded JNI copies, mapping/debug-symbol
+  output, the 444,504,472-byte ARM64 test executable, and repo-local manual renders were removed.
+  The final APK and active ARM64 CMake cache were retained; free C: space increased by
+  2,024,067,072 bytes (about 1.88 GiB). No source, external manual, save, or unrelated file was
+  touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. This is a bounded
+  linked DSP-loop instruction reduction and a plausible CPU-energy improvement, not a measured
+  whole-game speed or wattage result. A future allowed matched Thor A/B must hold title, scene,
+  save, caches, renderer, resolution, driver, layout, performance/fan mode, brightness, and duration
+  constant, then record DSP-thread time/placement, audio underruns, frametimes, battery power,
+  temperature, thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering
