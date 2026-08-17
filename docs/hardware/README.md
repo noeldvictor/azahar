@@ -1,8 +1,8 @@
 # Hardware Reference Index
 
-The AYN Thor Base/Pro/Max target is Snapdragon 8 Gen 2 (`kalama`/SM8550-class), with one Cortex-X3, two Cortex-A715, two Cortex-A710, three Cortex-A510 cores, and Adreno 740. The vendor documents below are held in the sibling `ps3-thor/rpcsx-ui-android/docs/hardware` research library.
+The AYN Thor Base/Pro/Max target is Snapdragon 8 Gen 2 (`kalama`/SM8550-class), with one Cortex-X3, two Cortex-A715, two Cortex-A710, three Cortex-A510 cores, and Adreno 740. The host vendor documents reviewed below are held outside this Git repository in the existing `ps3-thor/rpcsx-ui-android/docs/hardware` research library.
 
-Manual PDFs are deliberately not committed to this public fork. Their redistribution terms are not always explicit, and binary manuals make source history needlessly heavy. The local copies used for this review live outside the Git repository under the workspace `reference/manuals/` directory. This index records exact inputs so they cannot be confused with an unverified download.
+Manual PDFs are deliberately not committed to this public fork. Their redistribution terms are not always explicit, and binary manuals make source history needlessly heavy. This index records exact external inputs so they cannot be confused with an unverified download.
 
 ## Snapdragon 8 Gen 2 host references
 
@@ -10,6 +10,7 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 | --- | --- | ---: | --- | --- |
 | `qualcomm_adreno_game_developer_guide.pdf` | Qualcomm 80-78185-2, 200 pages | 20.17 MiB | `0872AA49B763ACB46AEB7427784E926D2BF3939F2E731B405DEF977A5BFAECAC` | GMEM, render passes, resolves, concurrent binning, LRZ, and mobile bandwidth |
 | `qualcomm_snapdragon_opencl_optimization_guide.pdf` | Qualcomm 80-NB295-11 Rev. C, 116 pages | 1.71 MiB | `59CEEE4F9E33686CEB5F2970045C77858B4A395885778C5944C3130E590EEB3A` | Hardware cache/UMA guidance; OpenCL API advice is out of scope |
+| [Arm Architecture Reference Manual for A-profile architecture](https://developer.arm.com/documentation/ddi0487/mc), `arm_architecture_reference_manual_DDI0487M_c.pdf` | DDI 0487 M.c, 17,145 pages | 119.93 MiB | `B5F9DAA7EC0446777C8F848AA6431C99E5AB6554E5AA171B28B9016771494F8C` | Authoritative AArch64 instruction and memory-ordering semantics; sections C6.2.180 and C6.2.192 distinguish relaxed `LDADD`/ordinary loads from release/acquire variants |
 | `arm_cortex_x3_software_optimization_guide.pdf` | Cortex-X3 | 1.12 MiB | `3EC100F2BBCD4DE004E1730553A3276BB27ECA4B320471B177BBDB843B8761D9` | Prime-core instruction throughput and pipelines |
 | `arm_cortex_a715_software_optimization_guide.pdf` | Cortex-A715 | 1.16 MiB | `D6D7A49F34528B79E1F8C8E0B02D59D3DA6011D719D3271D310A4D83EC8F6FA2` | Newer performance-core pair |
 | `arm_cortex_a710_software_optimization_guide.pdf` | Cortex-A710 | 1.39 MiB | `096B9C2924BBFA4C5045D2C2F1C711D6E544C28F2F04ADAAD4B66B2E8C48CD6A` | Older performance-core pair |

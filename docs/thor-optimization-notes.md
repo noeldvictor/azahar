@@ -945,6 +945,53 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   correctness. Revert or shorten the cadence if pool growth or retained-surface memory increases
   materially.
 
+## 2026-08-17 ARM64 Vulkan Timeline Atomic Ordering
+
+- A complete use-site audit found that `current_tick` allocates unique numerical submission IDs and
+  `gpu_tick` caches only the highest completion ID observed from a Vulkan timeline semaphore or a
+  completed fence. Neither atomic publishes command memory, queue entries, resource contents, or
+  ownership. Queue work is published under the scheduler mutex/condition variable; the fence path
+  waits for Vulkan completion and transfers its fence under `free_mutex`; Vulkan itself orders the
+  submitted GPU work.
+- Arm Architecture Reference Manual DDI 0487 M.c section C6.2.180 (PDF page 2214) states that
+  `LDADDL` stores with release semantics while plain `LDADD` has neither acquire nor release
+  semantics. Section C6.2.192 (PDF page 2240) defines `LDAR` as an acquire load. The Cortex-X3 page
+  19, Cortex-A715 page 21, and Cortex-A710 page 29 instruction tables list ordinary AArch64 `LDR`
+  at latency 4/throughput 3; the Cortex-A510 page 23 table lists latency 2/throughput 2. Those core
+  tables do not separately quantify `LDAR`, so no unsupported per-instruction cycle saving is
+  claimed.
+- `CurrentTick()`, `KnownGpuTick()`, and `NextTick()` now use relaxed ordering. Completed progress
+  is merged by `AdvanceGpuTick()`, a relaxed compare/exchange atomic max shared by the timeline and
+  fence paths. `MasterSemaphoreTimeline::Refresh()` queries
+  `vkGetSemaphoreCounterValueKHR` exactly once and then retries only the local cache update; the old
+  weak-CAS loop could repeat the driver query after either a race or a spurious failure.
+- Correctness depends on atomicity and monotonicity, not a cross-object happens-before edge. A
+  relaxed fetch-add still has one atomic modification order and produces unique ticks. Every
+  `gpu_tick` candidate originates only after actual Vulkan completion, and atomic max cannot move
+  it backward. A stale-low read can delay reuse, deletion, or a wait short-circuit but cannot claim
+  unfinished work is complete. The existing immediate refreshes for resource pressure and explicit
+  waits are unchanged.
+- Final release-style AArch64 code changed `Scheduler::SubmitExecution()` from
+  `__aarch64_ldadd8_rel` to `__aarch64_ldadd8_relax`. Both timeline and fence completion updates call
+  `__aarch64_cas8_relax`, and resource-pool progress reads are ordinary `LDR` rather than `LDAR`.
+  The timeline refresh contains one driver call before its CAS loop. This is direct confirmation of
+  the manual-directed lowering, not an estimate from source.
+- Catch2 coverage now proves the cached completion sequence advances from 0 to 7, rejects a
+  regression to 3, and then advances to 9, alongside the existing cadence and exhausted-pool
+  tests. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m21s, compiling and linking the
+  ELF64/AArch64 test executable. It was not executed because this x64 host cannot run it and the
+  current instruction forbids Thor/device use.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2m19s. The 28,966,367-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `F87A7B10154F601D7FA880834167DF48AC713EF3538D3C3846552BAF05DC7AC5`. No ADB, install, launch, or
+  device access occurred.
+- This removes ordering work from frequent small counter operations and avoids redundant driver
+  queries under contention, but it is not a major whole-emulator speed or wattage claim. A future
+  allowed parent-versus-candidate Thor A/B should use an identical Vulkan title/scene, caches,
+  driver, resolution, layout, performance/fan mode, brightness, and duration. Record submission and
+  refresh counts, CPU time, frametimes, battery power, temperature, thermal slope, memory growth,
+  stability, and rendering correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

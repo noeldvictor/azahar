@@ -79,6 +79,8 @@ This fork has moved away from stock Azahar in visible ways:
   an empty dispatch and worker wake after the old never-reset command counter became stale.
 - Routine Vulkan timeline-counter polling runs once per four submissions; explicit waits and
   resource-pool pressure still refresh immediately, removing up to 75% of scheduled driver polls.
+- Vulkan sequence/completion counters now use numerical-only relaxed ARM64 atomics and a monotonic
+  atomic max; a refresh queries the driver once even if its cache update races.
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
@@ -165,7 +167,10 @@ matching the command-buffer pool depth. The cached tick can only understate comp
 resource-pool exhaustion and explicit waits still query immediately. This changes scheduled
 per-submit timeline-counter driver calls from four to one, leaving only three intermediate submits
 between routine queries. Garbage collection may be delayed conservatively, never advanced ahead of
-confirmed GPU completion.
+confirmed GPU completion. The logical and completed ticks carry numbers only, so their atomics use
+relaxed ordering while Vulkan submission/completion and existing mutexes continue to synchronize
+the actual work and resource queues. Final ARM64 code uses relaxed `LDADD`/CAS helpers and ordinary
+`LDR` counter reads, and each refresh makes at most one timeline-counter driver query.
 
 ## Thor Screenshot
 
