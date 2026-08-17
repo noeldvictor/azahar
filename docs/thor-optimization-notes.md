@@ -783,6 +783,43 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   duration. Record helper hit counts, frametimes, process CPU time, battery power, temperature,
   thermal slope, stability, and visual correctness.
 
+## 2026-08-17 AArch64 PICA LG2 Literal Packing
+
+- The normal positive-input PICA `LG2` helper previously materialized its first polynomial
+  coefficient with `ADR`, scalar `LDR`, and a general-to-vector lane `MOV`, then issued another
+  `ADR` and Q `LDR` for the remaining four coefficients. That is five executed setup instructions
+  before the otherwise register-only Horner polynomial.
+- The same official Snapdragon core tables used for `EX2` were visually rechecked for this change.
+  Cortex-X3 issue 4.0 tables 3-6/3-13, Cortex-A715 issue 5.0 tables 3-6/3-13, Cortex-A710 issue
+  4.0 tables 3-11/3-23, and Cortex-A510 issue 6.0 tables 3-10/3-23 cover `ADR` and Q-form `LDP` on
+  PDF pages 18/23, 20/26, 27/39, and 22/32. Q `LDP` has latency 6 and throughput 3/2 on X3,
+  A715, and A710; A510 gives latency 3 and throughput 1. The external PDFs remain indexed in
+  `docs/hardware/README.md`, and temporary rendered pages are removed after review.
+- The five unchanged coefficient words (`3d74552f`, `beee7397`, `3fbd96dd`, `c02153f6`, and
+  `4038d96c`) now occupy an aligned two-Q-register block. One `ADR` plus one Q `LDP` loads `c0-c3`
+  into `SRC2` and `c4` into the low lane of `VSCRATCH2`. Every Horner multiply/add remains in the
+  same order. The only operand-order spelling change is finite positive `c0 * mantissa` to
+  `mantissa * c0`; an exhaustive sweep of all 8,388,608 normalized float32 mantissas in `[1,2)`
+  found zero result-bit mismatches. NaN, zero, negative, and infinity control flow and literal
+  vectors were not changed.
+- Positive-input coefficient setup falls from five executed instructions to two, removing three
+  instructions per `LG2` helper execution with no new shader-entry setup. The aligned block adds
+  12 bytes of unused literal padding; alignment can also move following code, so this is an exact
+  runtime instruction-count result rather than a generated-code-byte claim.
+- Focused Catch2 coverage now adds `0.5`, `1.0`, `1.5`, and `2.0` around both range-reduction
+  boundaries to the existing NaN, negative, zero, integer-power, and high-magnitude checks.
+  `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m13s and linked the complete 443,607,952-byte
+  ELF64/AArch64 test executable plus `libcitra-android.so`. The executable was not run because the
+  host is x64 and the current instruction forbids using the Thor.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1m57s. The 28,966,559-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `7C163D6E16A1BB1EFCF4D8C7ED28FAA2EA4EC38571217967745D1CE77081E055`. No ADB, install,
+  launch, or device access occurred. No whole-game speed or battery-power claim is made.
+- A future allowed A/B should use an `LG2`-heavy vertex-shader scene with identical title, save,
+  caches, renderer, driver, resolution, display layout, performance/fan mode, brightness, and
+  duration. Record helper hit counts, frametimes, process CPU time, battery power, temperature,
+  thermal slope, stability, and visual correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
