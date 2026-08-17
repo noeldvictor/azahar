@@ -164,6 +164,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   versus throughput 2 for one-table `TBL`; A715/A710 list the simple permutations and one-table
   `TBL` at latency 2, while A510 lists simple permutations at latency 3 and one-table `TBL` at
   latency 4. Preserve an exact `TBL` fallback and prove the synthesized maps exhaustively.
+- For the PICA CPU-fallback vertex cache's tiny fully associative `u16` scan, compare sixteen IDs
+  per band with two ordinary Q loads, narrow the two halfword equality masks with `XTN`/`XTN2`,
+  select lane indices, and use one byte `UMINV` to recover the first match. The checked manuals put
+  ordinary vector loads on X3 page 23, A715 page 26, A710 page 39, and A510 page 32; integer
+  reductions on pages 26, 29, 43, and 36 respectively; and the relevant select/narrow operations
+  on X3 pages 31-32, A715 pages 34-35, A710 pages 52-53, and A510 pages 43-44. Keep one reduction
+  per sixteen entries—especially on the A510, where the reduction has the highest listed latency—
+  and retain scalar handling for the short tail. Prove first-match and every valid-prefix length
+  against a scalar reference before relying on the manual-backed instruction shape.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,

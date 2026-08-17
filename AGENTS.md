@@ -50,6 +50,14 @@
 - Use `:app:assembleVanillaDebug` only when an actual debuggable APK is needed.
 - Before pushing Android changes, verify at least `:app:compileVanillaDebugKotlin`; prefer a full `:app:assembleVanillaRelWithDebInfoLite` when native code, packaging, or Thor installs are involved.
 - Vulkan Anime4K is a real three-stage filter: copy the unscaled source to an independent image, generate the RG16F X gradient, generate the R16F Y/luma gradient, then refine into the scaled surface. Never bind the destination surface as one of its sampled inputs. Preserve explicit transfer, color-attachment, and fragment-read dependencies and compare a fixed frame against the OpenGL path on Adreno after changing this code.
+- Texture-filter output already persists in the owning rasterizer surface's scaled GPU image until
+  guest writes invalidate or re-upload that region; do not add a disk cache for these transient GPU
+  surfaces without measured Thor evidence that hashing, storage I/O, synchronization, and VRAM
+  duplication are a net power win. Screen-filter Anime4K is a separate final-presentation pass and
+  normally runs for each presented frame. Any Android per-game cache manager must key persistent
+  data by title ID, report sizes, separate Vulkan/OpenGL shader and future preprocessed-texture
+  caches from texture dumps, and never label or delete the user's custom/downloaded texture pack as
+  disposable cache. Require explicit confirmation for every destructive per-game action.
 - Vulkan guest-texture and final-presentation samplers deliberately keep anisotropy disabled with
   `maxAnisotropy = 1.0f`. PICA exposes nearest/linear and mip filtering but no anisotropy control,
   and the OpenGL path does not add it. Preserve exact guest filter semantics and deterministic
@@ -63,6 +71,14 @@
   tree reduction nearly consume the first 64-byte saving. Final ThinLTO should retain two Q-form
   `LDP`, eight `UMIN`/`UMAX`, and five address/control instructions per repeated band with no
   spills. Keep prefix-reference coverage across 127/128/129 bytes and equivalent halfword counts.
+- The indexed PICA CPU-fallback vertex cache is a fully associative 64-entry circular-replacement
+  cache. On AArch64, scan each complete sixteen-ID band with two Q loads, two halfword compares,
+  `XTN`/`XTN2` or equivalent `UZP1` narrowing, one lane-select/`ORN` equivalent, and one `UMINV`,
+  then retain the scalar tail and non-AArch64 path.
+  Preserve first-match behavior if duplicate IDs occur, the `[0, vertex_cache_count)` valid-prefix
+  invariant before the cache fills, hit behavior that does not advance replacement state, and the
+  existing circular replacement order after 64 misses. Keep exhaustive count/value differential
+  coverage and inspect final ThinLTO before treating the source shape as a performance result.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its paired-load lowering.
 - The AArch64 PICA `LG2` positive-input helper similarly keeps its five exact coefficient words in one aligned two-Q-register block. Preserve its `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value vectors and branches.

@@ -13,6 +13,7 @@
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/pica/command_list_utils.h"
 #include "video_core/pica/pica_core.h"
+#include "video_core/pica/vertex_cache.h"
 #include "video_core/pica/vertex_loader.h"
 #include "video_core/rasterizer_interface.h"
 #include "video_core/shader/shader.h"
@@ -1234,11 +1235,11 @@ void PicaCore::LoadVertices(bool is_indexed) {
     const bool index_u16 = index_info.format != 0;
 
     // Simple circular-replacement vertex cache
-    const std::size_t VERTEX_CACHE_SIZE = 64;
-    std::array<bool, VERTEX_CACHE_SIZE> vertex_cache_valid{};
+    constexpr u32 VERTEX_CACHE_SIZE = 64;
     std::array<u16, VERTEX_CACHE_SIZE> vertex_cache_ids;
     std::array<AttributeBuffer, VERTEX_CACHE_SIZE> vertex_cache;
     u32 vertex_cache_pos = 0;
+    u32 vertex_cache_count = 0;
 
     // Compile the vertex shader for this batch.
     ShaderUnit shader_unit;
@@ -1263,12 +1264,11 @@ void PicaCore::LoadVertices(bool is_indexed) {
                 continue;
             }
 
-            for (u32 i = 0; i < VERTEX_CACHE_SIZE; ++i) {
-                if (vertex_cache_valid[i] && vertex == vertex_cache_ids[i]) {
-                    vs_output = vertex_cache[i];
-                    vertex_cache_hit = true;
-                    break;
-                }
+            const u32 cache_index = VertexCacheUtils::FindVertex(
+                vertex_cache_ids.data(), vertex_cache_count, static_cast<u16>(vertex));
+            if (cache_index != vertex_cache_count) {
+                vs_output = vertex_cache[cache_index];
+                vertex_cache_hit = true;
             }
         }
 
@@ -1291,9 +1291,9 @@ void PicaCore::LoadVertices(bool is_indexed) {
             // Cache the vertex when doing indexed rendering.
             if (is_indexed) {
                 vertex_cache[vertex_cache_pos] = vs_output;
-                vertex_cache_valid[vertex_cache_pos] = true;
                 vertex_cache_ids[vertex_cache_pos] = vertex;
-                vertex_cache_pos = (vertex_cache_pos + 1) % VERTEX_CACHE_SIZE;
+                vertex_cache_count = std::min(vertex_cache_count + 1, VERTEX_CACHE_SIZE);
+                vertex_cache_pos = (vertex_cache_pos + 1) & (VERTEX_CACHE_SIZE - 1);
             }
         }
 

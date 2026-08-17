@@ -44,6 +44,7 @@ add_library(video_core STATIC EXCLUDE_FROM_ALL
     pica/shader_unit.cpp
     pica/shader_unit.h
     pica/packed_attribute.h
+    pica/vertex_cache.h
     pica/vertex_loader.cpp
     pica/vertex_loader.h
     rasterizer_cache/framebuffer_base.h

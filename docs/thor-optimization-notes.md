@@ -2920,6 +2920,43 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   helper tools. Reported C: free space increased by 2,024,697,856 bytes to 88,759,250,944. The
   retained `.cxx` cache is 2,782,216,533 bytes and `app/build` contains only the final APK.
 
+## 2026-08-17 AArch64 PICA Vertex-Cache Lookup
+
+- `PicaCore::LoadVertices()` keeps a fully associative 64-entry circular cache for indexed draws
+  that reach CPU-side vertex processing. The baseline AArch64 ThinLTO loop tested a valid byte and
+  then one `u16` ID at a time, advancing through 256-byte attribute records. A fully valid miss
+  repeated about nine instructions for each of 64 entries, roughly 579 lookup instructions with
+  setup and exit. Draws that succeed through hardware vertex acceleration bypass this path.
+- The replacement-state proof allows the valid-byte array to disappear. Before the cache fills,
+  misses insert sequentially and `[0, vertex_cache_count)` is exactly the valid prefix; hits do not
+  advance either count or position. Once count reaches 64, every slot is valid and the original
+  circular replacement order continues. Searching only that prefix therefore preserves the old
+  fully associative behavior, including the first matching slot if duplicate IDs ever occur.
+- AArch64 now compares sixteen IDs per band. Final ThinLTO uses `LDP Q`, two `.8h` `CMEQ`, `UZP1`
+  to form the byte mask, `ORN` to select lane indices or `0xff`, and one `.16b` `UMINV` to recover
+  the first match. The compiler's `UZP1`/`ORN` are exact simplifications of the source
+  `XTN`/`XTN2` and `BSL`; there is no lookup spill. A complete 64-entry miss executes 74 lookup
+  instructions including setup and exit instead of about 579, an 87.2% path-local reduction.
+  `LoadVertices()` grows from 1,344 to 1,436 bytes, a 92-byte or 6.8% code-size tradeoff.
+- This shape follows the checked Snapdragon 8 Gen 2 core manuals. Ordinary vector loads are listed
+  on Cortex-X3 page 23, A715 page 26, A710 page 39, and A510 page 32; integer reductions on pages
+  26, 29, 43, and 36 respectively; and the select/narrow operations on X3 pages 31-32, A715 pages
+  34-35, A710 pages 52-53, and A510 pages 43-44. One reduction covers a broad sixteen-ID band,
+  avoiding repeated horizontal dependencies on the reduction-sensitive A510 cores.
+- Permanent Catch2 coverage compares the helper with an independent scalar first-match loop for
+  all 65 valid-prefix lengths and all 65,536 `u16` values, then checks duplicate and miss cases.
+  The full ARM64 build compiled and ThinLTO-linked both the test ELF and production library. A
+  stripped 25,849,176-byte test executable was pushed over USB to AYN Thor `c3ca0370`; the focused
+  test passed all two assertions in one case in about 250 ms of host-observed time. The device and
+  host temporary binaries were removed immediately afterward.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 10 minutes 58 seconds.
+  This was an accidentally clean 2,199-action native rebuild after two local Ninja versions reset
+  the generated build log, not evidence that the source change itself requires a full rebuild.
+  No game was launched and no FPS, battery power, temperature, or sustained-speed measurement was
+  taken. A matched A/B should use an indexed, CPU-vertex-fallback-heavy scene and hold title, save,
+  caches, renderer, driver, resolution, layout, performance/fan mode, brightness, and duration
+  fixed before assigning a whole-game or wattage benefit.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
@@ -2950,6 +2987,19 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
    runtime feature gates. Profile actual 3DS CRC, GCM, and GF(2) workloads before treating those
    latent hardware paths as a gameplay optimization; AES/SHA content paths were already hardware
    accelerated and crypto setup is not currently a sustained-game-FPS premise.
+
+7. Per-game cached-data manager
+
+   Texture-filter results already live in the owning rasterizer surface's scaled GPU image until a
+   guest write invalidates or uploads the region, so a separate disk cache would add hashing, I/O,
+   synchronization, and storage without evidence of a power win. The final screen Anime4K filter
+   is different and normally runs once per presented frame because its input changes each frame.
+
+   Android's long-press game sheet already deletes Vulkan or OpenGL shader cache by title ID. Turn
+   that into a discoverable per-game manager that reports sizes and keeps shader cache, future
+   preprocessed/decoded texture cache, texture dumps, and downloaded custom-texture packs visibly
+   separate. Cache deletion should be individually confirmed; downloaded packs are user content,
+   not disposable cache, and must have a separately labeled uninstall action.
 
 ## Benchmark Checklist
 

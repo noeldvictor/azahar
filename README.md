@@ -59,6 +59,11 @@ This fork has moved away from stock Azahar in visible ways:
 - Android Graphics has a separate Screen Filter selector. Its opt-in Anime4K v4 Mobile mode applies
   a single-pass, screen-space DoG filter while each 3DS screen is scaled into the layout; the older
   Texture Filter choices still operate on game textures and remain separate.
+- Texture-filter results are retained in each rasterizer surface's scaled GPU image and recomputed
+  only when the guest invalidates or uploads that texture region. Screen-filter Anime4K remains a
+  per-present pass because it filters the finished, changing 3DS screens rather than reusable game
+  textures. The long-press game sheet already deletes Vulkan or OpenGL shader cache per title;
+  unified size reporting and future preprocessed-texture cache controls remain planned QoL work.
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.
@@ -103,6 +108,10 @@ This fork has moved away from stock Azahar in visible ways:
   from every ordinary output write.
 - Large indexed draws scan their index bounds through four independent AArch64 min/max chains and
   two paired Q loads per 64-byte band. Short draws retain the compact single-vector loop.
+- Indexed draws that reach the PICA CPU fallback search its fully associative 64-entry vertex cache
+  sixteen IDs per AArch64 band with paired Q loads, exact equality masks, and one `UMINV`. Full-cache
+  miss search work falls 87.2% in final ThinLTO while preserving first-match and circular replacement
+  behavior; exhaustive ARM64 coverage passes on the Thor.
 - The hottest PICA command-list parser has an AArch64 four-pair `LD2` path that validates ordinary
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - The AArch64 PICA `EX2` and `LG2` helpers pack their exact approximation constants into aligned
@@ -200,6 +209,14 @@ min/max dependency carried by the old loop across every vector. Scans below 128 
 smaller loop so setup and tree-reduction work do not overwhelm the saving. Every prefix through
 both crossover boundaries has reference coverage; these are linked-code reductions, not a
 whole-game FPS or battery-watt measurement.
+
+Indexed draws that fall back to CPU-side PICA vertex processing now search their fully associative
+64-entry vertex cache sixteen `u16` IDs at a time on AArch64. Final ThinLTO uses one Q-form `LDP`,
+two `CMEQ`, `UZP1`, `ORN`, and one `UMINV` per band with no spill. A full valid-cache miss falls
+from about 579 executed lookup instructions to 74, an 87.2% path-local reduction; the containing
+function grows by 92 bytes. Every valid-prefix length and every 16-bit lookup value, plus duplicate
+first-match behavior, passes the focused test on the Thor. Hardware-accelerated vertex draws bypass
+this fallback, so this is not a whole-game FPS or wattage claim.
 
 The PICA vertex-shader JIT now attacks six common AArch64 lowering costs. Source swizzles use
 register-only AdvSIMD permutations where possible, `ST1` lane stores handle partial destination

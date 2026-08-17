@@ -28,6 +28,7 @@ add_executable(tests
     video_core/shader_setup.cpp
     video_core/surface_base.cpp
     video_core/texture_codec.cpp
+    video_core/vertex_cache.cpp
     audio_core/merryhime_3ds_audio/merry_audio/merry_audio.cpp
     audio_core/merryhime_3ds_audio/merry_audio/merry_audio.h
     audio_core/merryhime_3ds_audio/merry_audio/service_fixture.cpp
