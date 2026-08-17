@@ -45,6 +45,12 @@
   component order, bottom-up rows, padded stride, both swizzle directions, the scalar non-AArch64
   path, and the compile-time 24-byte shuffle proof. Final ThinLTO must be checked because
   Cortex-A510 documents these D-form byte stores at only `1/25` (`ST4`) and `1/17` (`ST3`).
+- Converted D24 Morton tiles must process sixteen depths per AArch64 two-row band while preserving
+  little-endian 24-bit assembly, bottom-up rows, padded strides, exact `UCVTF`/`FDIV` decode, exact
+  `FMUL`/`FCVTZU` encode truncation, and the scalar non-AArch64 path. Keep D-form `LD3`, one-table
+  Morton shuffles, `ZIP`/`UZP`/narrowing, and ordinary packed stores; do not introduce the
+  Cortex-A510-hostile four-table `TBL`, reciprocal approximations, per-pixel scalar work, or hot-loop
+  spills. Retain edge/pattern depth coverage and byte-exact canaries, and recheck final ThinLTO.
 - Vulkan D24S8 staging unpack deliberately handles sixteen packed S8D24 pixels per AArch64 band.
   Load the complete 64-byte band before overwriting its in-place depth plane, preserve the trailing
   contiguous stencil plane, exact integer D24 shift, exact D32 `UCVTF`/`FDIV`, scalar tail, zero

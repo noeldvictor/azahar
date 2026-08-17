@@ -1631,6 +1631,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   constant, then record DSP-thread time/placement, audio underruns, frametimes, battery power,
   temperature, thermal slope, output correctness, and stability.
 
+## 2026-08-17 AArch64 Converted-D24 Morton Tiles
+
+- The Vulkan renderer's converted `D24` path still expanded each 192-byte PICA Morton tile to
+  256 bytes of D32 float, and packed it back again, one pixel at a time on AArch64. Baseline final
+  ThinLTO showed 102 instructions in the decode x-column loop repeated eight times, or 816 core
+  inner instructions per tile. Encode showed 93 instructions repeated eight times, or 744 per
+  tile. Both contained 64 scalar conversions and encode also issued 192 scalar byte stores.
+- The complete relevant table pages were visually inspected in all four external Snapdragon 8 Gen
+  2 core manuals: Cortex-A510 issue 6.0 pages 39-46, Cortex-A710 issue 4.0 pages 46-56,
+  Cortex-A715 issue 5.0 pages 30-37, and Cortex-X3 issue 4.0 pages 28-34. A direct four-register
+  table gather was rejected because A510 documents four-table `TBL` at latency 16 and throughput
+  `1/9`. D-form `LD3` directly de-interleaves eight packed D24 pixels, while one-table `TBL`,
+  ZIP/UZP, and narrowing avoid that efficiency-core cliff. The PDFs remain outside Git and their
+  hashes stay recorded in `docs/hardware/README.md`.
+- The new AArch64 path handles a complete two-row, sixteen-depth band per iteration. Decode uses two
+  D-form byte `LD3`, three one-table Morton permutations, ZIPs to assemble little-endian `u32`
+  lanes, and four-lane `UCVTF` plus true `FDIV`. Encode uses paired Q float loads, exact `FMUL` plus
+  `FCVTZU`, narrowing/UZP byte extraction, three inverse Morton permutations, and the existing
+  exact two-`TBL2` packed-store helper. The scalar non-AArch64 path is unchanged; no reciprocal
+  approximation or changed truncation was introduced.
+- Final ThinLTO proves decode's two-row loop is 37 instructions repeated four times, or 148 core
+  inner instructions per tile: 81.9% fewer than the 816-instruction scalar baseline. Encode is 57
+  instructions repeated four times, or 228 per tile: 69.4% fewer than the 744-instruction baseline.
+  The linked loops contain the intended `LD3`, `TBL1`, ZIP/UZP/narrow, vector conversion/divide,
+  and ordinary packed stores, with no four-table `TBL`, per-pixel fallback, or hot-loop spills.
+  Tile memory traffic is unchanged; this removes CPU instruction and scalar memory-operation work.
+- Focused Catch2 coverage constructs all 64 Morton positions from zero, one, midpoint, maximum,
+  near-maximum, recognizable edge values, and deterministic patterns. It compares every decoded
+  float byte against the scalar division, preserves a ten-pixel padded stride and canaries, and
+  compares encode against the scalar float-multiply/truncate expression instead of assuming every
+  decoded float round-trips to its original integer.
+- The final native ARM64 build compiled and linked the focused test plus the production ThinLTO
+  library successfully. The 444,519,336-byte ARM64 test executable was not run on this x64 host
+  because device use remains forbidden. `:app:assembleVanillaRelWithDebInfoLite` then passed in
+  1 minute 22 seconds; the resulting 28,966,415-byte APK contains only `arm64-v8a` libraries and
+  has SHA-256 `E0A8C836AA1E9D1240F71223E30DC8C0BD54115451ED9CD9631FCD38B5F07DC8`.
+- After verification, exact Gradle intermediates, generated sources, Kotlin/temp output,
+  mapping/debug-symbol output, the ARM64 test executable, and every repo-local manual render were
+  removed. The final APK and active ARM64 CMake cache were retained; free C: space increased by
+  1,935,851,520 bytes (about 1.80 GiB). No source, external manual, save, or unrelated file was
+  touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. This is a strong
+  depth-upload/readback CPU-efficiency candidate when converted D24 surfaces are active, not a
+  measured whole-game speed or wattage result. A future allowed matched Thor A/B must hold title,
+  scene, save, caches, renderer, resolution, driver, layout, performance/fan mode, brightness, and
+  duration constant, then record renderer-thread time, upload/readback frequency, frametimes,
+  battery power, temperature, thermal slope, visual depth correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

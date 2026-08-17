@@ -379,10 +379,8 @@ inline void StoreRGB8RowA64(u8* dest, uint8x8_t component_0, uint8x8_t component
         vcombine_u8(component_0, component_1),
         vcombine_u8(component_2, vdup_n_u8(0)),
     };
-    const uint8x16_t first =
-        vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[0].data()));
-    const uint8x16_t second =
-        vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[1].data()));
+    const uint8x16_t first = vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[0].data()));
+    const uint8x16_t second = vqtbl2q_u8(table, vld1q_u8(RGB8_STORE_SHUFFLES_A64[1].data()));
     vst1q_u8(dest, first);
     vst1_u8(dest + 16, vget_low_u8(second));
 }
@@ -579,10 +577,10 @@ inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
                 StoreRGBA8RowsA64(first_row, second_row, component_2, component_1, component_0,
                                   opaque);
             } else {
-                StoreRGB8RowA64(first_row, vget_low_u8(component_0),
-                                vget_low_u8(component_1), vget_low_u8(component_2));
-                StoreRGB8RowA64(second_row, vget_high_u8(component_0),
-                                vget_high_u8(component_1), vget_high_u8(component_2));
+                StoreRGB8RowA64(first_row, vget_low_u8(component_0), vget_low_u8(component_1),
+                                vget_low_u8(component_2));
+                StoreRGB8RowA64(second_row, vget_high_u8(component_0), vget_high_u8(component_1),
+                                vget_high_u8(component_2));
             }
         } else {
             uint8x16_t component_0;
@@ -611,9 +609,100 @@ inline void MortonCopyTile24A64(u32 stride, u8* tile_buffer, u8* linear_buffer) 
     }
 }
 
+template <u32 byte_shift>
+inline uint8x8_t NarrowD24ComponentA64(uint32x4_t first, uint32x4_t second) {
+    static_assert(byte_shift == 0 || byte_shift == 8 || byte_shift == 16);
+
+    uint16x4_t first_narrow;
+    uint16x4_t second_narrow;
+    if constexpr (byte_shift == 0) {
+        first_narrow = vmovn_u32(first);
+        second_narrow = vmovn_u32(second);
+    } else if constexpr (byte_shift == 8) {
+        first_narrow = vshrn_n_u32(first, 8);
+        second_narrow = vshrn_n_u32(second, 8);
+    } else {
+        first_narrow = vshrn_n_u32(first, 16);
+        second_narrow = vshrn_n_u32(second, 16);
+    }
+    return vmovn_u16(vcombine_u16(first_narrow, second_narrow));
+}
+
+// PICA's D24 Morton tiles contain 64 packed little-endian 24-bit integers. Vulkan staging uses
+// D32 float rows instead. Keep the exact scalar UCVTF/FDIV and FMUL/FCVTZU operations, but process
+// four depths per instruction. The shuffle deliberately uses TBL1 plus ZIP/narrow operations:
+// TBL4 issues only once every nine cycles on the Cortex-A510, while one-table TBL and ZIP have much
+// higher documented throughput. D-form LD3 also de-interleaves each packed eight-pixel chunk in
+// one instruction.
+template <bool morton_to_linear>
+inline void MortonCopyTileD24ConvertedA64(u32 stride, u8* tile_buffer, u8* linear_buffer) {
+    constexpr u32 encoded_bytes_per_pixel = 3;
+    constexpr u32 linear_bytes_per_pixel = sizeof(float);
+    const float32x4_t d24_max = vdupq_n_f32(16777215.0f);
+
+    for (u32 y = 0; y < 8; y += 2) {
+        const u32 tile_offset = VideoCore::MortonInterleave(0, y) * encoded_bytes_per_pixel;
+        u8* const first_row = linear_buffer + (7 - y) * stride * linear_bytes_per_pixel;
+        u8* const second_row = first_row - stride * linear_bytes_per_pixel;
+
+        if constexpr (morton_to_linear) {
+            const uint8x8x3_t left = vld3_u8(tile_buffer + tile_offset);
+            const uint8x8x3_t right =
+                vld3_u8(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel);
+            const uint8x16_t low = Morton24ToRowsA64(left.val[0], right.val[0]);
+            const uint8x16_t middle = Morton24ToRowsA64(left.val[1], right.val[1]);
+            const uint8x16_t high = Morton24ToRowsA64(left.val[2], right.val[2]);
+            const uint8x16_t zero = vdupq_n_u8(0);
+
+            const uint8x16x2_t low_middle = vzipq_u8(low, middle);
+            const uint8x16x2_t high_zero = vzipq_u8(high, zero);
+            const uint16x8x2_t first = vzipq_u16(vreinterpretq_u16_u8(low_middle.val[0]),
+                                                 vreinterpretq_u16_u8(high_zero.val[0]));
+            const uint16x8x2_t second = vzipq_u16(vreinterpretq_u16_u8(low_middle.val[1]),
+                                                  vreinterpretq_u16_u8(high_zero.val[1]));
+
+            const uint32x4_t first_low = vreinterpretq_u32_u16(first.val[0]);
+            const uint32x4_t first_high = vreinterpretq_u32_u16(first.val[1]);
+            const uint32x4_t second_low = vreinterpretq_u32_u16(second.val[0]);
+            const uint32x4_t second_high = vreinterpretq_u32_u16(second.val[1]);
+            vst1q_f32(reinterpret_cast<float*>(first_row),
+                      vdivq_f32(vcvtq_f32_u32(first_low), d24_max));
+            vst1q_f32(reinterpret_cast<float*>(first_row + 16),
+                      vdivq_f32(vcvtq_f32_u32(first_high), d24_max));
+            vst1q_f32(reinterpret_cast<float*>(second_row),
+                      vdivq_f32(vcvtq_f32_u32(second_low), d24_max));
+            vst1q_f32(reinterpret_cast<float*>(second_row + 16),
+                      vdivq_f32(vcvtq_f32_u32(second_high), d24_max));
+        } else {
+            const uint32x4_t first_low = vcvtq_u32_f32(
+                vmulq_f32(vld1q_f32(reinterpret_cast<const float*>(first_row)), d24_max));
+            const uint32x4_t first_high = vcvtq_u32_f32(
+                vmulq_f32(vld1q_f32(reinterpret_cast<const float*>(first_row + 16)), d24_max));
+            const uint32x4_t second_low = vcvtq_u32_f32(
+                vmulq_f32(vld1q_f32(reinterpret_cast<const float*>(second_row)), d24_max));
+            const uint32x4_t second_high = vcvtq_u32_f32(
+                vmulq_f32(vld1q_f32(reinterpret_cast<const float*>(second_row + 16)), d24_max));
+
+            const uint8x16_t low =
+                RowsToMorton24A64(NarrowD24ComponentA64<0>(first_low, first_high),
+                                  NarrowD24ComponentA64<0>(second_low, second_high));
+            const uint8x16_t middle =
+                RowsToMorton24A64(NarrowD24ComponentA64<8>(first_low, first_high),
+                                  NarrowD24ComponentA64<8>(second_low, second_high));
+            const uint8x16_t high =
+                RowsToMorton24A64(NarrowD24ComponentA64<16>(first_low, first_high),
+                                  NarrowD24ComponentA64<16>(second_low, second_high));
+
+            StoreRGB8RowA64(tile_buffer + tile_offset, vget_low_u8(low), vget_low_u8(middle),
+                            vget_low_u8(high));
+            StoreRGB8RowA64(tile_buffer + tile_offset + 16 * encoded_bytes_per_pixel,
+                            vget_high_u8(low), vget_high_u8(middle), vget_high_u8(high));
+        }
+    }
+}
+
 template <PixelFormat format>
-inline uint8x8x4_t ExpandTexturePixelsA64(uint8x8_t low_component,
-                                          uint8x8_t high_component) {
+inline uint8x8x4_t ExpandTexturePixelsA64(uint8x8_t low_component, uint8x8_t high_component) {
     const uint8x8_t zero = vdup_n_u8(0);
     const uint8x8_t opaque = vdup_n_u8(0xFF);
     uint8x8x4_t output;
@@ -846,6 +935,10 @@ constexpr void MortonCopyTile(u32 stride, std::span<u8> tile_buffer, std::span<u
     } else if constexpr (format == PixelFormat::D24S8) {
         MortonCopyTile32A64<morton_to_linear, Pixel32TransformA64::D24S8>(
             stride, tile_buffer.data(), linear_buffer.data());
+        return;
+    } else if constexpr (format == PixelFormat::D24 && converted) {
+        MortonCopyTileD24ConvertedA64<morton_to_linear>(stride, tile_buffer.data(),
+                                                        linear_buffer.data());
         return;
     } else if constexpr (format == PixelFormat::RGB8 ||
                          (format == PixelFormat::D24 && !converted)) {

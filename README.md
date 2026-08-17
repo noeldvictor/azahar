@@ -84,6 +84,9 @@ This fork has moved away from stock Azahar in visible ways:
 - IA8, RG8, I8, A8, and IA4 texture expansion now uses `ZIP` plus ordinary paired Q stores rather
   than D-form `ST4`. Native packed RGB8/D24 Morton output similarly replaces D-form `ST3` with
   exact two-table shuffles and ordinary stores, avoiding the A510's slow structured-store paths.
+- Converted D24 Morton tiles now expand to and pack from D32 float sixteen depths per AArch64
+  two-row band with exact vector divide/conversion, avoiding the former per-pixel scalar loop and
+  the Cortex-A510's exceptionally slow four-table shuffle form.
 - Vulkan D24S8 uploads split sixteen packed pixels per AArch64 loop with ordinary paired loads,
   shifts, `UZP`, and contiguous depth/stencil stores instead of a scalar loop per pixel. The exact
   D32-float fallback is vectorized too, without reciprocal approximations.
@@ -189,6 +192,16 @@ respectively, versus `1/cycle` for a one-register `ST1`. Existing full-tile test
 directions, component order, bottom-up row placement, and padded strides; final ThinLTO confirms
 the target symbols contain no `ST3` or `ST4`. Whole-game and battery effects still require a
 controlled Thor A/B.
+
+Converted D24 Morton tiles now use a separate exact AArch64 path for Vulkan's D32-float staging.
+Each two-row band de-interleaves two packed eight-pixel chunks with D-form `LD3`, uses three
+single-table Morton permutations plus ZIP/UZP/narrow operations, and performs four-lane
+`UCVTF`/`FDIV` decode or `FMUL`/`FCVTZU` encode. The Cortex-A510 guide's one-per-nine-cycle
+four-table `TBL` form was deliberately rejected. In final ThinLTO, decode falls from 816 scalar
+inner-loop instructions per tile to 148 vector instructions (81.9% fewer), while encode falls from
+744 to 228 (69.4% fewer), without hot-loop spills or approximate reciprocal math. Exact depth-edge,
+pattern, Morton-order, stride-padding, and encode-truncation coverage compiles into the ARM64 test
+binary. These are path-local CPU/code-generation reductions, not measured whole-game FPS or watts.
 
 Vulkan D24S8 staging deinterleave now processes sixteen packed S8D24 pixels per AArch64 band. The
 primary D24 path uses two ordinary paired Q loads, four `USHR`, three `UZP1`, two paired Q depth

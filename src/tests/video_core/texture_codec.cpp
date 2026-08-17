@@ -247,10 +247,62 @@ void CheckD24S8() {
     REQUIRE(encoded == tiled);
 }
 
+void CheckConvertedD24() {
+    constexpr std::array<u32, 8> edge_depths = {
+        0, 1, 0x7FFFFF, 0x800000, 0xFFFFFE, 0xFFFFFF, 0x123456, 0xABCDEF,
+    };
+    std::array<u8, 8 * 8 * 3> tiled{};
+    for (u32 index = 0; index < 8 * 8; ++index) {
+        const u32 depth = index < edge_depths.size()
+                              ? edge_depths[index]
+                              : ((index * 0x45D9F3Bu) ^ (index << 17) ^ 0x5A39C7u) & 0xFFFFFF;
+        tiled[index * 3] = static_cast<u8>(depth);
+        tiled[index * 3 + 1] = static_cast<u8>(depth >> 8);
+        tiled[index * 3 + 2] = static_cast<u8>(depth >> 16);
+    }
+
+    std::array<u8, 10 * 8 * 4> expected{};
+    expected.fill(0xCD);
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 source = VideoCore::MortonInterleave(x, y) * 3;
+            const u32 depth = static_cast<u32>(tiled[source]) |
+                              (static_cast<u32>(tiled[source + 1]) << 8) |
+                              (static_cast<u32>(tiled[source + 2]) << 16);
+            const float normalized = static_cast<float>(depth) / 16777215.0f;
+            const u32 dest = ((7 - y) * 10 + x) * 4;
+            std::memcpy(expected.data() + dest, &normalized, sizeof(normalized));
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::MortonCopyTile<true, VideoCore::PixelFormat::D24, true>(10, tiled, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, 8 * 8 * 3> expected_encoded{};
+    for (u32 y = 0; y < 8; ++y) {
+        for (u32 x = 0; x < 8; ++x) {
+            const u32 source = ((7 - y) * 10 + x) * 4;
+            float normalized;
+            std::memcpy(&normalized, expected.data() + source, sizeof(normalized));
+            const u32 depth = static_cast<u32>(normalized * 0xFFFFFF);
+            const u32 dest = VideoCore::MortonInterleave(x, y) * 3;
+            expected_encoded[dest] = static_cast<u8>(depth);
+            expected_encoded[dest + 1] = static_cast<u8>(depth >> 8);
+            expected_encoded[dest + 2] = static_cast<u8>(depth >> 16);
+        }
+    }
+
+    std::array<u8, 8 * 8 * 3> encoded{};
+    encoded.fill(0xA5);
+    VideoCore::MortonCopyTile<false, VideoCore::PixelFormat::D24, true>(10, encoded, decoded);
+    REQUIRE(encoded == expected_encoded);
+}
+
 template <bool depth_float>
 void CheckDepthStencilUnpack() {
-    constexpr std::array<u32, 12> pixel_counts = {0,  1,  3,  15, 16, 17,
-                                                  31, 32, 33, 63, 64, 65};
+    constexpr std::array<u32, 12> pixel_counts = {0, 1, 3, 15, 16, 17, 31, 32, 33, 63, 64, 65};
     constexpr std::array<u32, 8> edge_depths = {
         0, 1, 0x7FFFFF, 0x800000, 0xFFFFFE, 0xFFFFFF, 0x123456, 0xABCDEF,
     };
@@ -260,9 +312,8 @@ void CheckDepthStencilUnpack() {
         const std::size_t data_size = pixel_count * 5;
         std::vector<u8> actual(data_size + canary_size, 0xA5);
         const auto depth_for_pixel = [&](u32 pixel) {
-            return pixel < edge_depths.size()
-                       ? edge_depths[pixel]
-                       : (pixel * 0x1F123B + 0x654321) & 0xFFFFFF;
+            return pixel < edge_depths.size() ? edge_depths[pixel]
+                                              : (pixel * 0x1F123B + 0x654321) & 0xFFFFFF;
         };
         for (u32 pixel = 0; pixel < pixel_count; ++pixel) {
             const u32 depth = depth_for_pixel(pixel);
@@ -277,8 +328,7 @@ void CheckDepthStencilUnpack() {
             expected[pixel_count * sizeof(u32) + pixel] = static_cast<u8>(pixel * 73 + 19);
             if constexpr (depth_float) {
                 const float normalized = static_cast<float>(depth) / 16777215.0f;
-                std::memcpy(expected.data() + pixel * sizeof(u32), &normalized,
-                            sizeof(normalized));
+                std::memcpy(expected.data() + pixel * sizeof(u32), &normalized, sizeof(normalized));
             } else {
                 std::memcpy(expected.data() + pixel * sizeof(u32), &depth, sizeof(depth));
             }
@@ -286,8 +336,8 @@ void CheckDepthStencilUnpack() {
 
         const auto mode = depth_float ? VideoCore::DepthStencilUnpackMode::D32Float
                                       : VideoCore::DepthStencilUnpackMode::D24Unorm;
-        const u32 depth_size = VideoCore::UnpackDepthStencil(
-            std::span{actual.data(), data_size}, mode);
+        const u32 depth_size =
+            VideoCore::UnpackDepthStencil(std::span{actual.data(), data_size}, mode);
         REQUIRE(depth_size == pixel_count * sizeof(u32));
         REQUIRE(actual == expected);
     }
@@ -542,6 +592,9 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("D24") {
         CheckTileCodec<VideoCore::PixelFormat::D24>();
+    }
+    SECTION("D24 converted to D32 float") {
+        CheckConvertedD24();
     }
     SECTION("D24S8 byte rotation") {
         CheckD24S8();
