@@ -516,6 +516,43 @@ SHADER_TEST_CASE("SETEMIT", "[video_core][shader]") {
     }
 }
 
+SHADER_TEST_CASE("EMIT switches the output bank", "[video_core][shader]") {
+    const auto sh_input0 = SourceRegister::MakeInput(0);
+    const auto sh_input1 = SourceRegister::MakeInput(1);
+    const auto sh_output = DestRegister::MakeOutput(0);
+
+    auto shader_setup = CompileShaderSetup({
+        {OpCode::Id::MOV, sh_output, sh_input0},
+        {OpCode::Id::NOP}, // emit
+        {OpCode::Id::MOV, sh_output, sh_input1},
+        {OpCode::Id::END},
+    });
+
+    nihstro::Instruction EMIT{};
+    EMIT.opcode = nihstro::OpCode(nihstro::OpCode::Id::EMIT);
+    shader_setup->UpdateProgramCode(1, EMIT.hex);
+
+    auto shader = TestType(std::move(shader_setup));
+    Pica::GeometryEmitter geometry_emitter{};
+    geometry_emitter.output_mask = 1;
+    geometry_emitter.emit_state.vertex_id = 0;
+    geometry_emitter.emit_state.prim_emit = false;
+    Pica::ShaderUnit shader_unit(&geometry_emitter);
+
+    const std::array<Common::Vec4f, 2> inputs = {
+        Common::Vec4f{1.0f, 2.0f, 3.0f, 4.0f},
+        Common::Vec4f{5.0f, 6.0f, 7.0f, 8.0f},
+    };
+    shader.RunShader(shader_unit, inputs);
+
+    REQUIRE(shader_unit.output_bank);
+    for (std::size_t component = 0; component < 4; ++component) {
+        REQUIRE(shader_unit.output[0][0][component].ToFloat32() == inputs[0][component]);
+        REQUIRE(geometry_emitter.buffer[0][0][component].ToFloat32() == inputs[0][component]);
+        REQUIRE(shader_unit.output[1][0][component].ToFloat32() == inputs[1][component]);
+    }
+}
+
 SHADER_TEST_CASE("Uniform Read", "[video_core][shader]") {
     const auto sh_input = SourceRegister::MakeInput(0);
     const auto sh_c0 = SourceRegister::MakeFloat(0);
@@ -737,24 +774,27 @@ SHADER_TEST_CASE("Dest Mask", "[video_core][shader]") {
                                       "yz", "yw", "zw", "xyz", "xyw", "xzw", "yzw"};
         constexpr Common::Vec4f sentinel = {-11.0f, -12.0f, -13.0f, -14.0f};
 
-        for (const char* mask : masks) {
-            CAPTURE(mask);
-            auto masked_shader = shader(mask);
-            Pica::ShaderUnit shader_unit;
-            auto& output = shader_unit.output[shader_unit.output_bank][0];
-            for (std::size_t component = 0; component < 4; ++component) {
-                output[component] = Pica::f24::FromFloat32(sentinel[component]);
-            }
-
-            masked_shader->RunShader(shader_unit, {&iota_vec, 1});
-
-            for (std::size_t component = 0; component < 4; ++component) {
-                bool enabled = false;
-                for (const char* current = mask; *current != '\0'; ++current) {
-                    enabled |= *current == "xyzw"[component];
+        for (const bool output_bank : {false, true}) {
+            for (const char* mask : masks) {
+                CAPTURE(output_bank, mask);
+                auto masked_shader = shader(mask);
+                Pica::ShaderUnit shader_unit;
+                shader_unit.output_bank = output_bank;
+                auto& output = shader_unit.output[output_bank][0];
+                for (std::size_t component = 0; component < 4; ++component) {
+                    output[component] = Pica::f24::FromFloat32(sentinel[component]);
                 }
-                const float expected = enabled ? iota_vec[component] : sentinel[component];
-                REQUIRE(output[component].ToFloat32() == expected);
+
+                masked_shader->RunShader(shader_unit, {&iota_vec, 1});
+
+                for (std::size_t component = 0; component < 4; ++component) {
+                    bool enabled = false;
+                    for (const char* current = mask; *current != '\0'; ++current) {
+                        enabled |= *current == "xyzw"[component];
+                    }
+                    const float expected = enabled ? iota_vec[component] : sentinel[component];
+                    REQUIRE(output[component].ToFloat32() == expected);
+                }
             }
         }
     }

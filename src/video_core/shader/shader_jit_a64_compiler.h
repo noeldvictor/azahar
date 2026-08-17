@@ -88,6 +88,9 @@ private:
                             oaknut::QReg dest);
     void Compile_DestEnable(Instruction instr, oaknut::QReg dest);
 
+    /// Caches the currently selected PICA output-register bank in the host output pointer.
+    void Compile_OutputPointer();
+
     /**
      * Compiles a `MUL src1, src2` operation, properly handling the PICA semantics when multiplying
      * zero by inf. Clobbers `src2` and `scratch`.
@@ -145,6 +148,7 @@ private:
     /// Whether math or guest-subroutine BLs require preserving the host return address at entry.
     bool needs_link_register_save = false;
     bool uses_uniforms = false;
+    bool uses_outputs = false;
     bool needs_one = false;
     bool uses_loop = false;
 

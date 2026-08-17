@@ -102,6 +102,8 @@ const std::array<JitFunction, 64> instr_table = {
 // The following is used to alias some commonly used registers:
 /// Pointer to the uniform memory
 constexpr XReg UNIFORMS = X9;
+/// Pointer to the currently selected output-register bank
+constexpr XReg OUTPUTS = X8;
 /// The two 32-bit VS address offset registers set by the MOVA instruction
 constexpr XReg ADDROFFS_REG_0 = X10;
 constexpr XReg ADDROFFS_REG_1 = X11;
@@ -136,7 +138,7 @@ constexpr QReg ONE = Q5;
 // Scratch registers, e.g., SRC1 and VSCRATCH0, have to be saved on the side if needed
 static const std::bitset<64> persistent_regs =
     BuildRegSet({// Pointers to register blocks
-                 UNIFORMS, STATE,
+                 UNIFORMS, OUTPUTS, STATE,
                  // Cached registers
                  ADDROFFS_REG_0, ADDROFFS_REG_1, LOOPCOUNT_REG, COND0, COND1,
                  // Constants
@@ -349,10 +351,13 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
 
     SwizzlePattern swiz = {(*swizzle_data)[operand_desc_id]};
 
+    XReg dest_ptr = STATE;
     std::size_t dest_offset_disp;
     switch (dest.GetRegisterType()) {
     case RegisterType::Output:
-        dest_offset_disp = ShaderUnit::OutputOffset(dest.GetIndex());
+        dest_ptr = OUTPUTS;
+        dest_offset_disp =
+            ShaderUnit::OutputOffset(dest.GetIndex()) - ShaderUnit::OutputOffset(0);
         break;
     case RegisterType::Temporary:
         dest_offset_disp = ShaderUnit::TemporaryOffset(dest.GetIndex());
@@ -363,22 +368,9 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
         break;
     }
 
-    constexpr int OutputBankShift = std::countr_zero(ShaderUnit::OutputBankSize);
-
     // If all components are enabled, write the result to the destination register
     if (swiz.dest_mask == NO_DEST_REG_MASK) {
-        // Store dest back to memory
-        if (dest.GetRegisterType() == RegisterType::Output) {
-            ADD(XSCRATCH0, STATE, dest_offset_disp);
-
-            LDRB(XSCRATCH1.toW(), STATE, ShaderUnit::OutputBankOffset());
-            LSL(XSCRATCH1, XSCRATCH1, OutputBankShift);
-            ADD(XSCRATCH0, XSCRATCH0, XSCRATCH1);
-
-            STR(src, XSCRATCH0);
-        } else {
-            STR(src, STATE, dest_offset_disp);
-        }
+        STR(src, dest_ptr, dest_offset_disp);
 
     } else {
         // A lane store preserves disabled components without loading and blending the old vector.
@@ -409,12 +401,7 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
         }
 
         const std::size_t first_byte_offset = groups[0].lane * sizeof(u32);
-        ADD(XSCRATCH0, STATE, dest_offset_disp + first_byte_offset);
-        if (dest.GetRegisterType() == RegisterType::Output) {
-            LDRB(XSCRATCH1.toW(), STATE, ShaderUnit::OutputBankOffset());
-            LSL(XSCRATCH1, XSCRATCH1, OutputBankShift);
-            ADD(XSCRATCH0, XSCRATCH0, XSCRATCH1);
-        }
+        ADD(XSCRATCH0, dest_ptr, dest_offset_disp + first_byte_offset);
 
         const auto store_group = [&](const StoreGroup& group, bool post_indexed) {
             if (group.bytes == 8) {
@@ -444,6 +431,16 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
         }
         store_group(groups[1], false);
     }
+}
+
+void JitShader::Compile_OutputPointer() {
+    constexpr int OutputBankShift = std::countr_zero(ShaderUnit::OutputBankSize);
+
+    // output_bank is a bool, so LDRB also supplies the required zero extension. Fold the bank-size
+    // shift into ADD and keep register offsets relative to the cached bank pointer.
+    LDRB(XSCRATCH0.toW(), STATE, ShaderUnit::OutputBankOffset());
+    ADD(OUTPUTS, STATE, XSCRATCH0, AddSubShift::LSL, OutputBankShift);
+    ADD(OUTPUTS, OUTPUTS, ShaderUnit::OutputOffset(0));
 }
 
 void JitShader::Compile_SanitizedMul(QReg src1, QReg src2, QReg scratch0) {
@@ -524,6 +521,9 @@ std::bitset<64> JitShader::PersistentCallerSavedRegs() {
 
     if (!uses_uniforms) {
         regs.reset(RegToIndex(UNIFORMS));
+    }
+    if (!uses_outputs) {
+        regs.reset(RegToIndex(OUTPUTS));
     }
     if (!needs_one) {
         regs.reset(RegToIndex(ONE));
@@ -974,6 +974,12 @@ void JitShader::Compile_EMIT(Instruction instr) {
     CallFarFunction(*this, Emit);
     ABI_PopRegisters(*this, PersistentCallerSavedRegs());
     l(end);
+
+    // Emit toggles ShaderUnit::output_bank. Refresh the cached bank pointer before subsequent
+    // output-register writes; harmlessly reload the same bank on the invalid VS path.
+    if (uses_outputs) {
+        Compile_OutputPointer();
+    }
 }
 
 void JitShader::Compile_SETE(Instruction instr) {
@@ -1064,6 +1070,7 @@ void JitShader::AnalyzeProgram() {
     conditional_code_writes.reset();
     needs_link_register_save = false;
     uses_uniforms = false;
+    uses_outputs = false;
     needs_one = false;
     uses_loop = false;
 
@@ -1090,6 +1097,10 @@ void JitShader::AnalyzeProgram() {
                 instr.common.GetSrc2(is_inverted).GetRegisterType() == RegisterType::FloatUniform) {
                 uses_uniforms = true;
             }
+            if ((info.subtype & OpCode::Info::Dest) != 0 &&
+                instr.common.dest.Value().GetRegisterType() == RegisterType::Output) {
+                uses_outputs = true;
+            }
         } else if (info.type == OpCode::Type::MultiplyAdd) {
             indexed_source = is_inverted ? instr.mad.GetSrc3(true) : instr.mad.GetSrc2(false);
             address_register_index = instr.mad.address_register_index;
@@ -1098,6 +1109,8 @@ void JitShader::AnalyzeProgram() {
                 instr.mad.GetSrc1(is_inverted).GetRegisterType() == RegisterType::FloatUniform ||
                 instr.mad.GetSrc2(is_inverted).GetRegisterType() == RegisterType::FloatUniform ||
                 instr.mad.GetSrc3(is_inverted).GetRegisterType() == RegisterType::FloatUniform;
+            uses_outputs |=
+                instr.mad.dest.Value().GetRegisterType() == RegisterType::Output;
         }
         if (address_register_index != 0 &&
             indexed_source.GetRegisterType() == RegisterType::FloatUniform) {
@@ -1212,6 +1225,9 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
         MOV(UNIFORMS, ABI_PARAM1);
     }
     MOV(STATE, ABI_PARAM2);
+    if (uses_outputs) {
+        Compile_OutputPointer();
+    }
 
     // A write may be skipped by runtime control flow or by entering at a later instruction, so
     // preload every register that can be read or written and write back only possible mutations.

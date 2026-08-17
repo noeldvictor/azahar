@@ -608,6 +608,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   resolution, layout, performance mode, brightness, fan mode, and duration, recording frametimes,
   process CPU time, battery power, temperature, thermal slope, stability, and visual correctness.
 
+## 2026-08-16 AArch64 PICA Output-Bank Pointer Cache
+
+- Every AArch64 PICA output-register write previously rebuilt the same selected-bank address. A
+  full write emitted `ADD` for the fixed `ShaderUnit::output` offset, `LDRB` for `output_bank`, a
+  separate `LSL` by the 256-byte bank size, another `ADD`, and finally `STR Q`: five executed
+  instructions per write. Partial writes repeated the first four address instructions before their
+  lane stores. Temporary-register writes did not have this cost.
+- The JIT now reserves caller-saved `X8` for the current output-bank pointer. Shader entry emits
+  three instructions once: `LDRB` zero-extends the Boolean bank selector, `ADD (shifted register)`
+  folds the bank-size shift into the address addition, and one immediate `ADD` reaches the output
+  array. Full output writes then use one `STR Q` with a register-relative immediate. Partial writes
+  use one immediate `ADD` before the existing `ST1` lane-store sequence.
+- For `N` full output writes, the address/store sequence falls exactly from `5N` instructions to
+  `3 + N`, saving `4N - 3`: one instruction for one write, five for two, and thirteen for four.
+  The partial-write address portion falls from `4N` to `3 + N`, saving `3N - 3`; the earlier lane
+  store reduction remains separate. Geometry `EMIT` deliberately pays the three-instruction setup
+  again because it switches banks. These counts exclude shader arithmetic and are not an FPS or
+  wattage measurement.
+- Correctness follows the real state layout rather than an assumed x86 alias: the two output banks
+  are contiguous arrays, `ShaderUnit::OutputBankSize` is statically required to be a power of two,
+  and `output_bank` is a Boolean. Arm Architecture Reference Manual DDI0487 M.c section C6.2.6
+  defines `ADD (shifted register)`, which directly represents `STATE + bank * 256`. The cached
+  caller-saved register is included in the JIT's live-register save set around external calls.
+  After the `EMIT` helper toggles `output_bank`, generated code refreshes the pointer before any
+  later write. Temporary destinations retain their original `STATE`-relative addressing.
+- The destination-mask regression now runs all 14 partial masks against both output banks, so a
+  stale or misbased pointer fails while enabled and disabled lanes are checked. A new geometry
+  regression writes bank 0, executes a manually encoded `EMIT`, verifies the emitted vertex came
+  from bank 0, then verifies the following write lands in bank 1. The same source covers the
+  interpreter and JIT implementations.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` rebuilt both changed sources and linked the AArch64
+  test executable and `libcitra-android.so` successfully in 1m05s. The test executable cannot run
+  on the x64 host and the active restriction forbids using the Thor, so this is compile/link plus
+  regression-source evidence, not a runtime test. `:app:assembleVanillaRelWithDebInfoLite` then
+  completed in 34s. The resulting 28,965,491-byte APK contains only `arm64-v8a` native libraries
+  and has SHA-256 `DA4927B3F0D5843D9FEE7ACC2DD715B8D618E5504D5343A6969B499AE8942303`.
+  No ADB command, install, launch, or device test was performed.
+- After verification, the exact 1.73 GiB reproducible `src/android/app/build/intermediates` tree
+  was removed. Two Gradle daemons were stopped to release the final locked 5,179,280-byte R8
+  `classes.dex`; the final APK and active `arm64-v8a` RelWithDebInfo CMake cache were retained.
+  Free C: space returned to 101.27 GiB.
+- A future allowed Thor A/B should use the same title and vertex-heavy scene, cache state, driver,
+  resolution, layout, performance mode, fan mode, brightness, and duration. Record frametimes,
+  process CPU time, battery power, temperature, thermal slope, stability, and visual correctness;
+  do not infer a whole-game speed or power result from the exact instruction counts alone.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -65,7 +65,10 @@ This fork has moved away from stock Azahar in visible ways:
 - The AArch64 PICA vertex-shader JIT lowers arbitrary source swizzles to native AdvSIMD table
   lookup instead of serial vector copies and lane inserts.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,
-  blending, and rewriting the entire destination vector. The full-vector path remains unchanged.
+  blending, and rewriting the entire destination vector. Full-vector stores stay native `STR Q`.
+- The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
+  and refreshes it only after geometry `EMIT`, removing repeated bank loads and address generation
+  from every ordinary output write.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
@@ -97,11 +100,12 @@ sequences, build evidence, limitations, and the required benchmark controls are 
 
 ## AArch64 PICA JIT Updates
 
-The PICA vertex-shader JIT now uses baseline Armv8-A AdvSIMD operations for two common lowering
-costs: `TBL` handles arbitrary source swizzles, and `ST1` lane stores handle partial destination
-masks without reading untouched lanes. These are exact generated-instruction and memory-traffic
-reductions validated by ARM64 compilation and focused regression sources. Whole-game FPS and
-battery-watt effects still require a controlled Thor A/B and are not estimated from static counts.
+The PICA vertex-shader JIT now attacks three common AArch64 lowering costs: baseline Armv8-A
+AdvSIMD `TBL` handles arbitrary source swizzles, `ST1` lane stores handle partial destination masks
+without reading untouched lanes, and a cached output-bank pointer removes repeated bank loads and
+address generation. These are exact generated-instruction and memory-traffic reductions validated
+by ARM64 compilation and focused regression sources. Whole-game FPS and battery-watt effects still
+require a controlled Thor A/B and are not estimated from static counts.
 
 ## Thor Screenshot
 
