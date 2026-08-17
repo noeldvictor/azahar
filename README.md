@@ -62,6 +62,10 @@ This fork has moved away from stock Azahar in visible ways:
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.
+- Crypto++ is vendored in-tree and its ARM64 configure probes can find the vendored public headers,
+  restoring runtime-gated CRC32 and PMULL implementations. Only specialized objects receive the
+  optional ISA flags; the rest of the Android binary remains baseline AArch64. Existing AES/SHA
+  acceleration is unchanged by this repair.
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,

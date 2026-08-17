@@ -133,6 +133,11 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   hosts, and inspect linked AArch64 to prove those pointers load once before the vector loop.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
+- Optional ARM crypto instructions follow the same heterogeneous-core rule. Crypto++ compiles CRC32
+  and PMULL only in dedicated translation units and selects them through Android CPU-feature checks;
+  keep the generic callers baseline AArch64. Its CMake `try_compile` programs use installed-style
+  `<cryptopp/...>` includes, so every probe must receive the vendored public-header directory or a
+  missing header will silently look like an unsupported instruction set.
 
 ## Nintendo 3DS guest CPU references
 

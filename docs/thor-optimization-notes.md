@@ -2385,6 +2385,40 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   assembly/manual-inspection files. Reported C: free space increased by 2,011,570,176 bytes. One
   bounded 5,179,280-byte R8 `classes.dex` remains because an existing Java process has it open.
 
+## 2026-08-17 Crypto++ ARM64 Feature-Probe Repair
+
+- Crypto++'s Android compiler supports ARMv8 CRC32 and PMULL, but both CMake probes failed because
+  their small `try_compile` projects included `<cryptopp/arm_simd.h>` without the vendored
+  `include/` directory. The configure log therefore reported a missing header and treated it as an
+  unsupported instruction set. Direct NDK Clang checks proved both probe sources compile when that
+  directory is present.
+- The shared probe helper now passes its public-header directory through the try-project's
+  `INCLUDE_DIRECTORIES`. A clean re-probe reports both `CRYPTOPP_HAVE_ARM_CRC32` and
+  `CRYPTOPP_HAVE_ARM_PMULL` successful. Global Crypto++ definitions remain only
+  `CRYPTOPP_ARM_NEON_HEADER=1` and `CRYPTOPP_ARM_ACLE_HEADER=1`: the baseline Android binary does
+  not receive a global optional-ISA assumption.
+- Production `crc_simd.cpp` alone compiles with `-march=armv8-a+crc`, while `gcm_simd.cpp` and
+  `gf2n_simd.cpp` alone compile with `-march=armv8-a+crypto`. LLVM disassembly proves `CRC32B/W`
+  and `CRC32CB/CW` in the CRC object and `PMULL`/`PMULL2` in the GCM/GF objects. Generic callers
+  retain Crypto++'s Android `HasCRC32()` and `HasPMULL()` runtime gates before dispatching to them.
+- Azahar currently calls Crypto++ AES, SHA, CCM/CBC/CTR, CMAC/HMAC, RSA, and ECC paths but has no
+  direct Crypto++ CRC, GCM, or GF(2) call site. AES and SHA were already compiling to their hardware
+  instructions before this repair. The change restores correct latent acceleration and future
+  dispatch coverage; it is not evidence of a current game-FPS or battery-watt gain.
+- Crypto++ is now vendored from former submodule commit
+  `8d92d788421483a43e09acf1cd4a2861cb2b8cab`, keeping the one-line probe repair in this repository
+  rather than requiring a separate detached dependency fork. The upstream BSD license and its
+  source/test material remain intact.
+- The full `:app:buildCMakeRelWithDebInfo[arm64-v8a]` rebuild compiled 465 actions and linked the
+  ELF64/AArch64 tests plus `libcitra-android.so` successfully in 4 minutes 23 seconds. Packaging
+  with Java 17 then passed in 2 minutes 9 seconds. The ARM64-only APK is 28,969,783 bytes with
+  SHA-256 `12B443B1B493AED3974529D587786F615AA93D3E3C933ED31B1F42D11B69A9CE`.
+- Cleanup retained the APK and active ARM64 RelWithDebInfo CMake cache while removing
+  2,453,230,198 logical bytes of the test ELF, JNI/native staging, mappings, symbols, and
+  reproducible Gradle output. Reported C: free space increased by 2,012,958,720 bytes. One bounded
+  5,179,280-byte R8 `classes.dex` remains because an existing Java process has it open. No device,
+  ADB, install, launch, game, FPS, power, or temperature measurement was used.
+
 ## 2026-08-17 Rejected PICA RSQ and Blind Fastmem Shortcuts
 
 - The tempting PICA `RSQ` lowering `FRSQRTE; FMUL; FRSQRTS; FMUL` would be four instructions, not
@@ -2426,12 +2460,12 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 
    `simulate_3ds_gpu_timings` improves correctness but can cost performance in some games. `delay_game_render_thread_us` is available for dynamic-framerate edge cases. These should be per-title profile toggles, not global Thor defaults.
 
-6. Crypto feature-dispatch audit
+6. Crypto workload profiling
 
-   The Android build detects ARMv8 and NEON headers and already enables the AES-oriented Crypto++
-   path, but its configure result leaves CRC32 and PMULL disabled. Profile actual 3DS crypto and
-   checksum workloads, verify compiler/runtime feature gating, and add focused vectors before
-   enabling anything else; crypto setup is not currently a sustained-game-FPS premise.
+   The false-negative CRC32/PMULL configure probes are repaired and the optional units retain
+   runtime feature gates. Profile actual 3DS CRC, GCM, and GF(2) workloads before treating those
+   latent hardware paths as a gameplay optimization; AES/SHA content paths were already hardware
+   accelerated and crypto setup is not currently a sustained-game-FPS premise.
 
 ## Benchmark Checklist
 
