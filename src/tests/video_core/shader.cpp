@@ -309,7 +309,11 @@ SHADER_TEST_CASE("EX2", "[video_core][shader]") {
 
     REQUIRE(std::isnan(shader.Run(NAN).x));
     REQUIRE(shader.Run(-800.f).x == Catch::Approx(0.f));
+    REQUIRE(shader.Run(-1.f).x == Catch::Approx(0.5f));
+    REQUIRE(shader.Run(-0.5f).x == Catch::Approx(0.7071067812f));
     REQUIRE(shader.Run(0.f).x == Catch::Approx(1.f));
+    REQUIRE(shader.Run(0.5f).x == Catch::Approx(1.4142135624f));
+    REQUIRE(shader.Run(1.5f).x == Catch::Approx(2.8284271247f));
     REQUIRE(shader.Run(2.f).x == Catch::Approx(4.f));
     REQUIRE(shader.Run(6.f).x == Catch::Approx(64.f));
     REQUIRE(shader.Run(79.7262742773f).x == Catch::Approx(1.e24f));

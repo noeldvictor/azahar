@@ -1142,6 +1142,7 @@ void JitShader::AnalyzeProgram() {
         case OpCode::Id::SLTI:
         case OpCode::Id::RCP:
         case OpCode::Id::RSQ:
+        case OpCode::Id::EX2:
         case OpCode::Id::LG2:
             needs_one = true;
             break;
@@ -1424,30 +1425,20 @@ void JitShader::Compile_Exp2(Label subroutine) {
     // polynomial which was fit for the function exp2(x) is then evaluated. We then restore the
     // result into the appropriate range.
 
-    // align(16);
-    Label input_max;
-    l(input_max);
+    // Keep the eight constants in one aligned 32-byte block. The helper can load the entire block
+    // with one LDP instead of issuing an ADR and scalar LDR for every coefficient.
+    Label constants;
+    align(16);
+    l(constants);
+    // SRC2: input_max, half, c0, c1
     dw(0x43010000);
-    Label input_min;
-    l(input_min);
-    dw(0xc2fdffff);
-    Label c0;
-    l(c0);
-    dw(0x3c5dbe69);
-    Label half;
-    l(half);
     dw(0x3f000000);
-    Label c1;
-    l(c1);
+    dw(0x3c5dbe69);
     dw(0x3d5509f9);
-    Label c2;
-    l(c2);
+    // VSCRATCH2: input_min, c2, c3, c4
+    dw(0xc2fdffff);
     dw(0x3e773cc5);
-    Label c3;
-    l(c3);
     dw(0x3f3168b3);
-    Label c4;
-    l(c4);
     dw(0x3f800016);
 
     Label ret_label;
@@ -1459,20 +1450,18 @@ void JitShader::Compile_Exp2(Label subroutine) {
     FCMP(SRC1.toS(), SRC1.toS());
     B(Cond::NE, ret_label); // branch if NaN
 
+    ADR(XSCRATCH0, constants);
+    LDP(SRC2, VSCRATCH2, XSCRATCH0);
+
     // Decompose input:
     // VSCRATCH0=2^round(input)
     // SRC1=input-round(input) [-0.5, 0.5)
     // Clamp to maximum range since we shift the value directly into the exponent.
-    ADR(XSCRATCH0, input_max);
-    LDR(VSCRATCH0.toS(), XSCRATCH0);
-    FMIN(SRC1.toS(), SRC1.toS(), VSCRATCH0.toS());
+    FMIN(SRC1.toS(), SRC1.toS(), SRC2.toS());
 
-    ADR(XSCRATCH0, input_min);
-    LDR(VSCRATCH0.toS(), XSCRATCH0);
-    FMAX(SRC1.toS(), SRC1.toS(), VSCRATCH0.toS());
+    FMAX(SRC1.toS(), SRC1.toS(), VSCRATCH2.toS());
 
-    ADR(XSCRATCH0, half);
-    LDR(VSCRATCH0.toS(), XSCRATCH0);
+    DUP(VSCRATCH0.toS(), SRC2.Selem()[1]);
     FSUB(VSCRATCH0.toS(), SRC1.toS(), VSCRATCH0.toS());
 
     FCVTNS(VSCRATCH0.toS(), VSCRATCH0.toS());
@@ -1487,29 +1476,19 @@ void JitShader::Compile_Exp2(Label subroutine) {
     MOV(VSCRATCH0.Selem()[0], XSCRATCH0.toW());
     // VSCRATCH0 contains 2^(round(input)).
 
-    // Complete computation of polynomial.
-    ADR(XSCRATCH1, c0);
-    LDR(VSCRATCH1.toS(), XSCRATCH1);
-    FMUL(VSCRATCH1.toS(), SRC1.toS(), VSCRATCH1.toS());
-
-    ADR(XSCRATCH1, c1);
-    LDR(VSCRATCH2.toS(), XSCRATCH1);
-    FADD(VSCRATCH1.toS(), VSCRATCH1.toS(), VSCRATCH2.toS());
+    // Complete computation of the polynomial. FMLA with an exact 1.0 multiplicand has the same
+    // rounding as the former FADD while allowing each packed coefficient to stay in its lane.
+    FMUL(VSCRATCH1.toS(), SRC1.toS(), SRC2.Selem()[2]);
+    FMLA(VSCRATCH1.toS(), ONE.toS(), SRC2.Selem()[3]);
     FMUL(VSCRATCH1.toS(), VSCRATCH1.toS(), SRC1.toS());
 
-    ADR(XSCRATCH1, c2);
-    LDR(VSCRATCH2.toS(), XSCRATCH1);
-    FADD(VSCRATCH1.toS(), VSCRATCH1.toS(), VSCRATCH2.toS());
+    FMLA(VSCRATCH1.toS(), ONE.toS(), VSCRATCH2.Selem()[1]);
     FMUL(VSCRATCH1.toS(), VSCRATCH1.toS(), SRC1.toS());
 
-    ADR(XSCRATCH1, c3);
-    LDR(VSCRATCH2.toS(), XSCRATCH1);
-    FADD(VSCRATCH1.toS(), VSCRATCH1.toS(), VSCRATCH2.toS());
+    FMLA(VSCRATCH1.toS(), ONE.toS(), VSCRATCH2.Selem()[2]);
     FMUL(SRC1.toS(), VSCRATCH1.toS(), SRC1.toS());
 
-    ADR(XSCRATCH1, c4);
-    LDR(VSCRATCH2.toS(), XSCRATCH1);
-    FADD(SRC1.toS(), VSCRATCH2.toS(), SRC1.toS());
+    FMLA(SRC1.toS(), ONE.toS(), VSCRATCH2.Selem()[3]);
 
     FMUL(SRC1.toS(), SRC1.toS(), VSCRATCH0.toS());
 
