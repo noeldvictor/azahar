@@ -9,6 +9,7 @@ add_executable(tests
     core/memory/memory.cpp
     core/memory/vm_manager.cpp
     precompiled_headers.h
+    audio_core/hle/filter.cpp
     audio_core/hle/hle.cpp
     audio_core/hle/mixers.cpp
     audio_core/hle/source.cpp

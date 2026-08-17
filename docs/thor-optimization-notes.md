@@ -1045,6 +1045,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   brightness, and duration. Record DSP-thread CPU placement/time, audio underruns, frametimes,
   battery power, temperature, thermal slope, stability, and output correctness.
 
+## 2026-08-17 AArch64 HLE Stereo Source Filters
+
+- A source-level audit found that the 160-sample HLE simple and biquad filters still processed the
+  independent left and right channels through duplicated scalar arithmetic. The time dimension
+  cannot be parallelized because each output feeds the next sample, but stereo lanes have separate
+  histories and can be evaluated together without changing filter order.
+- The complete relevant AArch64 AdvSIMD table pages were visually checked in the Cortex-X3 issue
+  4.0, Cortex-A715 issue 5.0, Cortex-A710 issue 4.0, and Cortex-A510 issue 6.0 optimization guides.
+  Their tables cover `SMULL`/`SMLAL`, arithmetic shifts, and `SQXTN` on every Thor CPU class. Arm
+  Architecture Reference Manual DDI 0487 M.c sections C7.2.319, C7.2.325, and C7.2.352 confirm that
+  the multiply instructions widen signed elements and that `SQXTN` performs the exact signed
+  saturating narrow required by the old clamp. This uses baseline AdvSIMD, not an SVE assumption.
+  The source PDFs remain outside the repository and are indexed through `docs/hardware/README.md`.
+- AArch64 now packs each stereo sample into two 16-bit lanes. Simple filtering uses one widening
+  multiply and one widening multiply-accumulate; biquad filtering uses one widening multiply plus
+  four widening multiply-accumulates. The arithmetic right shift and signed saturating narrow match
+  the old per-channel fixed-point shift and clamp. Adjacent time samples are never combined.
+- Coefficient vectors load once per 160-sample frame. Previous input/output vectors stay in NEON
+  registers for the full loop and are written back only at frame end. The reset simple coefficient
+  is `32768`, which does not fit signed 16-bit, so reset passthrough is handled as an exact frame copy
+  with final history advancement rather than being truncated. Biquad reset passthrough likewise
+  records the last two inputs/outputs without redundant arithmetic. The non-AArch64 scalar path is
+  unchanged.
+- Final release-style ThinLTO code contains the intended by-element `SMULL`/`SMLAL`, `SSHR`, and
+  `SQXTN`. For the simple filter, four scalar multiply operations, two scalar shifts, and two
+  duplicated clamp sequences become four vector arithmetic/saturation instructions for both
+  channels. For biquad, ten scalar multiply operations, two shifts, and two clamp sequences become
+  seven vector arithmetic/saturation instructions for both channels. Coefficient and recurring
+  state loads/stores also leave the per-sample loop.
+- Focused Catch2 coverage compares simple-only, biquad-only, combined-order, multi-frame history,
+  signed extremes, channel independence, saturation, and reset-passthrough history against a
+  sequential scalar reference. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1m4s,
+  compiling and linking the full ELF64/AArch64 test executable and `libcitra-android.so`. The test
+  executable was not run because this host is x64 and current instructions forbid Thor/device use.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1m29s. The 28,965,995-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `EC107B8FE6D0AB226B68ABE620DC277A4165950E95D00F77C69B9DF3CBA19A11`.
+- No device, ADB, install, launch, or game was used. This is a real sustained HLE DSP instruction and
+  memory-traffic reduction when source filters are active, but its whole-game FPS and wattage effect
+  remains unmeasured. A future allowed matched A/B should use an audio/filter-heavy title with the
+  same save, caches, renderer, resolution, driver, layout, performance/fan mode, brightness, and
+  duration, then record DSP-thread CPU time/placement, audio underruns, frametimes, battery power,
+  temperature, thermal slope, stability, and output correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

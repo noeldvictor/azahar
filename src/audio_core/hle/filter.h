@@ -66,6 +66,15 @@ private:
          */
         void Configure(SourceConfiguration::Configuration::SimpleFilter config);
 
+        /// Returns true for the reset configuration, which copies input to output exactly.
+        bool IsPassthrough() const;
+
+        /// Advances history for a passthrough frame without performing redundant arithmetic.
+        void AdvancePassthrough(const StereoFrame16& frame);
+
+        /// Processes a frame while keeping invariant coefficients and history in registers.
+        void ProcessFrame(StereoFrame16& frame);
+
         /**
          * Processes a single stereo PCM16 sample.
          * @param x0 Input sample
@@ -93,6 +102,15 @@ private:
          * @param config Configuration from DSP shared memory.
          */
         void Configure(SourceConfiguration::Configuration::BiquadFilter config);
+
+        /// Returns true for the reset configuration, which copies input to output exactly.
+        bool IsPassthrough() const;
+
+        /// Advances history for a passthrough frame without performing redundant arithmetic.
+        void AdvancePassthrough(const StereoFrame16& frame);
+
+        /// Processes a frame while keeping invariant coefficients and history in registers.
+        void ProcessFrame(StereoFrame16& frame);
 
         /**
          * Processes a single stereo PCM16 sample.

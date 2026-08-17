@@ -87,6 +87,9 @@ This fork has moved away from stock Azahar in visible ways:
 - The HLE DSP keeps its temporary quadraphonic mixes channel-planar, eliminating structured
   `LD4`/`ST4` transposes from source accumulation and final downmix and turning enabled auxiliary
   bus exchange into contiguous copies.
+- HLE simple and biquad source filters keep their coefficients and feedback history in NEON
+  registers for a full audio frame and process the independent left/right channels together,
+  without incorrectly vectorizing the sample-to-sample recurrence.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
@@ -147,7 +150,7 @@ returns the exact highest changed lane for dirty-hash and biggest-range tracking
 ThinLTO binary, an eight-word unchanged block falls from 42 to 25 executed loop instructions. The
 existing four-word NEON tail and scalar remainder preserve short and odd-length behavior.
 
-## AArch64 Audio Time-Stretch Updates
+## AArch64 Audio Updates
 
 Thor's integer SoundTouch path already receives useful compiler-generated NEON for WSOLA
 cross-correlation. The remaining scalar stereo-overlap loop now uses explicit baseline AArch64 NEON
@@ -162,6 +165,14 @@ throughput `1/50`. Final ThinLTO uses ordinary paired/vector loads and stores in
 ordinary channel loads in downmix, and one contiguous 2.5 KiB copy per enabled aux bus direction.
 The old sample-major save-state archive layout is preserved explicitly. This is a manual- and
 code-generation-backed hot-path change, not a whole-game speed or wattage claim.
+
+The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
+the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
+`SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one
+`SSHR`, and one `SQXTN` for both channels. Coefficients load once per 160-sample frame and feedback
+history remains in registers; reset passthrough configurations skip redundant arithmetic but still
+record the exact final history. This is a bounded DSP-thread instruction reduction. Whole-game
+speed and battery effects remain unmeasured until device testing is allowed.
 
 ## Vulkan Worker-Power Updates
 
