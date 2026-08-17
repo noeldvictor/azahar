@@ -1679,6 +1679,56 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   duration constant, then record renderer-thread time, upload/readback frequency, frametimes,
   battery power, temperature, thermal slope, visual depth correctness, and stability.
 
+## 2026-08-17 AArch64 SoundTouch FIR
+
+- SoundTouch documents `LONG_SAMPLETYPE` as its 32-bit integer accumulation type, but defined it as
+  C++ `long`. That is 32-bit under Windows LLP64 and 64-bit under Android AArch64 LP64. Final ARM64
+  code therefore ran the 64-tap stereo anti-alias FIR as scalar `LDRSH`/`SMADDL` with two 64-bit
+  accumulators: 25 inner instructions repeated 32 times, or about 800 core inner instructions per
+  output stereo frame.
+- `LONG_SAMPLETYPE` is now explicitly `int32_t`. The AArch64 stereo loop also reads the canonical
+  coefficient table once for both channels instead of loading the table that duplicates every
+  coefficient for older generic SIMD compilers. Non-AArch64 builds retain that generic duplicated
+  table path. The 64 taps, signed products, arithmetic result shift by 14, signed-16 saturation,
+  scalar remainder, and output count are unchanged.
+- The complete relevant pages were visually checked in the external Cortex-X3 issue 4.0 guide
+  (pages 26-28 and 33), Cortex-A715 issue 5.0 guide (pages 28-29 and 36), Cortex-A710 issue 4.0
+  guide (pages 42-43 and 55), and Cortex-A510 issue 6.0 guide (pages 35-36 and 46). They cover the
+  emitted `ADDV`, `SMLAL`/`SMLAL2`, multiply-accumulate dependency behavior, and Q-form `LD2`.
+  This directly drove the choice to keep eight independent accumulation vectors and remove two
+  unnecessary structured coefficient loads per sixteen taps.
+- Final linked ARM64 code handles sixteen taps with one paired coefficient load, two sample `LD2`,
+  eight `SMLAL`/`SMLAL2`, and loop control. Its 17-instruction inner body repeats four times, or
+  68 instructions per output frame: 91.5% fewer than the roughly 800-instruction scalar baseline.
+  The first 32-bit auto-vectorized form was 24 instructions repeated four times; using the canonical
+  coefficients removes another 28 instructions per output frame (29.2%) and cuts coefficient reads
+  from 64 to 32 bytes. Total sample-plus-coefficient input traffic falls from 128 to 96 bytes per
+  output frame. The full function grows from 336 to 444 bytes to hold vector and remainder paths.
+- A coefficient sweep across 100,001 cutoffs from 0 through 0.5 found a maximum absolute 64-tap
+  coefficient sum of 36,421. Even full-scale signed-16 input bounds accumulation at 1,193,443,328,
+  below `INT32_MAX`. Permanent Catch2 coverage independently designs the same 64-tap Hamming/sinc
+  filters at cutoffs 0.2, 0.391755, and 0.5; it compares every stereo output to a 64-bit scalar
+  reference, checks every tested sum fits `int32_t`, exercises signed-16 extremes, and guards both
+  ends of the destination buffer.
+- A standalone Windows build of the real SoundTouch FIR passed the same reference vectors and was
+  deleted afterward. The complete Android ARM64 test executable and final ThinLTO library compiled
+  and linked successfully; the linked `evaluateFilterStereo` retains the audited 444-byte NEON
+  body. The ARM64 tests were not executed because device use remains forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` passed. The resulting 28,966,279-byte APK contains only
+  `arm64-v8a` libraries and has SHA-256
+  `DADBA13F988DC6E5E614C814BEF197E96074A4B6E1B67D763F53AAE90BE05F30`.
+- After verification, exact Gradle intermediates, downloaded JNI copies, Kotlin/temp output,
+  mapping/debug-symbol output, the 444,568,360-byte ARM64 test executable, host-verifier files, and
+  repo-local manual renders were removed. The final APK and active ARM64 CMake cache were retained;
+  free C: space increased by 2,018,377,728 bytes (about 1.88 GiB). No source, external manual, save,
+  or unrelated file was touched.
+- This targets SoundTouch's anti-alias filter while time stretching/rate transposition is active.
+  It is a large local instruction and memory-traffic reduction, not evidence of a whole-game FPS
+  or battery-watt gain. A future allowed matched Thor A/B must hold title, scene, save, caches,
+  renderer, resolution, driver, layout, performance/fan mode, brightness, and duration constant,
+  then record DSP/audio-thread time, audio underruns, frametimes, battery power, temperature,
+  thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

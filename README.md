@@ -220,6 +220,16 @@ for four frames at a time and eliminates eight `SDIV` instructions over that spa
 retain C++ truncation-toward-zero behavior. ARM64 compile/link and differential regression sources
 validate the path; sustained speed and power effects still require a controlled Thor A/B.
 
+SoundTouch's 64-tap anti-alias FIR also carried a hidden x86/Windows assumption: its documented
+32-bit accumulator was C++ `long`, which is 64-bit on Android AArch64. Making the width explicit
+lets Clang use 32-bit NEON `SMLAL` lanes. The AArch64 stereo loop also loads one canonical
+coefficient vector for both channels instead of fetching the duplicated stereo coefficient table.
+Final linked core-loop work falls from about 800 scalar instructions per output frame to 68 NEON
+instructions, a 91.5% path-local reduction; coefficient traffic falls from 64 to 32 bytes per
+output frame. Exact-output/canary tests cover 64-tap anti-alias coefficients and signed-16 extremes.
+This helps the audio time-stretch/anti-alias path when active, but is not a measured game FPS or
+battery-watt result.
+
 The HLE DSP's four-channel intermediate frame is also planar throughout source accumulation,
 auxiliary-bus exchange, and final downmix. This avoids the Q-form `ST4` used by the old
 sample-interleaved layout; Arm's Cortex-A510 guide lists that 32-bit structured store at execution

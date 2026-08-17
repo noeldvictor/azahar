@@ -32,6 +32,8 @@
 #ifndef STTypes_H
 #define STTypes_H
 
+#include <stdint.h>
+
 typedef unsigned int    uint;
 typedef unsigned long   ulong;
 
@@ -131,8 +133,9 @@ namespace soundtouch
     #ifdef SOUNDTOUCH_INTEGER_SAMPLES
         // 16bit integer sample type
         typedef short SAMPLETYPE;
-        // data type for sample accumulation: Use 32bit integer to prevent overflows
-        typedef long  LONG_SAMPLETYPE;
+        // data type for sample accumulation: Use 32bit integer to prevent overflows.
+        // C++ long is 64-bit on Android AArch64, unlike Win64, so spell the intended width.
+        typedef int32_t LONG_SAMPLETYPE;
 
         #ifdef SOUNDTOUCH_FLOAT_SAMPLES
             // check that only one sample type is defined

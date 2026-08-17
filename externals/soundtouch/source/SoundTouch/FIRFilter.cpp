@@ -93,8 +93,17 @@ uint FIRFilter::evaluateFilterStereo(SAMPLETYPE *dest, const SAMPLETYPE *src, ui
 
         for (uint i = 0; i < ilength; i ++)
         {
+#if defined(__aarch64__)
+            // AArch64 can deinterleave stereo samples with LD2 while reusing one
+            // coefficient vector for both channels. Avoid loading the duplicated
+            // stereo coefficient table on this bandwidth-sensitive hot path.
+            const SAMPLETYPE coefficient = filterCoeffs[i];
+            suml += ptr[2 * i] * coefficient;
+            sumr += ptr[2 * i + 1] * coefficient;
+#else
             suml += ptr[2 * i] * filterCoeffsStereo[2 * i];
             sumr += ptr[2 * i + 1] * filterCoeffsStereo[2 * i + 1];
+#endif
         }
 
 #ifdef SOUNDTOUCH_INTEGER_SAMPLES
