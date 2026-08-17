@@ -333,6 +333,9 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, u32 src_num, SourceRegiste
 }
 
 void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
+    static_assert(sizeof(f24) == sizeof(u32));
+    static_assert(sizeof(Common::Vec4<f24>) == 4 * sizeof(u32));
+
     DestRegister dest;
     u32 operand_desc_id;
     if (instr.opcode.Value().EffectiveOpCode() == OpCode::Id::MAD ||
@@ -378,58 +381,68 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
         }
 
     } else {
-        // Not all components are enabled, so mask the result when storing to the destination
-        // register...
-        if (dest.GetRegisterType() == RegisterType::Output) {
-            ADD(XSCRATCH0, STATE, dest_offset_disp);
+        // A lane store preserves disabled components without loading and blending the old vector.
+        // Pair adjacent X/Y or Z/W lanes so every partial mask needs at most two stores.
+        struct StoreGroup {
+            u8 lane;
+            u8 bytes;
+        };
+        std::array<StoreGroup, 2> groups{};
+        std::size_t group_count = 0;
 
+        const auto append_half = [&](u8 first_lane) {
+            const bool first_enabled = swiz.DestComponentEnabled(first_lane);
+            const bool second_enabled = swiz.DestComponentEnabled(first_lane + 1);
+            if (first_enabled && second_enabled) {
+                groups[group_count++] = {first_lane, 8};
+            } else if (first_enabled) {
+                groups[group_count++] = {first_lane, 4};
+            } else if (second_enabled) {
+                groups[group_count++] = {static_cast<u8>(first_lane + 1), 4};
+            }
+        };
+        append_half(0);
+        append_half(2);
+
+        if (group_count == 0) {
+            return;
+        }
+
+        const std::size_t first_byte_offset = groups[0].lane * sizeof(u32);
+        ADD(XSCRATCH0, STATE, dest_offset_disp + first_byte_offset);
+        if (dest.GetRegisterType() == RegisterType::Output) {
             LDRB(XSCRATCH1.toW(), STATE, ShaderUnit::OutputBankOffset());
             LSL(XSCRATCH1, XSCRATCH1, OutputBankShift);
             ADD(XSCRATCH0, XSCRATCH0, XSCRATCH1);
-
-            LDR(VSCRATCH0, XSCRATCH0);
-        } else {
-            LDR(VSCRATCH0, STATE, dest_offset_disp);
         }
 
-        // MOVI encodes a 64-bit value into an 8-bit immidiate by replicating bits
-        // The 8-bit immediate "a:b:c:d:e:f:g:h" maps to the 64-bit value:
-        // "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffffgggggggghhhhhhhh"
-        if (((swiz.dest_mask & 0b1100) >> 2) == (swiz.dest_mask & 0b11)) {
-            // Upper/Lower halfs are the same bit-pattern, broadcast the same mask to both
-            // 64-bit lanes
-            const u8 rep_imm = ((swiz.dest_mask & 4) ? 0b11'11'00'00 : 0) |
-                               ((swiz.dest_mask & 8) ? 0b00'00'11'11 : 0);
+        const auto store_group = [&](const StoreGroup& group, bool post_indexed) {
+            if (group.bytes == 8) {
+                if (post_indexed) {
+                    ST1(List{src.Delem()}[group.lane / 2], XSCRATCH0, POST_INDEXED, 8);
+                } else {
+                    ST1(List{src.Delem()}[group.lane / 2], XSCRATCH0);
+                }
+            } else if (post_indexed) {
+                ST1(List{src.Selem()}[group.lane], XSCRATCH0, POST_INDEXED, 4);
+            } else {
+                ST1(List{src.Selem()}[group.lane], XSCRATCH0);
+            }
+        };
 
-            MOVI(VSCRATCH2.D2(), RepImm(rep_imm));
-        } else if ((swiz.dest_mask & 0b0011) == 0) {
-            // Upper elements are zero, create the final mask in the 64-bit lane
-            const u8 rep_imm = ((swiz.dest_mask & 4) ? 0b11'11'00'00 : 0) |
-                               ((swiz.dest_mask & 8) ? 0b00'00'11'11 : 0);
-
-            MOVI(VSCRATCH2.toD(), RepImm(rep_imm));
-        } else {
-            // Create a 64-bit mask and widen it to 32-bits
-            const u8 rep_imm = ((swiz.dest_mask & 1) ? 0b11'00'00'00 : 0) |
-                               ((swiz.dest_mask & 2) ? 0b00'11'00'00 : 0) |
-                               ((swiz.dest_mask & 4) ? 0b00'00'11'00 : 0) |
-                               ((swiz.dest_mask & 8) ? 0b00'00'00'11 : 0);
-
-            MOVI(VSCRATCH2.toD(), RepImm(rep_imm));
-
-            // Widen 16->32
-            ZIP1(VSCRATCH2.H8(), VSCRATCH2.H8(), VSCRATCH2.H8());
+        if (group_count == 1) {
+            store_group(groups[0], false);
+            return;
         }
 
-        // Select between src and dst using mask
-        BSL(VSCRATCH2.B16(), src.B16(), VSCRATCH0.B16());
-
-        // Store dest back to memory
-        if (dest.GetRegisterType() == RegisterType::Output) {
-            STR(VSCRATCH2, XSCRATCH0);
-        } else {
-            STR(VSCRATCH2, STATE, dest_offset_disp);
+        const std::size_t second_byte_offset = groups[1].lane * sizeof(u32);
+        const std::size_t group_distance = second_byte_offset - first_byte_offset;
+        const bool groups_are_contiguous = group_distance == groups[0].bytes;
+        store_group(groups[0], groups_are_contiguous);
+        if (!groups_are_contiguous) {
+            ADD(XSCRATCH0, XSCRATCH0, group_distance);
         }
+        store_group(groups[1], false);
     }
 }
 

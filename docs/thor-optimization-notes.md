@@ -565,6 +565,49 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   performance mode, brightness, and duration while recording shader time, frametimes, process CPU
   time, battery power, temperature, thermal slope, and visual correctness.
 
+## 2026-08-16 AArch64 PICA Partial Destination Stores
+
+- The AArch64 PICA vertex-shader JIT previously implemented every partial x/y/z/w destination
+  mask as a read-modify-write: load the old 16-byte vector, materialize a mask, select enabled
+  source lanes with `BSL`, and store all 16 bytes. Disabled components were preserved correctly,
+  but the sequence created a needless load-to-store dependency and touched 32 bytes of explicit
+  generated memory traffic for a write that may change only one 4-byte component.
+- The replacement groups enabled x/y and z/w pairs and emits baseline AdvSIMD `ST1` element
+  stores. Aligned x/y or z/w pairs use one 64-bit lane store; remaining components use 32-bit lane
+  stores. Any nonzero partial mask therefore needs at most two stores. The zero hardware mask now
+  emits no destination write, and the existing full-mask `STR Q` fast path remains unchanged.
+- Correctness follows the actual representations: each `ShaderUnit` destination is an aligned
+  `Common::Vec4<f24>`, and `f24` is stored internally as four contiguous IEEE float words. PICA's
+  destination bits map x/y/z/w to SIMD lanes 0/1/2/3. Arm Architecture Reference Manual DDI0487
+  M.c section C7.2.366 defines `ST1 {Vt.S}[index]` and `ST1 {Vt.D}[index]` as storing exactly the
+  selected register element. Output-bank selection and its address calculation are retained.
+- This lowering was chosen after checking the Cortex-X3, A715, A710, and A510 optimization guides
+  used for the Thor's Snapdragon 8 Gen 2 core mix. All four document the single-lane `ST1` forms;
+  the X3 guide additionally notes that stores are buffered while committing in the background.
+  The change is baseline Armv8-A/AdvSIMD and does not assume optional SVE.
+- Exact generated instruction counts for a temporary partial write fall from four or five to two
+  through four. Output-register partial writes, including bank address selection, fall from eight
+  or nine to five through seven. Explicit generated memory traffic falls from a 16-byte load plus
+  a 16-byte store to 4-12 store-only bytes, a 62.5%-87.5% reduction. These counts do not include
+  surrounding shader arithmetic and are not a whole-game performance claim.
+- The focused shader regression now preloads a nonzero sentinel destination and checks every one
+  of the 14 nonzero partial masks, proving enabled lanes change and disabled lanes survive. A
+  manually encoded zero mask verifies that it leaves all four lanes untouched. The existing full
+  mask coverage remains. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the changed
+  JIT, this test source, the ARM64 test executable, and `libcitra-android.so` successfully in 4m34s;
+  a final incremental verification after adding representation assertions passed in 1m03s. The
+  executable was not run because the active restriction forbids using the Thor and it cannot run
+  on the x64 host.
+- The final incremental `:app:assembleVanillaRelWithDebInfoLite` passed in 27s. The resulting
+  28,966,319-byte APK contains only `arm64-v8a` native libraries and has SHA-256
+  `F708BEBE442ACBF9BCE1EB990CD1BC6796D9D4ECF80277C4B35A428732453D49`. No ADB command,
+  install, launch, or device test was performed.
+- This should reduce CPU work and data-cache/store traffic in vertex shaders with partial writes,
+  but no FPS or watt result is claimed without a controlled parent-versus-candidate Thor A/B. A
+  future allowed test should use the same title and vertex-heavy scene, cache state, driver,
+  resolution, layout, performance mode, brightness, fan mode, and duration, recording frametimes,
+  process CPU time, battery power, temperature, thermal slope, stability, and visual correctness.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

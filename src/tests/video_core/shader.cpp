@@ -731,6 +731,57 @@ SHADER_TEST_CASE("Dest Mask", "[video_core][shader]") {
     REQUIRE(shader("xzw")->Run({iota_vec}).xzw() == iota_vec.xzw());
     REQUIRE(shader("yzw")->Run({iota_vec}).yzw() == iota_vec.yzw());
     REQUIRE(shader("xyzw")->Run({iota_vec}) == iota_vec);
+
+    SECTION("Every partial mask preserves disabled components") {
+        constexpr std::array masks = {"x",  "y",  "z",  "w",   "xy",  "xz",  "xw",
+                                      "yz", "yw", "zw", "xyz", "xyw", "xzw", "yzw"};
+        constexpr Common::Vec4f sentinel = {-11.0f, -12.0f, -13.0f, -14.0f};
+
+        for (const char* mask : masks) {
+            CAPTURE(mask);
+            auto masked_shader = shader(mask);
+            Pica::ShaderUnit shader_unit;
+            auto& output = shader_unit.output[shader_unit.output_bank][0];
+            for (std::size_t component = 0; component < 4; ++component) {
+                output[component] = Pica::f24::FromFloat32(sentinel[component]);
+            }
+
+            masked_shader->RunShader(shader_unit, {&iota_vec, 1});
+
+            for (std::size_t component = 0; component < 4; ++component) {
+                bool enabled = false;
+                for (const char* current = mask; *current != '\0'; ++current) {
+                    enabled |= *current == "xyzw"[component];
+                }
+                const float expected = enabled ? iota_vec[component] : sentinel[component];
+                REQUIRE(output[component].ToFloat32() == expected);
+            }
+        }
+    }
+
+    SECTION("An empty hardware mask leaves the destination untouched") {
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::MOV, sh_output, "x", sh_input, "xyzw", SourceRegister{}, ""},
+            {OpCode::Id::END},
+        });
+        nihstro::SwizzlePattern swizzle = {shader_setup->GetSwizzleData()[0]};
+        swizzle.dest_mask = 0;
+        shader_setup->UpdateSwizzleData(0, swizzle.hex);
+        auto empty_mask_shader = TestType(std::move(shader_setup));
+
+        constexpr Common::Vec4f sentinel = {-21.0f, -22.0f, -23.0f, -24.0f};
+        Pica::ShaderUnit shader_unit;
+        auto& output = shader_unit.output[shader_unit.output_bank][0];
+        for (std::size_t component = 0; component < 4; ++component) {
+            output[component] = Pica::f24::FromFloat32(sentinel[component]);
+        }
+
+        empty_mask_shader.RunShader(shader_unit, {&iota_vec, 1});
+
+        for (std::size_t component = 0; component < 4; ++component) {
+            REQUIRE(output[component].ToFloat32() == sentinel[component]);
+        }
+    }
 }
 
 SHADER_TEST_CASE("MAD", "[video_core][shader]") {
