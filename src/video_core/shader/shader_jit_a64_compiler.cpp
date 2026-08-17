@@ -169,6 +169,161 @@ constexpr std::array<u64, 2> MakeSwizzleTable(u8 selector) {
 static_assert(MakeSwizzleTable(0x1b) == std::array<u64, 2>{0x0706050403020100, 0x0f0e0d0c0b0a0908});
 static_assert(MakeSwizzleTable(0xe4) == std::array<u64, 2>{0x0b0a09080f0e0d0c, 0x0302010007060504});
 
+enum class SwizzleOperationKindA64 : u8 {
+    Ext,
+    Rev64,
+    Zip1,
+    Zip2,
+    Uzp1,
+    Uzp2,
+    Trn1,
+    Trn2,
+    Dup,
+    Move,
+};
+
+struct SwizzleOperationA64 {
+    SwizzleOperationKindA64 kind{};
+    u8 first{};
+    u8 second{};
+    u8 selector{};
+};
+
+constexpr u8 INVALID_SWIZZLE_PLAN_A64 = 0xff;
+constexpr std::size_t SWIZZLE_OPERATION_COUNT_A64 = 26;
+
+constexpr u8 ReplaceSwizzleLaneA64(u8 selector, u8 destination, u8 source) {
+    const u8 shift = 6 - destination * 2;
+    return static_cast<u8>((selector & ~(0b11 << shift)) | (source << shift));
+}
+
+consteval std::array<SwizzleOperationA64, SWIZZLE_OPERATION_COUNT_A64>
+MakeSwizzleOperationsA64() {
+    std::array<SwizzleOperationA64, SWIZZLE_OPERATION_COUNT_A64> operations{};
+    std::size_t index = 0;
+
+    operations[index++] = {SwizzleOperationKindA64::Ext, 1, 0, 0b01'10'11'00};
+    operations[index++] = {SwizzleOperationKindA64::Ext, 2, 0, 0b10'11'00'01};
+    operations[index++] = {SwizzleOperationKindA64::Ext, 3, 0, 0b11'00'01'10};
+    operations[index++] = {SwizzleOperationKindA64::Rev64, 0, 0, 0b01'00'11'10};
+    operations[index++] = {SwizzleOperationKindA64::Zip1, 0, 0, 0b00'00'01'01};
+    operations[index++] = {SwizzleOperationKindA64::Zip2, 0, 0, 0b10'10'11'11};
+    operations[index++] = {SwizzleOperationKindA64::Uzp1, 0, 0, 0b00'10'00'10};
+    operations[index++] = {SwizzleOperationKindA64::Uzp2, 0, 0, 0b01'11'01'11};
+    operations[index++] = {SwizzleOperationKindA64::Trn1, 0, 0, 0b00'00'10'10};
+    operations[index++] = {SwizzleOperationKindA64::Trn2, 0, 0, 0b01'01'11'11};
+
+    for (u8 source = 0; source < 4; ++source) {
+        operations[index++] =
+            {SwizzleOperationKindA64::Dup, source, 0, static_cast<u8>(source * 0x55)};
+    }
+
+    for (u8 destination = 0; destination < 4; ++destination) {
+        for (u8 source = 0; source < 4; ++source) {
+            if (source == destination) {
+                continue;
+            }
+            operations[index++] = {SwizzleOperationKindA64::Move, destination, source,
+                                   ReplaceSwizzleLaneA64(NO_SRC_REG_SWIZZLE, destination,
+                                                         source)};
+        }
+    }
+    return operations;
+}
+
+inline constexpr auto SWIZZLE_OPERATIONS_A64 = MakeSwizzleOperationsA64();
+
+constexpr u8 SwizzleLaneA64(u8 selector, u8 lane) {
+    return static_cast<u8>((selector >> (6 - lane * 2)) & 0b11);
+}
+
+constexpr u8 ApplySwizzleOperationA64(u8 input, const SwizzleOperationA64& operation) {
+    return static_cast<u8>(
+        (SwizzleLaneA64(input, SwizzleLaneA64(operation.selector, 0)) << 6) |
+        (SwizzleLaneA64(input, SwizzleLaneA64(operation.selector, 1)) << 4) |
+        (SwizzleLaneA64(input, SwizzleLaneA64(operation.selector, 2)) << 2) |
+        SwizzleLaneA64(input, SwizzleLaneA64(operation.selector, 3)));
+}
+
+struct SwizzlePlanA64 {
+    u8 count = INVALID_SWIZZLE_PLAN_A64;
+    u8 first{};
+    u8 second{};
+};
+
+consteval std::array<SwizzlePlanA64, 256> MakeSwizzlePlansA64() {
+    std::array<SwizzlePlanA64, 256> plans{};
+    plans[NO_SRC_REG_SWIZZLE].count = 0;
+
+    for (u8 first = 0; first < SWIZZLE_OPERATIONS_A64.size(); ++first) {
+        const u8 selector = SWIZZLE_OPERATIONS_A64[first].selector;
+        if (plans[selector].count == INVALID_SWIZZLE_PLAN_A64) {
+            plans[selector] = {1, first, 0};
+        }
+    }
+
+    for (u8 first = 0; first < SWIZZLE_OPERATIONS_A64.size(); ++first) {
+        const u8 intermediate = SWIZZLE_OPERATIONS_A64[first].selector;
+        for (u8 second = 0; second < SWIZZLE_OPERATIONS_A64.size(); ++second) {
+            const u8 selector =
+                ApplySwizzleOperationA64(intermediate, SWIZZLE_OPERATIONS_A64[second]);
+            if (plans[selector].count == INVALID_SWIZZLE_PLAN_A64) {
+                plans[selector] = {2, first, second};
+            }
+        }
+    }
+    return plans;
+}
+
+inline constexpr auto SWIZZLE_PLANS_A64 = MakeSwizzlePlansA64();
+
+consteval std::size_t CountRegisterOnlySwizzlePlansA64() {
+    std::size_t count = 0;
+    for (const auto& plan : SWIZZLE_PLANS_A64) {
+        count += plan.count != INVALID_SWIZZLE_PLAN_A64;
+    }
+    return count;
+}
+
+consteval std::size_t CountSwizzlePlansA64(u8 operation_count) {
+    std::size_t count = 0;
+    for (const auto& plan : SWIZZLE_PLANS_A64) {
+        count += plan.count == operation_count;
+    }
+    return count;
+}
+
+consteval bool ValidateSwizzlePlansA64() {
+    for (std::size_t selector = 0; selector < SWIZZLE_PLANS_A64.size(); ++selector) {
+        const auto& plan = SWIZZLE_PLANS_A64[selector];
+        if (plan.count == INVALID_SWIZZLE_PLAN_A64) {
+            continue;
+        }
+
+        u8 actual = NO_SRC_REG_SWIZZLE;
+        if (plan.count >= 1) {
+            actual = ApplySwizzleOperationA64(actual, SWIZZLE_OPERATIONS_A64[plan.first]);
+        }
+        if (plan.count == 2) {
+            actual = ApplySwizzleOperationA64(actual, SWIZZLE_OPERATIONS_A64[plan.second]);
+        } else if (plan.count > 2) {
+            return false;
+        }
+        if (actual != static_cast<u8>(selector)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static_assert(SWIZZLE_PLANS_A64[NO_SRC_REG_SWIZZLE].count == 0);
+static_assert(CountRegisterOnlySwizzlePlansA64() == 149);
+static_assert(CountSwizzlePlansA64(0) == 1);
+static_assert(CountSwizzlePlansA64(1) == 26);
+static_assert(CountSwizzlePlansA64(2) == 122);
+static_assert(CountSwizzlePlansA64(INVALID_SWIZZLE_PLAN_A64) == 107);
+static_assert(ValidateSwizzlePlansA64());
+
 static void LogCritical(const char* msg) {
     LOG_CRITICAL(HW_GPU, "{}", msg);
 }
@@ -274,46 +429,54 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, u32 src_num, SourceRegiste
 
     const SwizzlePattern swiz = {(*swizzle_data)[operand_desc_id]};
 
-    // Generate instructions for source register swizzling as needed
-    u8 sel = swiz.GetRawSelector(src_num);
-    switch (sel) {
-    case NO_SRC_REG_SWIZZLE:
-        // NOP
-        break;
-    case 0b00'00'00'00:
-        DUP(dest.S4(), dest.Selem()[0]);
-        break;
-    case 0b01'01'01'01:
-        DUP(dest.S4(), dest.Selem()[1]);
-        break;
-    case 0b10'10'10'10:
-        DUP(dest.S4(), dest.Selem()[2]);
-        break;
-    case 0b11'11'11'11:
-        DUP(dest.S4(), dest.Selem()[3]);
-        break;
-    default: {
-        const std::array<int, 4> table = {
-            ((sel & 0b11'00'00'00) >> 6),
-            ((sel & 0b00'11'00'00) >> 4),
-            ((sel & 0b00'00'11'00) >> 2),
-            ((sel & 0b00'00'00'11) >> 0),
-        };
-
-        u32 changed_lane_count = 0;
-        int changed_lane = 0;
-        for (int lane = 0; lane < 4; lane++) {
-            if (table[lane] != lane) {
-                changed_lane_count++;
-                changed_lane = lane;
-            }
-        }
-
-        if (changed_lane_count == 1) {
-            MOV(dest.Selem()[changed_lane], dest.Selem()[table[changed_lane]]);
+    // Prefer register-only permutations. A literal LDR followed by TBL remains the exhaustive
+    // fallback, but 149 of the 256 selectors need at most two simple ASIMD operations.
+    const u8 sel = swiz.GetRawSelector(src_num);
+    const auto& plan = SWIZZLE_PLANS_A64[sel];
+    const auto emit_operation = [&](u8 operation_index) {
+        const auto& operation = SWIZZLE_OPERATIONS_A64[operation_index];
+        switch (operation.kind) {
+        case SwizzleOperationKindA64::Ext:
+            EXT(dest.B16(), dest.B16(), dest.B16(), operation.first * 4);
+            break;
+        case SwizzleOperationKindA64::Rev64:
+            REV64(dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Zip1:
+            ZIP1(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Zip2:
+            ZIP2(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Uzp1:
+            UZP1(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Uzp2:
+            UZP2(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Trn1:
+            TRN1(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Trn2:
+            TRN2(dest.S4(), dest.S4(), dest.S4());
+            break;
+        case SwizzleOperationKindA64::Dup:
+            DUP(dest.S4(), dest.Selem()[operation.first]);
+            break;
+        case SwizzleOperationKindA64::Move:
+            MOV(dest.Selem()[operation.first], dest.Selem()[operation.second]);
             break;
         }
+    };
 
+    if (plan.count != INVALID_SWIZZLE_PLAN_A64) {
+        if (plan.count >= 1) {
+            emit_operation(plan.first);
+        }
+        if (plan.count == 2) {
+            emit_operation(plan.second);
+        }
+    } else {
         auto [literal_iter, inserted] = swizzle_literals.try_emplace(sel);
         auto& literal = literal_iter->second;
         if (inserted) {
@@ -323,8 +486,6 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, u32 src_num, SourceRegiste
         }
         LDR(VSCRATCH0, literal.label);
         TBL(dest.B16(), List{dest.B16()}, VSCRATCH0.B16());
-        break;
-    }
     }
 
     // If the source register should be negated, flip the negative bit using XOR

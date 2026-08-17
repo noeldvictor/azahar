@@ -1830,40 +1830,74 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   DSP/audio-thread time, audio underruns, frametimes, battery power, temperature, thermal slope,
   output correctness, and stability.
 
+## 2026-08-17 AArch64 PICA Register-Only Source Swizzles
+
+- The CPU PICA shader JIT previously handled identity, four broadcasts, and twelve single-lane
+  substitutions directly. Every other selector loaded a 16-byte byte-index literal into a scratch
+  vector and executed `TBL`. That extra data load and table dependency execute for each affected
+  source operand on every software shader invocation.
+- The actual Cortex-X3 instruction tables list element `DUP`, `EXT`, element `INS`, `REV64`,
+  `TRN`, `ZIP`, and `UZP` at latency 2 and throughput 4 instructions/cycle, while one-table `TBL`
+  has latency 2 and throughput 2. Cortex-A715 and A710 list both simple permutations and one-table
+  `TBL` at latency 2 and throughput 2. Cortex-A510 lists the simple operations at latency 3 and
+  one-table `TBL` at latency 4. The old path additionally depended on the index-literal load, so a
+  register-only sequence removes data-cache work on all four Thor core classes.
+- A compact compile-time planner models 26 exact operations: three rotations with `EXT`, one
+  `REV64`, both `ZIP`/`UZP`/`TRN` halves, four lane broadcasts, and twelve lane moves. Composing at
+  most two operations covers exactly 149 selectors: one identity, 26 one-operation plans, and 122
+  two-operation plans. The other 107 selectors keep the exhaustive literal `LDR` plus `TBL` path.
+- Relative to the prior emitter, 10 additional selector values shrink from two generated
+  instructions to one. Another 122 retain two generated instructions but replace the literal load
+  and `TBL` with two register permutations. If one shader used every newly covered selector, its
+  unique literal pool would be 2,112 bytes smaller; real savings depend on each shader's selector
+  distribution because literals are shared by selector within a compiled shader.
+- Compile-time assertions compose and compare every accepted plan against its exact eight-bit PICA
+  selector, lock the `1/26/122/107` distribution, and reject plans longer than two operations. The
+  permanent `All Source Swizzles` generated-shader test covers all 256 selectors and the Android
+  ARM64 build compiles it along with the production emitter.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` rebuilt and linked the production emitter and ARM64
+  test executable successfully in 1 minute. Final ThinLTO retains a 768-byte plan table, a
+  104-byte operation table, and the register-permutation emitter. The test executable was not run
+  on this x64 host because device use remains forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` produced an ARM64-only package successfully. Final APK:
+  `app-vanilla-relWithDebInfoLite.apk`, 28,966,315 bytes, SHA-256
+  `895095A30723E9F3FB1A7106B05DCE58EAB44EBE65A6B03C4FB9DEAE66DEB46A`.
+- Post-verification cleanup retained that APK and the active ARM64 RelWithDebInfo CMake cache while
+  removing the temporary baseline library, 445 MB ARM64 test ELF, Gradle intermediates, downloaded
+  JNI staging, mapping, native-symbol, and other reproducible package trees. The build tree fell
+  from 2,041,677,559 to 28,966,791 bytes, the retained CMake tree fell from 3,236,885,695 to
+  2,786,232,198 bytes, and reported C: free space rose by 2,058,338,304 bytes.
+- Scope is deliberately narrow: normal draws that successfully use hardware vertex shaders bypass
+  this CPU JIT. The reduction applies to immediate-mode draws, geometry-shader work, and batches
+  that fall back to software vertex processing. No whole-game FPS or battery-watt gain is claimed
+  without a controlled Thor A/B. No device, ADB, install, launch, game run, or battery measurement
+  was used for this slice.
+
 ## High-Value Optimization Places
 
-1. PICA AArch64 source-swizzle lowering
-
-   Arbitrary vertex-source selectors in the CPU shader JIT currently materialize a 16-byte table
-   and execute `TBL` for each affected instruction. A one/two-operation `EXT`, `REV64`, `TRN`,
-   `ZIP`, `UZP`, or lane-move plan covers 149 of the 256 selectors without a literal load. This is
-   deferred because normal hardware-shader draws bypass the CPU JIT; add exhaustive generated-code
-   tests and benchmark immediate-mode/fallback/geometry-shader workloads before accepting the
-   larger emitter.
-
-2. Data-driven Thor game profiles
+1. Data-driven Thor game profiles
 
    `ApplyAndroidGameProfile()` currently hardcodes E.X. Troopers. Move this toward a small data-driven loader or generated map from `src/android/app/src/main/assets/game_profiles/*.ini` so per-title settings can be added without expanding native `if` blocks.
 
    Useful profile knobs: resolution cap, custom texture disable/preload disable, shader settings, frame limit, GPU timing simulation, render-thread delay, and title-specific compatibility hacks.
 
-3. Adreno 740 Vulkan driver testing
+2. Adreno 740 Vulkan driver testing
 
    The fork can now fetch and install recent generic Turnip builds, Turnip variants, and a Qualcomm fallback, but this is not the same as a fully tested Thor driver matrix. Keep tracking which package works best for 3DS workloads on Thor Base/Pro/Max, and avoid silently forcing a driver without user action.
 
-4. Shader stutter testing
+3. Shader stutter testing
 
    `async_shader_compilation` defaults to off. On Adreno 740/Vulkan it is worth A/B testing per title, especially for games with shader compilation hitching. Do not flip it globally until visual correctness is checked.
 
-5. Resolution and texture guardrails
+4. Resolution and texture guardrails
 
    The Thor 8 Gen 2 can handle more than native resolution in many titles, but 3x+ can still be a bad default for heavy games or dual-screen presentation. Keep default 1x, cap problem titles at 2x, and avoid preload/custom textures unless a title is proven stable.
 
-6. Compatibility-cost toggles
+5. Compatibility-cost toggles
 
    `simulate_3ds_gpu_timings` improves correctness but can cost performance in some games. `delay_game_render_thread_us` is available for dynamic-framerate edge cases. These should be per-title profile toggles, not global Thor defaults.
 
-7. Crypto feature-dispatch audit
+6. Crypto feature-dispatch audit
 
    The Android build detects ARMv8 and NEON headers and already enables the AES-oriented Crypto++
    path, but its configure result leaves CRC32 and PMULL disabled. Profile actual 3DS crypto and

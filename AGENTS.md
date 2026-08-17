@@ -46,6 +46,13 @@
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its paired-load lowering.
 - The AArch64 PICA `LG2` positive-input helper similarly keeps its five exact coefficient words in one aligned two-Q-register block. Preserve its `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value vectors and branches.
+- The AArch64 PICA source-swizzle planner must preserve exact four-lane selector composition. Its
+  26 primitive `EXT`/`REV64`/`ZIP`/`UZP`/`TRN`/`DUP`/lane-move operations cover exactly one
+  identity, 26 one-operation, and 122 two-operation selectors; the remaining 107 selectors retain
+  the literal `LDR` plus `TBL` fallback. Keep the compile-time all-256 mapping proof and the
+  permanent `All Source Swizzles` generated-shader test. Do not claim this affects draws that
+  successfully use hardware vertex shaders; it targets immediate, geometry, and software-fallback
+  shader invocations.
 - The AArch64 PICA program/swizzle range updater scans eight words per first-stage NEON block and combines both comparison masks before its unchanged `UMAXV`. Preserve the all-equal `UINT32_MAX` sentinel, exact highest-changed-lane result (including low lane zero and high lane four), paired stores only after a detected change, the four-word tail, scalar remainder, dirty flags, and biggest-range accounting.
 - The AArch64 ETC1/ETC1A4 block decoder maps selector and negation bit `4 * x + y` into two
   row-major eight-pixel AdvSIMD bands. Preserve horizontal `x / 2` versus flipped `y / 2`

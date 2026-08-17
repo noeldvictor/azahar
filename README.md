@@ -62,8 +62,8 @@ This fork has moved away from stock Azahar in visible ways:
 - Missing/stale ROM entries stop before launch instead of continuing into emulation.
 - Game equality was fixed to compare real fields instead of treating hash collisions as equality.
 - Thor builds are Android `arm64-v8a` only unless deliberately changed.
-- The AArch64 PICA vertex-shader JIT lowers arbitrary source swizzles to native AdvSIMD table
-  lookup instead of serial vector copies and lane inserts.
+- The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
+  register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,
   blending, and rewriting the entire destination vector. Full-vector stores stay native `STR Q`.
 - The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
@@ -142,16 +142,25 @@ sequences, build evidence, limitations, and the required benchmark controls are 
 
 ## AArch64 PICA Updates
 
-The PICA vertex-shader JIT now attacks five common AArch64 lowering costs: baseline Armv8-A
-AdvSIMD `TBL` handles arbitrary source swizzles, `ST1` lane stores handle partial destination masks
-without reading untouched lanes, and a cached output-bank pointer removes repeated bank loads and
-address generation. Its `EX2` approximation also packs eight exact constants into two Q registers:
+The PICA vertex-shader JIT now attacks six common AArch64 lowering costs. Source swizzles use
+register-only AdvSIMD permutations where possible, `ST1` lane stores handle partial destination
+masks without reading untouched lanes, and a cached output-bank pointer removes repeated bank
+loads and address generation. Its `EX2` approximation also packs eight exact constants into two Q registers:
 constant setup falls from eight `ADR` plus eight scalar `LDR` instructions to one `ADR`, one `LDP`,
 and one lane `DUP`. That is 13 fewer instructions inside each helper execution, or a net 12 for an
 otherwise minimal one-`EX2` shader after its required one-time `1.0` register initialization. These
 are exact generated-instruction and memory-traffic reductions validated by ARM64 compilation and
 focused regression sources. Whole-game FPS and battery-watt effects still require a controlled
 Thor A/B and are not estimated from static counts.
+
+The source-swizzle planner exhaustively composes `EXT`, `REV64`, `ZIP`, `UZP`, `TRN`, `DUP`, and
+lane moves. One identity, 26 one-operation, and 122 two-operation selectors avoid the old 16-byte
+index literal; the remaining 107 selectors still use `LDR` plus `TBL`. Relative to the prior
+emitter, 10 selector values also fall from two generated instructions to one and 122 replace the
+literal load with a second register permutation. Compile-time assertions prove every accepted plan
+against all 256 selector maps, and the permanent shader test executes all 256 generated results.
+This helps immediate-mode, geometry-shader, and software-fallback vertex processing; draws that
+successfully use hardware vertex shaders bypass this CPU JIT.
 
 The normal positive-input `LG2` path uses the same paired-load strategy for its five exact
 polynomial coefficients. Two separately addressed groups that required five setup instructions now

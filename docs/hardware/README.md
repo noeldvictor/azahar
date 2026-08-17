@@ -54,6 +54,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   SoundTouch tempo only, so exact unity pitch/rate requires no anti-alias FIR or interpolation.
   The opt-in path must enter TDStretch directly before stream processing; keep generic crossover
   behavior unchanged and confirm final linked code does not call RateTransposer on that branch.
+- For PICA source swizzles that run in the AArch64 CPU shader JIT, prefer one or two register-only
+  lane permutations over loading a 16-byte index literal and executing `TBL`. The X3 guide lists
+  element `DUP`, `EXT`, `INS`, `REV64`, `TRN`, `ZIP`, and `UZP` at latency 2 and throughput 4,
+  versus throughput 2 for one-table `TBL`; A715/A710 list the simple permutations and one-table
+  `TBL` at latency 2, while A510 lists simple permutations at latency 3 and one-table `TBL` at
+  latency 4. Preserve an exact `TBL` fallback and prove the synthesized maps exhaustively.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,
