@@ -41,7 +41,7 @@ DspStatus Mixers::Tick(DspConfiguration& config, const IntermediateMixSamples& r
     AuxReturn(read_samples);
     AuxSend(write_samples, input);
 
-    MixCurrentFrame();
+    MixCurrentFrame(input);
 
     return GetCurrentStatus();
 }
@@ -293,22 +293,16 @@ void Mixers::AuxReturn(const IntermediateMixSamples& read_samples) {
 
 void Mixers::AuxSend(IntermediateMixSamples& write_samples,
                      const std::array<PlanarQuadFrame32, 3>& input) {
-    state.intermediate_mix_buffer[0] = input[0];
-
     if (state.aux_bus_enable[0]) {
         CopyPlanarToShared(write_samples.mix1.pcm32, input[1]);
-    } else {
-        state.intermediate_mix_buffer[1] = input[1];
     }
 
     if (state.aux_bus_enable[1]) {
         CopyPlanarToShared(write_samples.mix2.pcm32, input[2]);
-    } else {
-        state.intermediate_mix_buffer[2] = input[2];
     }
 }
 
-CITRA_NO_INLINE void Mixers::MixCurrentFrame() {
+CITRA_NO_INLINE void Mixers::MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input) {
     bool has_output = false;
 
     // TODO(SachinV): This is probably not accurate, based on symbols from FE:Fates,
@@ -318,9 +312,14 @@ CITRA_NO_INLINE void Mixers::MixCurrentFrame() {
         // Integer mix samples multiplied by either sign of zero cannot affect the s16 output.
         // Keep NaN on the arithmetic path so the existing conversion behavior remains unchanged.
         if (gain != 0.0f) {
+            // Main and disabled auxiliary buses are already live in input. Enabled auxiliary
+            // buses use the ARM11-returned samples copied into persistent state by AuxReturn().
+            const PlanarQuadFrame32& samples = mix == 0 || !state.aux_bus_enable[mix - 1]
+                                                   ? input[mix]
+                                                   : state.intermediate_mix_buffer[mix];
             // The first audible bus can define the complete frame directly. Later buses retain
             // the original per-bus clamp followed by saturating accumulation.
-            DownmixAndMixIntoCurrentFrame(gain, state.intermediate_mix_buffer[mix], has_output);
+            DownmixAndMixIntoCurrentFrame(gain, samples, has_output);
             has_output = true;
         }
     }

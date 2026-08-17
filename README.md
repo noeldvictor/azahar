@@ -370,6 +370,17 @@ saturating-add order, and an all-silent frame still clears stale output. `MixCur
 outlined so ThinLTO does not duplicate it into `Tick()`. These are exact path-local code-generation
 results, not measured whole-game FPS or battery-watt gains.
 
+Final mixing now also consumes the current main and disabled-auxiliary planar buses in place
+instead of copying each 2,560-byte bus into persistent state and immediately reading it back.
+Enabled auxiliary returns still stage the ARM11-edited samples, and enabled sends still copy the
+new source bus into shared memory; all arithmetic, auxiliary exchange, sleep/wakeup state, and
+historical save-state fields are preserved. Current AArch64 ThinLTO shrinks `Mixers::Tick()` from
+236 to 188 bytes and `AuxSend()` from 136 to 108. With both aux buses disabled, the route removes
+three `memcpy` calls and 15,360 bytes of load-plus-store traffic per DSP frame, or 3,141,888
+bytes/second. One enabled aux removes two staging copies (2,094,592 bytes/second); both enabled
+still remove the always-redundant main copy (1,047,296 bytes/second). These are continuous DSP-path
+traffic reductions, not whole-game FPS or watt measurements.
+
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
 `SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one

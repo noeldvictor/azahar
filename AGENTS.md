@@ -145,6 +145,15 @@
   `SQADD`; later accumulated paths deliberately retain their output `LD2` and two `SQADD` at 38/36
   instructions. Keep multiple-bus saturation, signed-zero, first-audible-aux, and silent-after-
   audible Mono/Stereo regression coverage.
+- Final HLE mixing must consume the main bus and disabled auxiliary buses directly from the
+  current `Tick()` input. Only enabled ARM11 auxiliary returns stage in
+  `state.intermediate_mix_buffer`; `AuxSend()` writes enabled buses to shared memory but must not
+  copy main/disabled input into persistent state. Retain all historical mixer-state archive slots
+  for save compatibility: their main/disabled contents are transiently irrelevant because the
+  next tick uses live input, while enabled returns are overwritten before mixing. Final AArch64
+  ThinLTO should leave the all-aux-disabled `Tick()` route with no 2,560-byte `memcpy`, at 188 bytes
+  versus the 236-byte staging baseline, and `AuxSend()` at 108 versus 136 bytes. Keep all-disabled,
+  both-enabled, and mixed enabled/disabled routing and untouched-disabled-shared-output coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

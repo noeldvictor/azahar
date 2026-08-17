@@ -109,6 +109,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   the original clamp-and-saturating-add order for every later contribution, preserve NaN routing,
   and explicitly clear the destination when no contribution is active. Keep the branch outside the
   sample loop and inspect final ThinLTO to confirm the direct variant has no destination load/add.
+- Do not stage a complete planar frame into persistent state merely to consume it once in the same
+  tick. When the producer's lifetime covers the consumer, route its const view directly and retain
+  staging only for data that truly crosses an ownership or endian boundary. Preserve serialized
+  field layout when compatibility requires it, and prove that loaded/stale fields are overwritten
+  or bypassed before use. Count both the load and store sides of every removed copy when estimating
+  memory-system work, then confirm the linked call sites actually disappeared.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 

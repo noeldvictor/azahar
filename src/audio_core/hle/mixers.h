@@ -40,6 +40,8 @@ private:
         std::array<float, 3> intermediate_mixer_volume = {};
 
         std::array<bool, 2> aux_bus_enable = {};
+        // Enabled auxiliary returns stage here. Main and disabled auxiliary buses mix directly
+        // from the current Tick() input; retain all three slots for save-state compatibility.
         std::array<PlanarQuadFrame32, 3> intermediate_mix_buffer = {};
 
         OutputFormat output_format = OutputFormat::Stereo;
@@ -86,8 +88,8 @@ private:
     /// INTERNAL: Write samples to shared memory for the ARM11 to modify.
     void AuxSend(IntermediateMixSamples& write_samples,
                  const std::array<PlanarQuadFrame32, 3>& input);
-    /// INTERNAL: Mix current_frame.
-    void MixCurrentFrame();
+    /// INTERNAL: Mix current_frame directly from current input or returned auxiliary samples.
+    void MixCurrentFrame(const std::array<PlanarQuadFrame32, 3>& input);
     /// INTERNAL: Downmix from quadraphonic to stereo based on status.output_format and accumulate
     /// into current_frame, or define it directly for the first audible bus.
     void DownmixAndMixIntoCurrentFrame(float gain, const PlanarQuadFrame32& samples,

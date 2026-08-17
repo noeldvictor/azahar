@@ -2175,6 +2175,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   duration constant, then record DSP/audio-thread time, audio underruns, frametimes, battery power,
   temperature, thermal slope, output correctness, and stability.
 
+## 2026-08-17 Live-Input Final-Mixer Routing
+
+- `Mixers::Tick()` previously staged every current 2,560-byte planar bus in
+  `state.intermediate_mix_buffer` before final downmix. The main bus was always copied. Each
+  disabled auxiliary bus was copied to state, while an enabled bus copied the ARM11 return to
+  state and separately sent its new input to shared memory. Final mixing immediately read the
+  staged main/disabled data back; no later operation consumed it.
+- Main and disabled auxiliary buses now mix directly from the const input whose lifetime spans the
+  complete tick. Enabled buses still mix the ARM11-returned state populated by `AuxReturn()`, and
+  `AuxSend()` still writes their new input to shared memory. The three historical state-buffer
+  slots remain serialized for archive compatibility. Their main/disabled values need not be
+  refreshed: the current output is serialized separately, and the next tick bypasses those slots
+  or overwrites an enabled return before use. Sleep/wakeup behavior is unchanged for the same
+  reason.
+- Baseline production AArch64 ThinLTO made three plus the number of enabled auxiliaries 2,560-byte
+  `memcpy` calls per tick. The retained code makes two per enabled auxiliary and zero when both are
+  disabled. This removes one to three state-staging copies every DSP frame: 5,120 to 15,360 bytes
+  of load-plus-store traffic. At 32,728 Hz / 160 samples, that is 1,047,296 bytes/second with both
+  auxiliaries enabled, 2,094,592 with one enabled, and 3,141,888 with both disabled.
+- `Mixers::Tick()` shrinks from 236 to 188 bytes (20.3%) and `AuxSend()` from 136 to 108 bytes
+  (20.6%). The outlined `MixCurrentFrame()` grows from 596 to 644 bytes to select live versus
+  returned input, so the complete retained mixer-function set shrinks by 28 bytes. The all-disabled
+  `Tick()` disassembly has no `memcpy`; enabled branches retain only the required return/send calls.
+  The established Stereo/Mono direct-first-bus NEON loops and later saturating accumulation bodies
+  are unchanged.
+- Existing tests already cover all-disabled direct input and both-enabled ARM11 return/send
+  routing. New mixed coverage enables aux 0 only, verifies main and disabled aux 1 use live input,
+  verifies aux 0 mixes its ARM11 return and sends its new input, and proves disabled aux 1 shared
+  output remains byte-for-byte untouched. The complete ELF64/AArch64 test executable and
+  production ThinLTO shared library compile and link successfully in 1 minute 18 seconds; the ARM64
+  executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 28 seconds and produced an ARM64-only
+  28,966,083-byte APK with SHA-256
+  `F96E7B5E1F23C030770F666C3B041D0EF55910B902C2046E8A25027E5AE8C7FB`.
+- Across packaging and the final post-format verification cleanup, 3,745,992,762 logical bytes of
+  native test executables and disposable Gradle intermediates were removed. Reported C: free space
+  increased by 2,859,163,648 bytes across the two cleanup passes; the final APK and active ARM64
+  RelWithDebInfo CMake cache remain in the workspace.
+- No device, ADB, install, launch, game run, FPS test, or battery measurement was used. The result
+  is a proven continuous DSP memory-traffic reduction, not a whole-game speed or wattage claim. A
+  future allowed Thor A/B should hold title, scene, save, caches, renderer, resolution, driver,
+  display layout, performance/fan mode, brightness, audio backend, speed limit, and duration
+  constant, then record aux-enable patterns, DSP/audio-thread time, underruns, frametimes, battery
+  power, temperature, thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

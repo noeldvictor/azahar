@@ -158,6 +158,59 @@ TEST_CASE("HLE mixer auxiliary buses preserve planar samples", "[audio_core][hle
     }
 }
 
+TEST_CASE("HLE mixer selects live input for a disabled auxiliary bus",
+          "[audio_core][hle][mixers]") {
+    constexpr std::array<float, 3> gains{0.125f, 0.25f, 0.5f};
+
+    std::array<AudioCore::PlanarQuadFrame32, 3> input{};
+    std::array<AudioCore::PlanarQuadFrame32, 3> expected_mix{};
+    AudioCore::HLE::IntermediateMixSamples read_samples{};
+    AudioCore::HLE::IntermediateMixSamples write_samples{};
+
+    for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            input[0][channel][sample] = static_cast<s32>(sample * 31 + channel * 3 - 1700);
+            input[1][channel][sample] = static_cast<s32>(sample * 37 + channel * 5 - 1900);
+            input[2][channel][sample] = static_cast<s32>(sample * 41 + channel * 7 - 2100);
+            read_samples.mix1.pcm32[channel][sample] =
+                static_cast<s32>(sample * 43 + channel * 11 - 2300);
+            read_samples.mix2.pcm32[channel][sample] =
+                static_cast<s32>(sample * 47 + channel * 13 - 2500);
+            write_samples.mix2.pcm32[channel][sample] = 0x5a5a5a5a;
+
+            expected_mix[0][channel][sample] = input[0][channel][sample];
+            expected_mix[1][channel][sample] = read_samples.mix1.pcm32[channel][sample];
+            expected_mix[2][channel][sample] = input[2][channel][sample];
+        }
+    }
+    const auto untouched_mix2 = write_samples.mix2;
+
+    DspConfiguration config{};
+    config.aux_bus_enable = {1, 0};
+    config.aux_bus_enable_0_dirty.Assign(1);
+    config.aux_bus_enable_1_dirty.Assign(1);
+    config.master_volume = gains[0];
+    config.aux_return_volume = {gains[1], gains[2]};
+    config.master_volume_dirty.Assign(1);
+    config.aux_return_volume_0_dirty.Assign(1);
+    config.aux_return_volume_1_dirty.Assign(1);
+    config.output_format = DspConfiguration::OutputFormat::Stereo;
+    config.output_format_dirty.Assign(1);
+
+    AudioCore::HLE::Mixers mixers;
+    mixers.Tick(config, read_samples, write_samples, input);
+
+    REQUIRE(mixers.GetOutput() ==
+            ReferenceMix(DspConfiguration::OutputFormat::Stereo, gains, expected_mix));
+    for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+        for (std::size_t channel = 0; channel < 4; ++channel) {
+            REQUIRE(write_samples.mix1.pcm32[channel][sample] == input[1][channel][sample]);
+            REQUIRE(write_samples.mix2.pcm32[channel][sample] ==
+                    untouched_mix2.pcm32[channel][sample]);
+        }
+    }
+}
+
 } // namespace
 
 TEST_CASE("HLE mixer downmix matches scalar saturation", "[audio_core][hle][mixers]") {
