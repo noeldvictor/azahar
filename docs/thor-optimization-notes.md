@@ -2306,6 +2306,64 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   counts, DSP/audio-thread time and placement, underruns, frametimes, battery power, temperature,
   thermal slope, output correctness, and stability.
 
+## 2026-08-17 Raster Fill Bulk Materialization
+
+- `RasterizerCache::DownloadFillSurface()` previously rounded every requested start down to its
+  fill-pattern boundary, backed up the bytes before the requested interval, called runtime-sized
+  `memcpy` once per two-, three-, or four-byte pattern, and restored that prefix. A 1 MiB four-byte
+  fill consequently executed about 262,144 loop iterations and tiny copies even though the output
+  is just one repeating pattern. `SurfaceBase::CanFill()` separately heap-allocated a vector to
+  inspect a compatibility pattern whose maximum size is 16 bytes.
+- `SurfaceBase::FillMemory()` now writes only `[start_offset, end_offset)`. It copies the partial
+  first pattern from the exact phase, seeds one aligned complete pattern, and repeatedly doubles
+  the initialized prefix through non-overlapping `memcpy` ranges. Work changes from
+  `O(bytes / fill_size)` copy calls to `O(log bytes)`; an aligned 1 MiB four-byte fill needs about
+  19 calls. A fill whose two to four source bytes are all equal takes one `memset`. Compatibility
+  checks retain their original byte comparisons but use a fixed 16-byte stack array.
+- Permanent Catch2 coverage compares the production helper against a byte-at-a-time reference for
+  all fill sizes 2/3/4, eight patterns including the solid fast path, starts 0 through 15, and every
+  length from 0 through 256. This is 98,688 phase/range cases with full before/after guard checks.
+  A separate unaligned 1 MiB three-byte case verifies the exponential path and both canaries.
+- Final AArch64 ThinLTO keeps `FillMemory()` as a 292-byte helper. Its solid branch tail-calls
+  `memset`; its patterned branch performs one phase calculation and a compact loop around bulk
+  `memcpy`. Both OpenGL and Vulkan `DownloadFillSurface()` are 272 bytes and contain one
+  `FillMemory()` call with no per-pattern copy loop. `CanFill()` contains no allocation/deallocation
+  call. The complete ARM64 test executable and production `libcitra-android.so` compiled and linked
+  successfully in 1 minute 33 seconds; the ARM64 executable was not run on the x64 host.
+- A temporary optimized x64 verifier first confirmed the old and new output matched, then ran seven
+  order-alternated timing rounds. Median 64 KiB time fell from 53.16 to 0.95 microseconds for a
+  distinct three-byte pattern (55.9x), and from 46.71 to 0.69 microseconds for a solid four-byte
+  pattern (67.3x). At 1 MiB, the same cases fell from 830.77 to 29.05 microseconds (28.6x) and from
+  706.63 to 19.57 microseconds (36.1x). The temporary executable/source were removed afterward.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 26 seconds. The final ARM64-only APK
+  is 28,969,403 bytes with SHA-256
+  `6A977BD4DAC49E57080C6816B37F0CB457CBD7969F76592DC59A70DCB74B7073`. Post-build cleanup kept
+  that APK and the active ARM64 RelWithDebInfo CMake cache while removing 2,458,871,607 logical
+  bytes of the test ELF, JNI staging, native symbols, mappings, and reproducible Gradle output.
+  One 5,179,280-byte R8 dex intermediate remains because an existing Java process has it open; it
+  is bounded and not required by the APK. Reported C: free space increased by 123,207,680 bytes.
+- This is a large isolated CPU-overhead reduction when GPU fill surfaces are materialized back into
+  emulated memory. Cache hit rate, fill sizes, and CPU readback behavior determine whole-game
+  exposure. No device, ADB, install, launch, game, FPS, power, or temperature measurement was used,
+  so no whole-game speed or wattage percentage is claimed.
+
+## 2026-08-17 Rejected PICA RSQ and Blind Fastmem Shortcuts
+
+- The tempting PICA `RSQ` lowering `FRSQRTE; FMUL; FRSQRTS; FMUL` would be four instructions, not
+  three. The Cortex-X3/A715/A710 guides imply a roughly 13-cycle dependent chain versus about
+  14-19 cycles for the retained exact `FSQRT; FDIV`; A510 makes the approximation look better at
+  roughly 16 versus 27 cycles. That narrow performance-core margin does not justify changing
+  numerical behavior. The hardware-tested PICA description documents its reduced float format and
+  special cases, but not normal-result bit accuracy or rounding. The exact lowering stays in place
+  until guest-output equivalence can be proved, consistent with the fork's no-approximate-PICA rule.
+  See [3dbrew's hardware-tested PICA shader instruction behavior](https://www.3dbrew.org/wiki/GPU/Shader_Instruction_Set).
+- A true RPCS3-style 4 GiB fastmem view was also rejected as a local toggle. Azahar's current
+  AArch64 absolute-offset page table already emits a compact page-index extraction, page-entry load,
+  null fallback, and guest access. A safe direct-address view would require coherent 4 GiB virtual
+  aliases for each 3DS process and a redesign of the ordinary-array backing/remapping model.
+  Pointing Dynarmic fastmem at the existing storage without that aliasing would be incorrect; this
+  remains a separately scoped VM architecture project rather than an unsafe shortcut.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

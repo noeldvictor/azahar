@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <boost/icl/interval_set.hpp>
 #include "video_core/rasterizer_cache/surface_params.h"
 #include "video_core/rasterizer_cache/utils.h"
@@ -31,6 +33,9 @@ public:
 
     /// Returns true when this surface can be used to fill the fill_interval of dest_surface
     bool CanFill(const SurfaceParams& dest_surface, SurfaceInterval fill_interval) const;
+
+    /// Materializes this surface's repeating fill pattern into [start_offset, end_offset).
+    void FillMemory(u8* destination, std::size_t start_offset, std::size_t end_offset) const;
 
     /// Returns true when surface can validate copy_interval of dest_surface
     bool CanCopy(const SurfaceParams& dest_surface, SurfaceInterval copy_interval) const;

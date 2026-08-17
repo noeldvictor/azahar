@@ -246,6 +246,17 @@ scalar divisions. Boundary, depth-edge, layout, mode, and canary tests compile i
 binary. These are path-local generated-code improvements; Thor FPS and battery effects remain to
 be measured under controlled conditions.
 
+Raster fill-surface downloads no longer call `memcpy` once for every two, three, or four bytes.
+They preserve the pattern phase at an arbitrary requested start, seed one complete pattern, then
+double the initialized range with non-overlapping bulk copies; solid-byte patterns go directly to
+`memset`. An aligned 1 MiB four-byte fill therefore needs about 19 copy operations rather than
+262,144 tiny iterations. `CanFill()` also checks its at-most-16-byte compatibility pattern on the
+stack instead of allocating a vector. Permanent phase, length, large-range, and guard-canary
+coverage compiles into the ARM64 test binary. A seven-round order-alternated x64 mechanism
+benchmark reduced a 1 MiB three-byte fill from 830.77 to 29.05 microseconds (28.6x) and a solid
+four-byte fill from 706.63 to 19.57 microseconds (36.1x). These isolated host figures prove removal
+of loop/call overhead; they are not whole-game Thor FPS or battery-watt results.
+
 ## AArch64 Audio Updates
 
 GC-ADPCM source buffers previously decoded every four-bit sample through a sixteen-entry integer

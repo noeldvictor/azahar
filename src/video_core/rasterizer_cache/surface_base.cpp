@@ -2,6 +2,9 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include "common/alignment.h"
 #include "video_core/custom_textures/material.h"
 #include "video_core/rasterizer_cache/surface_base.h"
@@ -23,7 +26,8 @@ bool SurfaceBase::CanFill(const SurfaceParams& dest_surface, SurfaceInterval fil
         if (fill_size * 8 != dest_surface.GetFormatBpp()) {
             // Check if bits repeat for our fill_size
             const u32 dest_bytes_per_pixel = std::max(dest_surface.GetFormatBpp() / 8, 1u);
-            std::vector<u8> fill_test(fill_size * dest_bytes_per_pixel);
+            std::array<u8, 16> fill_test;
+            ASSERT(fill_size * dest_bytes_per_pixel <= fill_test.size());
 
             for (u32 i = 0; i < dest_bytes_per_pixel; ++i) {
                 std::memcpy(&fill_test[i * fill_size], &fill_data[0], fill_size);
@@ -43,6 +47,51 @@ bool SurfaceBase::CanFill(const SurfaceParams& dest_surface, SurfaceInterval fil
         return true;
     }
     return false;
+}
+
+void SurfaceBase::FillMemory(u8* destination, std::size_t start_offset,
+                             std::size_t end_offset) const {
+    ASSERT(fill_size > 0 && fill_size <= fill_data.size());
+    ASSERT(start_offset <= end_offset);
+    if (start_offset == end_offset) {
+        return;
+    }
+
+    const std::size_t fill_bytes = fill_size;
+    const bool is_single_value =
+        std::all_of(fill_data.begin() + 1, fill_data.begin() + fill_bytes,
+                    [value = fill_data.front()](const u8 byte) { return byte == value; });
+    if (is_single_value) {
+        std::memset(destination + start_offset, fill_data.front(), end_offset - start_offset);
+        return;
+    }
+
+    // Reach the next pattern boundary without touching bytes before start_offset.
+    std::size_t write_offset = start_offset;
+    const std::size_t phase = write_offset % fill_bytes;
+    if (phase != 0) {
+        const std::size_t prefix_bytes = std::min(fill_bytes - phase, end_offset - write_offset);
+        std::memcpy(destination + write_offset, fill_data.data() + phase, prefix_bytes);
+        write_offset += prefix_bytes;
+    }
+    if (write_offset == end_offset) {
+        return;
+    }
+
+    // Seed one pattern, then copy the initialized prefix exponentially. Each memcpy source ends
+    // at or before its destination, so the ranges never overlap.
+    const std::size_t pattern_start = write_offset;
+    const std::size_t seed_bytes = std::min(fill_bytes, end_offset - write_offset);
+    std::memcpy(destination + write_offset, fill_data.data(), seed_bytes);
+    write_offset += seed_bytes;
+
+    std::size_t initialized_bytes = seed_bytes;
+    while (write_offset < end_offset) {
+        const std::size_t copy_bytes = std::min(initialized_bytes, end_offset - write_offset);
+        std::memcpy(destination + write_offset, destination + pattern_start, copy_bytes);
+        write_offset += copy_bytes;
+        initialized_bytes += copy_bytes;
+    }
 }
 
 bool SurfaceBase::CanCopy(const SurfaceParams& dest_surface, SurfaceInterval copy_interval) const {
