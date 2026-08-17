@@ -39,6 +39,11 @@ target_link_libraries(tests PRIVATE citra_common citra_core video_core audio_cor
 target_link_libraries(tests PRIVATE SoundTouch ${PLATFORM_LIBRARIES} catch2 nihstro-headers Threads::Threads)
 target_include_directories(tests PRIVATE ${PROJECT_SOURCE_DIR}/externals/soundtouch/source/SoundTouch)
 
+if (ENABLE_VULKAN)
+    target_sources(tests PRIVATE video_core/vulkan_scheduler.cpp)
+    target_link_libraries(tests PRIVATE vulkan-headers)
+endif()
+
 if (ENABLE_LIBRETRO)
     target_link_libraries(tests PRIVATE $<TARGET_OBJECTS:citra_libretro_common>)
 endif()

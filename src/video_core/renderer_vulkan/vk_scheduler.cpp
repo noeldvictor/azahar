@@ -188,7 +188,7 @@ void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wa
         master_semaphore->SubmitWork(cmdbuf, wait_semaphore, signal_semaphore, signal_value);
     });
 
-    master_semaphore->Refresh();
+    master_semaphore->RefreshOnSubmit(signal_value);
 
     if (!use_worker_thread) {
         AllocateWorkerCommandBuffers();

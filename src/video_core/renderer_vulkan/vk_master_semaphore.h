@@ -17,6 +17,8 @@ class Scheduler;
 
 class MasterSemaphore {
 public:
+    static constexpr u64 SUBMISSION_REFRESH_INTERVAL = 4;
+
     virtual ~MasterSemaphore() = default;
 
     [[nodiscard]] u64 CurrentTick() const noexcept {
@@ -33,6 +35,15 @@ public:
 
     [[nodiscard]] u64 NextTick() noexcept {
         return current_tick.fetch_add(1, std::memory_order_release);
+    }
+
+    /// Periodically refreshes cached GPU progress after a submission is recorded. Resource-pool
+    /// exhaustion and explicit waits still call Refresh() immediately when fresh progress is
+    /// required, so intermediate submissions can safely retain the conservative cached value.
+    void RefreshOnSubmit(u64 signal_value) {
+        if (signal_value % SUBMISSION_REFRESH_INTERVAL == 0) {
+            Refresh();
+        }
     }
 
     /// Refresh the known GPU tick
