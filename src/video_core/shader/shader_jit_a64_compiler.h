@@ -31,7 +31,7 @@ struct ShaderUnit;
 namespace Pica::Shader {
 
 /**
- * This class implements the shader JIT compiler. It recompiles a Pica shader program into x86_64
+ * This class implements the shader JIT compiler. It recompiles a Pica shader program into AArch64
  * code that can be executed on the host machine directly.
  */
 class JitShader : public oaknut::VectorCodeGenerator {
@@ -138,6 +138,9 @@ private:
 
     /// Offsets in code where a return needs to be inserted
     std::vector<u32> return_offsets;
+
+    /// Whether math or guest-subroutine BLs require preserving the host return address at entry.
+    bool needs_link_register_save = false;
 
     u32 program_counter = 0; ///< Offset of the next instruction to decode
     u8 loop_depth = 0;       ///< Depth of the (nested) loops currently compiled

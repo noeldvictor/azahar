@@ -122,7 +122,7 @@ constexpr XReg XSCRATCH0 = X4;
 constexpr XReg XSCRATCH1 = X5;
 constexpr QReg VSCRATCH0 = Q0;
 constexpr QReg VSCRATCH1 = Q4;
-constexpr QReg VSCRATCH2 = Q15;
+constexpr QReg VSCRATCH2 = Q6;
 /// Loaded with the first swizzled source register, otherwise can be used as a scratch register
 constexpr QReg SRC1 = Q1;
 /// Loaded with the second swizzled source register, otherwise can be used as a scratch register
@@ -130,7 +130,7 @@ constexpr QReg SRC2 = Q2;
 /// Loaded with the third swizzled source register, otherwise can be used as a scratch register
 constexpr QReg SRC3 = Q3;
 /// Constant vector of [1.0f, 1.0f, 1.0f, 1.0f], used to efficiently set a vector to one
-constexpr QReg ONE = Q14;
+constexpr QReg ONE = Q5;
 
 // State registers that must not be modified by external functions calls
 // Scratch registers, e.g., SRC1 and VSCRATCH0, have to be saved on the side if needed
@@ -534,19 +534,27 @@ void JitShader::Compile_DPH(Instruction instr) {
 
 void JitShader::Compile_EX2(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
-    STR(X30, SP, POST_INDEXED, -16);
+    if (!return_offsets.empty()) {
+        STR(X30, SP, POST_INDEXED, -16);
+    }
     exp2_used = true;
     BL(exp2_subroutine);
-    LDR(X30, SP, PRE_INDEXED, 16);
+    if (!return_offsets.empty()) {
+        LDR(X30, SP, PRE_INDEXED, 16);
+    }
     Compile_DestEnable(instr, SRC1);
 }
 
 void JitShader::Compile_LG2(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
-    STR(X30, SP, POST_INDEXED, -16);
+    if (!return_offsets.empty()) {
+        STR(X30, SP, POST_INDEXED, -16);
+    }
     log2_used = true;
     BL(log2_subroutine);
-    LDR(X30, SP, PRE_INDEXED, 16);
+    if (!return_offsets.empty()) {
+        LDR(X30, SP, PRE_INDEXED, 16);
+    }
     Compile_DestEnable(instr, SRC1);
 }
 
@@ -685,7 +693,10 @@ void JitShader::Compile_END(Instruction instr) {
         u32(offsetof(ShaderUnit, address_registers)));
     STR(LOOPCOUNT_REG.toW(), STATE, u32(offsetof(ShaderUnit, address_registers[2])));
 
-    ABI_PopRegisters(*this, ABI_ALL_CALLEE_SAVED, 16);
+    const std::bitset<64> callee_saved_regs =
+        needs_link_register_save ? BuildRegSet({X30}) : std::bitset<64>{};
+    const std::size_t stack_frame_size = return_offsets.empty() ? 0 : 16;
+    ABI_PopRegisters(*this, callee_saved_regs, stack_frame_size);
     RET();
 }
 
@@ -961,14 +972,22 @@ void JitShader::Compile_NextInstr() {
 
 void JitShader::FindReturnOffsets() {
     return_offsets.clear();
+    needs_link_register_save = false;
 
     for (std::size_t offset = 0; offset < program_code->size(); ++offset) {
         Instruction instr = {(*program_code)[offset]};
 
         switch (instr.opcode.Value()) {
+        case OpCode::Id::EX2:
+        case OpCode::Id::LG2:
+            // The emitted math helpers are reached with BL, so preserve the host return address
+            // once at shader entry instead of around every helper invocation.
+            needs_link_register_save = true;
+            break;
         case OpCode::Id::CALL:
         case OpCode::Id::CALLC:
         case OpCode::Id::CALLU:
+            needs_link_register_save = true;
             return_offsets.push_back(instr.flow_control.dest_offset +
                                      instr.flow_control.num_instructions);
             break;
@@ -995,12 +1014,17 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     // Find all `CALL` instructions and identify return locations
     FindReturnOffsets();
 
-    // The stack pointer is 8 modulo 16 at the entry of a procedure
-    // We reserve 16 bytes and assign a dummy value to the first 8 bytes, to catch any potential
-    // return checks (see Compile_Return) that happen in shader main routine.
-    ABI_PushRegisters(*this, ABI_ALL_CALLEE_SAVED, 16);
-    MVN(XSCRATCH0, XZR);
-    STR(XSCRATCH0, SP, 8);
+    const std::bitset<64> callee_saved_regs =
+        needs_link_register_save ? BuildRegSet({X30}) : std::bitset<64>{};
+    const std::size_t stack_frame_size = return_offsets.empty() ? 0 : 16;
+    ABI_PushRegisters(*this, callee_saved_regs, stack_frame_size);
+
+    if (!return_offsets.empty()) {
+        // Reserve a dummy return offset for checks (see Compile_Return) reached in the shader's
+        // main routine rather than through a guest CALL.
+        MVN(XSCRATCH0, XZR);
+        STR(XSCRATCH0, SP, 8);
+    }
 
     MOV(UNIFORMS, ABI_PARAM1);
     MOV(STATE, ABI_PARAM2);

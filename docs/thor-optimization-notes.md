@@ -245,6 +245,39 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   matched A/B should target linear-surface-heavy scenes and record conversion time, frametimes,
   battery power, temperature, and visual correctness.
 
+## 2026-08-16 AArch64 Shader JIT Entry/Exit Traffic
+
+- The PICA AArch64 shader JIT previously saved all twelve ABI callee-saved GPRs and all eight
+  callee-saved vector registers on every shader invocation. The emitted shader only assigned two
+  vector registers from that set (`Q14` and `Q15`) plus the link register. Including stack
+  allocation and the unconditional dummy return slot, the fixed entry/exit path emitted 26
+  instructions, performed 20 register memory operations, moved 448 register bytes, and reserved
+  256 stack bytes even for a leaf shader.
+- The constant and final vector scratch register now use free caller-saved `Q5` and `Q6`. The
+  persistent-register mask automatically saves the full `Q5` around the rare external geometry
+  callback, which also avoids relying on AAPCS64's guarantee for only the low 64 bits of
+  callee-saved vector registers. A complete symbolic-register audit found no remaining generated
+  use of `X19`-`X29` or `Q8`-`Q15`.
+- Shader bytecode is scanned before emission. Ordinary leaf shaders now have no entry/exit stack
+  frame at all: the fixed 26 instructions, 20 memory operations, 448 register bytes, and 256-byte
+  frame all fall to zero. A shader containing `EX2` or `LG2` preserves only `X30` once, producing
+  four fixed entry/exit instructions and 16 bytes of register traffic. With one math-helper call,
+  removing its old local `X30` spill reduces the relevant overhead from 28 instructions to four
+  (85.7%).
+- Shaders containing PICA `CALL`, `CALLC`, or `CALLU` preserve `X30` and retain the 16-byte dummy
+  return frame. Their fixed entry/exit/dummy sequence falls from 26 to eight instructions while
+  keeping the old per-math-helper link-register spill, because a helper may execute inside a guest
+  subroutine. External `EMIT`/error callbacks retain their existing caller-save wrapper.
+- The existing Catch2 shader cases cover direct `LG2`, direct `EX2`, and a guest `CALL` whose
+  subroutine executes `EX2`, so both link-register strategies compiled and linked into the ARM64
+  test executable. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` passed. The APK is 28,964,819 bytes with SHA-256
+  `FD5A41A44EE6C7796FCAB0CB448FD222794D20BEB84B913EFCFA0998E4A91DFE`; it contains only
+  `arm64-v8a` native libraries. Only the active `6t472v1d` RelWithDebInfo CMake hash remains.
+- No ADB command, install, app launch, or Thor execution was performed. The emitted-code reduction
+  is exact, but whole-game FPS, battery power, temperature, and sustained wattage remain unmeasured
+  until a future allowed matched scene A/B.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.
