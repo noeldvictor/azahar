@@ -68,7 +68,16 @@
   `start + (end - start) * progress`, the post-frame ramp state, and the scalar non-AArch64 path.
   Do not replace the source loads with structured `LD2`/`LD4`. Keep steady, ramped, disabled,
   signed-16 edge, existing-destination, and canary coverage; final ThinLTO should retain the
-  eight-sample NEON loop without a per-sample ramp branch or stack spills.
+  eight-sample NEON loop without a per-sample ramp branch or per-iteration vector spill/reload
+  traffic. After fusing all three buses, one entry/exit `d8`/`d9` callee-save pair is the measured
+  trade for two removed calls.
+- `Source::MixInto()` deliberately handles all three intermediate buses in one frame-level call.
+  Preserve one caller invocation per source, the single disabled-source state transition, and
+  silent-bus elision only when every ending gain is exact signed zero and either no ramp is active
+  or every starting gain is exact signed zero. Any nonzero gain or NaN must take the arithmetic
+  path, and nonzero-to-zero/zero-to-nonzero ramps must still mix. On AArch64, final ThinLTO should
+  retain one Q `FCMEQ`/`UMINV` predicate per checked gain vector rather than four scalar compares.
+  Keep three-bus, signed-zero, zero-to-zero ramp, nonzero-ramp, disabled-state, and canary coverage.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

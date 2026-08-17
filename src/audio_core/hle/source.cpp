@@ -17,6 +17,19 @@
 
 namespace AudioCore::HLE {
 
+namespace {
+
+bool HasAudibleGain(const std::array<float, 4>& gains) {
+#if defined(__aarch64__)
+    const uint32x4_t zero_mask = vceqq_f32(vld1q_f32(gains.data()), vdupq_n_f32(0.0f));
+    return vminvq_u32(zero_mask) == 0;
+#else
+    return std::any_of(gains.begin(), gains.end(), [](float gain) { return gain != 0.0f; });
+#endif
+}
+
+} // Anonymous namespace
+
 #if defined(__aarch64__)
 namespace {
 
@@ -121,46 +134,55 @@ SourceStatus::Status Source::Tick(SourceConfiguration::Configuration& config,
     return GetCurrentStatus();
 }
 
-void Source::MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id) {
-    const std::array<float, 4>& gains = state.gain.at(intermediate_mix_id);
+void Source::MixInto(std::array<PlanarQuadFrame32, 3>& dest) {
     if (!state.enabled) {
-        state.gain_ramp_start.at(intermediate_mix_id) = gains;
-        state.gain_ramp_active.at(intermediate_mix_id) = false;
+        state.gain_ramp_start = state.gain;
+        state.gain_ramp_active.fill(false);
         return;
     }
 
-    const bool ramp_active = state.gain_ramp_active.at(intermediate_mix_id);
-    const std::array<float, 4>& ramp_start = state.gain_ramp_start.at(intermediate_mix_id);
+    for (std::size_t mix = 0; mix < dest.size(); ++mix) {
+        const std::array<float, 4>& gains = state.gain[mix];
+        const bool ramp_active = state.gain_ramp_active[mix];
+        const std::array<float, 4>& ramp_start = state.gain_ramp_start[mix];
+
+        // The DSP exposes three routing buses, but games commonly leave one or both auxiliary
+        // buses at exact zero gain. A zero-to-zero frame contributes nothing even for signed zero;
+        // NaN and every nonzero ramp still take the arithmetic path.
+        const bool silent = !HasAudibleGain(gains) && (!ramp_active || !HasAudibleGain(ramp_start));
+        if (!silent) {
 #if defined(__aarch64__)
-    if (ramp_active) {
-        MixSourceFrameA64<true>(dest, current_frame, ramp_start, gains);
-    } else {
-        MixSourceFrameA64<false>(dest, current_frame, ramp_start, gains);
-    }
+            if (ramp_active) {
+                MixSourceFrameA64<true>(dest[mix], current_frame, ramp_start, gains);
+            } else {
+                MixSourceFrameA64<false>(dest[mix], current_frame, ramp_start, gains);
+            }
 #else
-    constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
-    for (std::size_t samplei = 0; samplei < samples_per_frame; samplei++) {
-        const float progress = static_cast<float>(samplei) * ramp_scale;
-        const float gain0 =
-            ramp_active ? ramp_start[0] + (gains[0] - ramp_start[0]) * progress : gains[0];
-        const float gain1 =
-            ramp_active ? ramp_start[1] + (gains[1] - ramp_start[1]) * progress : gains[1];
-        const float gain2 =
-            ramp_active ? ramp_start[2] + (gains[2] - ramp_start[2]) * progress : gains[2];
-        const float gain3 =
-            ramp_active ? ramp_start[3] + (gains[3] - ramp_start[3]) * progress : gains[3];
+            constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
+            for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+                const float progress = static_cast<float>(sample) * ramp_scale;
+                const float gain0 =
+                    ramp_active ? ramp_start[0] + (gains[0] - ramp_start[0]) * progress : gains[0];
+                const float gain1 =
+                    ramp_active ? ramp_start[1] + (gains[1] - ramp_start[1]) * progress : gains[1];
+                const float gain2 =
+                    ramp_active ? ramp_start[2] + (gains[2] - ramp_start[2]) * progress : gains[2];
+                const float gain3 =
+                    ramp_active ? ramp_start[3] + (gains[3] - ramp_start[3]) * progress : gains[3];
 
-        // Conversion from stereo (current_frame) to planar quadraphonic (dest) occurs here.
-        dest[0][samplei] += static_cast<s32>(gain0 * current_frame[samplei][0]);
-        dest[1][samplei] += static_cast<s32>(gain1 * current_frame[samplei][1]);
-        dest[2][samplei] += static_cast<s32>(gain2 * current_frame[samplei][0]);
-        dest[3][samplei] += static_cast<s32>(gain3 * current_frame[samplei][1]);
-    }
+                // Conversion from stereo (current_frame) to planar quadraphonic occurs here.
+                dest[mix][0][sample] += static_cast<s32>(gain0 * current_frame[sample][0]);
+                dest[mix][1][sample] += static_cast<s32>(gain1 * current_frame[sample][1]);
+                dest[mix][2][sample] += static_cast<s32>(gain2 * current_frame[sample][0]);
+                dest[mix][3][sample] += static_cast<s32>(gain3 * current_frame[sample][1]);
+            }
 #endif
+        }
 
-    if (ramp_active) {
-        state.gain_ramp_start.at(intermediate_mix_id) = gains;
-        state.gain_ramp_active.at(intermediate_mix_id) = false;
+        if (ramp_active) {
+            state.gain_ramp_start[mix] = gains;
+            state.gain_ramp_active[mix] = false;
+        }
     }
 }
 

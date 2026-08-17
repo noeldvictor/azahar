@@ -62,12 +62,10 @@ public:
                               const s16_le (&adpcm_coeffs)[16]);
 
     /**
-     * Mix this source's output into dest, using the gains for the `intermediate_mix_id`-th
-     * intermediate mixer.
-     * @param dest The planar quadraphonic frame to mix into.
-     * @param intermediate_mix_id The id of the intermediate mix whose gains we are using.
+     * Mix this source's output into the three intermediate mixing buffers.
+     * Entries correspond to the main bus followed by the two auxiliary buses.
      */
-    void MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id);
+    void MixInto(std::array<PlanarQuadFrame32, 3>& dest);
 
 private:
     const std::size_t source_id;

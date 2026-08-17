@@ -421,9 +421,7 @@ StereoFrame16 DspHle::Impl::GenerateCurrentFrame() {
     for (std::size_t i = 0; i < HLE::num_sources; i++) {
         write.source_statuses.status[i] =
             sources[i].Tick(read.source_configurations.config[i], read.adpcm_coefficients.coeff[i]);
-        for (std::size_t mix = 0; mix < 3; mix++) {
-            sources[i].MixInto(intermediate_mixes[mix], mix);
-        }
+        sources[i].MixInto(intermediate_mixes);
     }
 
     // Generate final mix

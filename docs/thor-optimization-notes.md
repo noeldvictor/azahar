@@ -1444,6 +1444,56 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   constant, then record DSP-thread time/placement, audio underruns, frametimes, battery power,
   temperature, thermal slope, output correctness, and stability.
 
+## 2026-08-17 HLE Silent-Bus Elision
+
+- `DspHle::Impl::GenerateCurrentFrame()` previously called `Source::MixInto()` separately for each
+  of 24 sources and three buses: 72 cross-function calls per audio frame, even when a source was
+  disabled or an auxiliary bus had exact-zero gain. The MerryAudio fixture supplies a representative
+  routing shape: it sets only main-bus left/right gains to one while marking all three gain groups
+  dirty, leaving both auxiliary buses at zero. This supports optimizing a common case without
+  assuming that every title uses it.
+- The complete relevant instruction-table pages were visually inspected in the external manuals.
+  The 4S `UMINV` and vector `FCMEQ` entries are on Cortex-A510 issue 6.0 pages 36 and 39,
+  Cortex-A710 issue 4.0 pages 43 and 46, Cortex-A715 issue 5.0 pages 29 and 30, and Cortex-X3
+  issue 4.0 pages 26 and 28. The tables make a single 128-bit compare/reduction a sound
+  heterogeneous-core trade for avoiding a full 160-sample pass; the PDFs remain outside Git and
+  their hashes stay recorded in `docs/hardware/README.md`.
+- `Source::MixInto()` now accepts all three planar destinations at once, handles a disabled source
+  once, and loops over the buses internally. A bus is skipped only when all ending gains compare
+  equal to zero and, for an active ramp, all starting gains also compare equal to zero. Thus `+0`
+  and `-0` are silent, while NaN, every nonzero steady gain, nonzero-to-zero ramps, and
+  zero-to-nonzero ramps keep the existing arithmetic and state-transition path. Non-AArch64 builds
+  retain `std::any_of`; AArch64 uses one Q load, `FCMEQ #0.0`, `UMINV 4S`, and `FMOV` per checked
+  gain vector.
+- Final ThinLTO proves one `MixInto()` call inside the 24-source caller loop, reducing calls from 72
+  to 24 per frame (66.7%). A steady silent bus executes about 13 predicate/control instructions and
+  bypasses the 1,040 instructions in the full 20-iteration NEON body, about 98.8% less core work on
+  that bus. A zero-to-zero ramp takes about 20 instructions and bypasses the 1,480-instruction
+  ramped body, about 98.6% less. The vector predicate also reduced the combined function from the
+  scalar-predicate interim's 936 bytes to 832 bytes. The caller shrank from 552 to 492 bytes. Active
+  ramp mixing saves/restores `d8`/`d9` once at function entry/exit, but has no spill/reload traffic
+  inside the sample loop; that measured pair replaces two removed outer calls.
+- Focused Catch2 coverage now treats all three destinations as one guarded object and checks exact
+  steady/ramped output, signed-zero steady silence, zero-to-zero ramp silence, nonzero-to-zero ramp
+  arithmetic, zero-to-nonzero ramp arithmetic, all-three-bus disabled-source state advancement,
+  unchanged inactive buses, and 32-byte canaries.
+  The final `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1 minute 9 seconds, compiling and
+  linking the ARM64 test ELF and final library. The test ELF was not run because this host is x64
+  and device use is currently forbidden.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 2 minutes 13 seconds. The resulting
+  28,965,375-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `3683A746697B6E731264EFA00941BE81ED21931392349FEF09B0BCDBB0FB5070`.
+- After verification, exact Gradle intermediates, mapping/debug-symbol output, the 444,493,136-byte
+  ARM64 test executable, and repo-local manual renders were removed. The APK and active ARM64
+  CMake cache were retained; free C: space increased by 2,027,655,168 bytes (about 1.89 GiB). No
+  source, external manual, save, or unrelated file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. This is a strong
+  DSP-thread efficiency and power candidate when buses are silent, not a whole-game FPS or wattage
+  claim. A future allowed matched A/B should hold title, scene, save, caches, renderer, resolution,
+  driver, layout, performance/fan mode, brightness, and duration constant, then record DSP-thread
+  time/placement, audio underruns, frametimes, battery power, temperature, thermal slope, output
+  correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering

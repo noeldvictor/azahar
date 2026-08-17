@@ -224,6 +224,16 @@ fewer). Gain interpolation and truncation remain exact, and the ramp choice move
 sample loop. These are final ThinLTO instruction-count reductions on this DSP path; whole-game
 speed and battery effects still require a controlled Thor A/B.
 
+Source routing now evaluates all three intermediate buses in that one frame-level call. The HLE
+frame caller drops from 72 to 24 mixer calls, and an exact-zero auxiliary bus skips the sample loop
+without skipping ramp-state transitions. Final AArch64 code tests four gains with one Q load,
+`FCMEQ`, and `UMINV`: a steady silent bus takes about 13 predicate/control instructions instead of
+the 1,040 instructions in the full 160-sample NEON loop, a path-local reduction of about 98.8%.
+The included MerryAudio fixture configures only the main bus while dirtying all three, which is
+strong evidence for this common routing shape but not proof that every game behaves that way.
+Signed zero remains silent; NaN and every nonzero ramp still mix. No whole-game speed or battery
+gain is claimed without a matched Thor run.
+
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
 `SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one
