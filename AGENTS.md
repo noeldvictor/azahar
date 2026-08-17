@@ -351,7 +351,13 @@
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
   after native and APK tasks succeed. Use `--no-configuration-cache`; the ordinary Gradle build
   cache and active native CMake/Ninja cache remain useful.
-- The Thor may enumerate through both USB (`c3ca0370`) and wireless ADB. Use `adb -s c3ca0370` for deterministic installs and tests when both transports are present. Strip the large native test executable into a temporary file before pushing it to `/data/local/tmp`, and remove both temporary copies immediately after the run.
+- The Thor may enumerate through both USB (`c3ca0370`) and wireless ADB. The user currently prefers
+  wireless ADB at `192.168.1.33:5555`; use that transport for installs and tests unless they ask to
+  switch back, and always pass `-s` so the same physical device is not addressed twice. Record AC,
+  USB, or battery power state with performance evidence: wall-powered measurements are useful for
+  sustained thermals but are not battery-discharge watt measurements. Strip a large native test
+  executable into a temporary file before pushing it to `/data/local/tmp`, and remove both
+  temporary copies immediately after the run.
 - Do not commit generated Gradle, CMake, or APK output.
 - Thor GPU driver UX should stay simple: keep the guided driver picker with visible per-driver download buttons, recommendation notes, recent Turnip rollback choices, manual ZIP fallback, and system-driver fallback working. The guide fetches K11MCH1 AdrenoToolsDrivers release assets at runtime and must validate `meta.json` before installing.
 - E.X. Troopers (`0004000000053700`) has a custom Thor compatibility profile: Android launch caps resolution to 2x, forces JIT/HW shader/shader cache basics, disables custom texture loading, and the core hack list enables the texture-copy fallback skip for that title. Keep its recommended cheat preset at 30 FPS unless on-device testing proves 60 FPS is stable.

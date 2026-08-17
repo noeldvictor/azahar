@@ -2982,11 +2982,26 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   session, while screen-filter Anime4K processes the changing final presentation each frame. This
   avoids promising a disk cache whose hashing, I/O, synchronization, VRAM duplication, and stale
   invalidation costs have not shown a Thor power or speed benefit.
-- The release-style ARM64 build passed in 1 minute 37 seconds. The 28,975,784-byte, v2-signed,
-  ARM64-only test APK installed on USB Thor `c3ca0370`. In the live library UI, long-pressing
-  7th Dragon III exposed the manager and it reported a 1.41 MB Vulkan cache and 225 kB OpenGLES
-  cache. The dialog was canceled, Azahar was force-stopped, and the three temporary UI hierarchy
-  dumps were removed. No game was launched and no cache or custom texture was deleted.
+- The dirty-tree release-style ARM64 build passed in 1 minute 37 seconds. After commit
+  `38cecd56c`, the incremental version-stamped build passed in 1 minute 23 seconds. The final APK is
+  ARM64-only, 28,975,708 bytes, v2-signed with the test certificate, reports
+  `38cecd56c-vanilla-thor`, and has SHA-256
+  `C86C1A5B4CCA4A061D8FC6C4D7CFF1B5BD3246ECA9363186874F626DDDC22395`.
+- The final APK installed successfully on USB Thor `c3ca0370`; package inspection reports
+  `primaryCpuAbi=arm64-v8a` and the expected version. In the live library UI, long-pressing 7th
+  Dragon III exposed the manager and reported a 1.41 MB Vulkan cache and 225 kB OpenGLES cache.
+  Opening the Vulkan action showed the expected title/backend/size warning; it was canceled without
+  confirming deletion. Azahar was force-stopped and all temporary UI hierarchy dumps were removed.
+  No game was launched and no cache or custom texture was deleted.
+- A follow-up through wireless ADB `192.168.1.33:5555` identified the same device as `AYN Thor`
+  and reconfirmed the installed ARM64 ABI and `38cecd56c-vanilla-thor` version before force-stop.
+  `dumpsys battery` reported AC powered true, USB and wireless powered false, charging status, and
+  21% battery. Use Wi-Fi ADB for subsequent Thor work as requested; do not interpret wall-powered
+  runs as battery-discharge watt measurements.
+- Post-verification cleanup removed 2,470,040,421 logical bytes of Gradle intermediates, native/JNI
+  staging, reports, local Gradle state, and the 445,571,808-byte test ELF. The final APK plus its
+  476-byte metadata and the active 2,785,959,354-byte ARM64 RelWithDebInfo CMake/Ninja cache remain;
+  the final C: free-space check reported 87,739,273,216 bytes.
 
 ## High-Value Optimization Places
 
