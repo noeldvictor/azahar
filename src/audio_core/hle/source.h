@@ -24,6 +24,8 @@ class MemorySystem;
 
 namespace AudioCore::HLE {
 
+struct SourceMixTestAccess;
+
 /**
  * This module performs:
  * - Buffer management
@@ -212,6 +214,7 @@ private:
         ar & backup_frame;
     }
     friend class boost::serialization::access;
+    friend struct SourceMixTestAccess;
 };
 
 } // namespace AudioCore::HLE

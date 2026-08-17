@@ -61,6 +61,14 @@
   `QuadFrame32` save-state archive representation. Do not reintroduce `LD4`/`ST4` transposes without
   final ThinLTO inspection across the X3/A715/A710/A510 manuals; Cortex-A510 documents Q-form
   32-bit `ST4` throughput as `1/50`.
+- AArch64 HLE source gain mixing deliberately handles eight stereo samples per band with ordinary
+  paired Q loads plus `UZP`, widens signed 16-bit samples, converts to float, multiplies by the
+  exact gain, truncates with `FCVTZS`, and adds to the four planar `s32` buses. Keep the ramp-active
+  choice outside the sample loop and preserve `float(sample) * (1 / 159)` plus fused
+  `start + (end - start) * progress`, the post-frame ramp state, and the scalar non-AArch64 path.
+  Do not replace the source loads with structured `LD2`/`LD4`. Keep steady, ramped, disabled,
+  signed-16 edge, existing-destination, and canary coverage; final ThinLTO should retain the
+  eight-sample NEON loop without a per-sample ramp branch or stack spills.
 - AArch64 HLE source filters deliberately vectorize the independent left/right channels, never
   adjacent time samples: the simple and biquad recurrences must remain sequential. Keep filter
   coefficients and histories register-resident across each 160-sample frame, preserve the exact

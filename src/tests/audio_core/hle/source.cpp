@@ -1,8 +1,128 @@
+#include <array>
 #include <cstdio>
+#include <limits>
 #include <catch2/catch_template_test_macros.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include "audio_core/hle/shared_memory.h"
+#include "audio_core/hle/source.h"
 #include "common/settings.h"
 #include "tests/audio_core/merryhime_3ds_audio/merry_audio/merry_audio.h"
+
+namespace AudioCore::HLE {
+
+struct SourceMixTestAccess {
+    static void Configure(Source& source, const StereoFrame16& input,
+                          const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains,
+                          std::size_t mix_id, bool ramp_active, bool enabled = true) {
+        source.current_frame = input;
+        source.state.enabled = enabled;
+        source.state.gain[mix_id] = gains;
+        source.state.gain_ramp_start[mix_id] = ramp_start;
+        source.state.gain_ramp_active[mix_id] = ramp_active;
+    }
+
+    static const std::array<float, 4>& RampStart(const Source& source, std::size_t mix_id) {
+        return source.state.gain_ramp_start[mix_id];
+    }
+
+    static bool RampActive(const Source& source, std::size_t mix_id) {
+        return source.state.gain_ramp_active[mix_id];
+    }
+};
+
+} // namespace AudioCore::HLE
+
+namespace {
+
+void ReferenceSourceMix(AudioCore::PlanarQuadFrame32& dest, const AudioCore::StereoFrame16& input,
+                        const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains,
+                        bool ramp_active) {
+    constexpr float ramp_scale = 1.0f / static_cast<float>(AudioCore::samples_per_frame - 1);
+    for (std::size_t channel = 0; channel < dest.size(); ++channel) {
+        for (std::size_t sample = 0; sample < AudioCore::samples_per_frame; ++sample) {
+            const float progress = static_cast<float>(sample) * ramp_scale;
+            const float gain = ramp_active ? ramp_start[channel] +
+                                                 (gains[channel] - ramp_start[channel]) * progress
+                                           : gains[channel];
+            dest[channel][sample] +=
+                static_cast<s32>(gain * input[sample][channel & std::size_t{1}]);
+        }
+    }
+}
+
+} // Anonymous namespace
+
+TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_core][hle]") {
+    constexpr std::size_t mix_id = 1;
+    constexpr std::array<float, 4> ramp_start{-0.75f, 0.5f, 1.25f, -0.125f};
+    constexpr std::array<float, 4> gains{0.0f, 0.25f, -0.5f, 1.75f};
+
+    AudioCore::StereoFrame16 input{};
+    for (std::size_t sample = 0; sample < input.size(); ++sample) {
+        input[sample][0] = static_cast<s16>((static_cast<s32>(sample) * 7919 % 65536) - 32768);
+        input[sample][1] = static_cast<s16>((static_cast<s32>(sample) * 3571 % 65536) - 32768);
+    }
+    input[0] = {std::numeric_limits<s16>::min(), std::numeric_limits<s16>::max()};
+    input[1] = {std::numeric_limits<s16>::max(), std::numeric_limits<s16>::min()};
+    input[2] = {0, 1};
+    input[3] = {-1, 0};
+
+    struct GuardedMix {
+        std::array<u32, 8> prefix;
+        AudioCore::PlanarQuadFrame32 output;
+        std::array<u32, 8> suffix;
+    };
+
+    const auto run_case = [&](bool ramp_active) {
+        GuardedMix actual{};
+        actual.prefix.fill(0x13579BDF);
+        actual.suffix.fill(0x2468ACE0);
+        for (std::size_t channel = 0; channel < actual.output.size(); ++channel) {
+            for (std::size_t sample = 0; sample < actual.output[channel].size(); ++sample) {
+                actual.output[channel][sample] =
+                    static_cast<s32>((channel * 131071 + sample * 8191) % 200001) - 100000;
+            }
+        }
+        const GuardedMix initial = actual;
+        auto expected = actual.output;
+        ReferenceSourceMix(expected, input, ramp_start, gains, ramp_active);
+
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::Configure(source, input, ramp_start, gains, mix_id,
+                                                       ramp_active);
+        source.MixInto(actual.output, mix_id);
+
+        REQUIRE(actual.output == expected);
+        REQUIRE(actual.prefix == initial.prefix);
+        REQUIRE(actual.suffix == initial.suffix);
+        REQUIRE_FALSE(AudioCore::HLE::SourceMixTestAccess::RampActive(source, mix_id));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::RampStart(source, mix_id) ==
+                (ramp_active ? gains : ramp_start));
+    };
+
+    SECTION("steady gains") {
+        run_case(false);
+    }
+    SECTION("ramped gains") {
+        run_case(true);
+    }
+
+    SECTION("disabled source only advances ramp state") {
+        AudioCore::PlanarQuadFrame32 actual{};
+        for (std::size_t channel = 0; channel < actual.size(); ++channel) {
+            actual[channel].fill(static_cast<s32>(channel) * 17 - 23);
+        }
+        const auto expected = actual;
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::Configure(source, input, ramp_start, gains, mix_id,
+                                                       true, false);
+        source.MixInto(actual, mix_id);
+
+        REQUIRE(actual == expected);
+        REQUIRE_FALSE(AudioCore::HLE::SourceMixTestAccess::RampActive(source, mix_id));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::RampStart(source, mix_id) == gains);
+    }
+}
 
 TEST_CASE_METHOD(MerryAudio::MerryAudioFixture, "Verify SourceStatus::Status::last_buffer_id 1",
                  "[audio_core][hle]") {

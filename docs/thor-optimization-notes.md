@@ -1394,31 +1394,90 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   wattage change. A future allowed matched A/B should record D24S8 upload CPU time alongside
   frametimes, battery power, temperature, thermal slope, visual correctness, and stability.
 
+## 2026-08-17 AArch64 HLE Source Gain Mixing
+
+- Every enabled HLE source accumulates 160 stereo samples into four planar channels for each of
+  three intermediate mix buses. Final baseline ThinLTO kept this loop scalar despite the planar
+  layout: its steady body executed 31 instructions per sample, and the ramped body executed 38
+  while testing the frame-wide ramp flag again for every sample. This ranked above fallback PICA
+  shader swizzles because normal hardware-shader draws bypass that CPU JIT, whereas this mixer is
+  sustained work for every active HLE source and enabled bus.
+- The complete relevant manual pages were visually inspected before selecting the loop shape.
+  Cortex-A510 issue 6.0 pages 39-40 cover Q-form integer/float conversion, multiply, and FMA, while
+  pages 43-44 cover widening and `UZP`; Cortex-A710 issue 2.0 pages 47-48 and 52-54, Cortex-A715
+  issue 3.0 pages 31-32 and 34-35, and Cortex-X3 issue 4.0 pages 28-29 and 31-32 provide the
+  corresponding AdvSIMD execution data. A710 page 82, A715 page 59, and X3 page 56 also recommend
+  loop unrolling and non-writeback `LDP`/`STP`. Those tables favor an eight-sample ordinary-load
+  plus `UZP` design that works across Thor's prime, performance, and efficiency cores; the external
+  PDFs remain uncommitted and indexed in `docs/hardware/README.md`.
+- `Source::MixInto()` now selects the ramped or steady AArch64 specialization once per frame. Each
+  iteration consumes eight interleaved stereo samples with one compiler-combined `LDP Q`, uses
+  `UZP1`/`UZP2` to separate left and right, shares four `SSHLL` plus four `SCVTF` operations across
+  the four destinations, and performs vector `FMUL`/`FCVTZS`/integer accumulation directly on the
+  planar buses. The ramped specialization creates exact integer sample indices, converts and
+  scales them by `1 / 159`, and retains the old fused `start + (end - start) * progress` operation.
+  It therefore avoids both a per-sample flag branch and accumulated floating-point index drift.
+  Non-AArch64 builds retain the original scalar implementation.
+- Final linked ThinLTO contains both specializations inline in `Source::MixInto()` with no helper
+  call or vector spill. The steady loop is 52 instructions per eight samples, or 6.5 per sample,
+  versus 31 before: a 79.0% executed-instruction reduction. The ramped loop is 74 per eight, or
+  9.25 per sample, versus 38 before: a 75.7% reduction. The containing function grows from 268 to
+  736 bytes, a deliberate 468-byte tradeoff for eliminating repeated work across this sustained
+  DSP loop.
+- Focused Catch2 coverage compares steady and ramped output against an independent channel-major
+  scalar reference. It includes signed-16 minimum/maximum, zero and +/-1 input, positive,
+  negative, fractional, and zero gains, nonzero destination accumulators, 32-byte prefix/suffix
+  canaries, ramp-state transitions, and a disabled source. The test compiles and links into the
+  native ARM64 test executable; it is not executed on this x64 host because this slice deliberately
+  does not use the Thor. `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 1 minute 9 seconds.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 15 seconds. The resulting
+  28,965,523-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `719AF98D109686002BB37FA19A2AFA43F62647960035837445D5A0B52F8E4C27`.
+- After verification, exact generated Gradle intermediates, mapping/debug-symbol output, the
+  444,476,912-byte ARM64 test executable, and repo-local manual renders were removed. The APK and
+  active ARM64 native cache were retained; final cleanup increased free C: space by 1,053,016,064
+  bytes (about 0.98 GiB). No source, external manual, save, or unrelated file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. The instruction
+  reduction should lower DSP-thread work when this path executes, but it is not yet a measured
+  whole-game speed or wattage gain. A future allowed matched A/B must hold title, scene, save,
+  caches, renderer, resolution, driver, performance/fan mode, brightness, layout, and duration
+  constant, then record DSP-thread time/placement, audio underruns, frametimes, battery power,
+  temperature, thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
-1. Data-driven Thor game profiles
+1. PICA AArch64 source-swizzle lowering
+
+   Arbitrary vertex-source selectors in the CPU shader JIT currently materialize a 16-byte table
+   and execute `TBL` for each affected instruction. A one/two-operation `EXT`, `REV64`, `TRN`,
+   `ZIP`, `UZP`, or lane-move plan covers 149 of the 256 selectors without a literal load. This is
+   deferred because normal hardware-shader draws bypass the CPU JIT; add exhaustive generated-code
+   tests and benchmark immediate-mode/fallback/geometry-shader workloads before accepting the
+   larger emitter.
+
+2. Data-driven Thor game profiles
 
    `ApplyAndroidGameProfile()` currently hardcodes E.X. Troopers. Move this toward a small data-driven loader or generated map from `src/android/app/src/main/assets/game_profiles/*.ini` so per-title settings can be added without expanding native `if` blocks.
 
    Useful profile knobs: resolution cap, custom texture disable/preload disable, shader settings, frame limit, GPU timing simulation, render-thread delay, and title-specific compatibility hacks.
 
-2. Adreno 740 Vulkan driver testing
+3. Adreno 740 Vulkan driver testing
 
    The fork can now fetch and install recent generic Turnip builds, Turnip variants, and a Qualcomm fallback, but this is not the same as a fully tested Thor driver matrix. Keep tracking which package works best for 3DS workloads on Thor Base/Pro/Max, and avoid silently forcing a driver without user action.
 
-3. Shader stutter testing
+4. Shader stutter testing
 
    `async_shader_compilation` defaults to off. On Adreno 740/Vulkan it is worth A/B testing per title, especially for games with shader compilation hitching. Do not flip it globally until visual correctness is checked.
 
-4. Resolution and texture guardrails
+5. Resolution and texture guardrails
 
    The Thor 8 Gen 2 can handle more than native resolution in many titles, but 3x+ can still be a bad default for heavy games or dual-screen presentation. Keep default 1x, cap problem titles at 2x, and avoid preload/custom textures unless a title is proven stable.
 
-5. Compatibility-cost toggles
+6. Compatibility-cost toggles
 
    `simulate_3ds_gpu_timings` improves correctness but can cost performance in some games. `delay_game_render_thread_us` is available for dynamic-framerate edge cases. These should be per-title profile toggles, not global Thor defaults.
 
-6. Crypto feature-dispatch audit
+7. Crypto feature-dispatch audit
 
    The Android build detects ARMv8 and NEON headers and already enables the AES-oriented Crypto++
    path, but its configure result leaves CRC32 and PMULL disabled. Profile actual 3DS crypto and

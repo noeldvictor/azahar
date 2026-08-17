@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 #include "audio_core/codec.h"
 #include "audio_core/hle/common.h"
 #include "audio_core/hle/source.h"
@@ -13,6 +16,99 @@
 #include "core/memory.h"
 
 namespace AudioCore::HLE {
+
+#if defined(__aarch64__)
+namespace {
+
+inline void AccumulateSourceBand(s32* dest, float32x4_t samples, float32x4_t gain) {
+    const int32x4_t mixed = vcvtq_s32_f32(vmulq_f32(samples, gain));
+    vst1q_s32(dest, vaddq_s32(vld1q_s32(dest), mixed));
+}
+
+template <bool ramp_active>
+void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
+                       const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains) {
+    static_assert(samples_per_frame % 8 == 0);
+    static_assert(sizeof(StereoFrame16::value_type) == 2 * sizeof(s16));
+
+    const float32x4_t gain_0 = vdupq_n_f32(gains[0]);
+    const float32x4_t gain_1 = vdupq_n_f32(gains[1]);
+    const float32x4_t gain_2 = vdupq_n_f32(gains[2]);
+    const float32x4_t gain_3 = vdupq_n_f32(gains[3]);
+
+    float32x4_t ramp_start_0{};
+    float32x4_t ramp_start_1{};
+    float32x4_t ramp_start_2{};
+    float32x4_t ramp_start_3{};
+    float32x4_t ramp_delta_0{};
+    float32x4_t ramp_delta_1{};
+    float32x4_t ramp_delta_2{};
+    float32x4_t ramp_delta_3{};
+    if constexpr (ramp_active) {
+        ramp_start_0 = vdupq_n_f32(ramp_start[0]);
+        ramp_start_1 = vdupq_n_f32(ramp_start[1]);
+        ramp_start_2 = vdupq_n_f32(ramp_start[2]);
+        ramp_start_3 = vdupq_n_f32(ramp_start[3]);
+        ramp_delta_0 = vsubq_f32(gain_0, ramp_start_0);
+        ramp_delta_1 = vsubq_f32(gain_1, ramp_start_1);
+        ramp_delta_2 = vsubq_f32(gain_2, ramp_start_2);
+        ramp_delta_3 = vsubq_f32(gain_3, ramp_start_3);
+    }
+
+    constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
+    alignas(16) static constexpr std::array<u32, 8> initial_sample_indices{0, 1, 2, 3, 4, 5, 6, 7};
+    uint32x4_t sample_indices_0 = vld1q_u32(initial_sample_indices.data());
+    uint32x4_t sample_indices_1 = vld1q_u32(initial_sample_indices.data() + 4);
+    const uint32x4_t sample_index_step = vdupq_n_u32(8);
+
+    for (std::size_t sample = 0; sample < samples_per_frame; sample += 8) {
+        // Two ordinary Q loads plus UZP are preferable to a structured LD2 on Thor's A510.
+        const int16x8_t interleaved_0 = vld1q_s16(source[sample].data());
+        const int16x8_t interleaved_1 = vld1q_s16(source[sample + 4].data());
+        const int16x8_t left = vuzp1q_s16(interleaved_0, interleaved_1);
+        const int16x8_t right = vuzp2q_s16(interleaved_0, interleaved_1);
+
+        const float32x4_t left_0 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(left)));
+        const float32x4_t left_1 = vcvtq_f32_s32(vmovl_high_s16(left));
+        const float32x4_t right_0 = vcvtq_f32_s32(vmovl_s16(vget_low_s16(right)));
+        const float32x4_t right_1 = vcvtq_f32_s32(vmovl_high_s16(right));
+
+        float32x4_t band_gain_0_0 = gain_0;
+        float32x4_t band_gain_0_1 = gain_0;
+        float32x4_t band_gain_1_0 = gain_1;
+        float32x4_t band_gain_1_1 = gain_1;
+        float32x4_t band_gain_2_0 = gain_2;
+        float32x4_t band_gain_2_1 = gain_2;
+        float32x4_t band_gain_3_0 = gain_3;
+        float32x4_t band_gain_3_1 = gain_3;
+        if constexpr (ramp_active) {
+            const float32x4_t progress_0 = vmulq_n_f32(vcvtq_f32_u32(sample_indices_0), ramp_scale);
+            const float32x4_t progress_1 = vmulq_n_f32(vcvtq_f32_u32(sample_indices_1), ramp_scale);
+            band_gain_0_0 = vfmaq_f32(ramp_start_0, progress_0, ramp_delta_0);
+            band_gain_0_1 = vfmaq_f32(ramp_start_0, progress_1, ramp_delta_0);
+            band_gain_1_0 = vfmaq_f32(ramp_start_1, progress_0, ramp_delta_1);
+            band_gain_1_1 = vfmaq_f32(ramp_start_1, progress_1, ramp_delta_1);
+            band_gain_2_0 = vfmaq_f32(ramp_start_2, progress_0, ramp_delta_2);
+            band_gain_2_1 = vfmaq_f32(ramp_start_2, progress_1, ramp_delta_2);
+            band_gain_3_0 = vfmaq_f32(ramp_start_3, progress_0, ramp_delta_3);
+            band_gain_3_1 = vfmaq_f32(ramp_start_3, progress_1, ramp_delta_3);
+            sample_indices_0 = vaddq_u32(sample_indices_0, sample_index_step);
+            sample_indices_1 = vaddq_u32(sample_indices_1, sample_index_step);
+        }
+
+        AccumulateSourceBand(dest[0].data() + sample, left_0, band_gain_0_0);
+        AccumulateSourceBand(dest[0].data() + sample + 4, left_1, band_gain_0_1);
+        AccumulateSourceBand(dest[1].data() + sample, right_0, band_gain_1_0);
+        AccumulateSourceBand(dest[1].data() + sample + 4, right_1, band_gain_1_1);
+        AccumulateSourceBand(dest[2].data() + sample, left_0, band_gain_2_0);
+        AccumulateSourceBand(dest[2].data() + sample + 4, left_1, band_gain_2_1);
+        AccumulateSourceBand(dest[3].data() + sample, right_0, band_gain_3_0);
+        AccumulateSourceBand(dest[3].data() + sample + 4, right_1, band_gain_3_1);
+    }
+}
+
+} // Anonymous namespace
+#endif
 
 SourceStatus::Status Source::Tick(SourceConfiguration::Configuration& config,
                                   const s16_le (&adpcm_coeffs)[16]) {
@@ -35,8 +131,14 @@ void Source::MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id) {
 
     const bool ramp_active = state.gain_ramp_active.at(intermediate_mix_id);
     const std::array<float, 4>& ramp_start = state.gain_ramp_start.at(intermediate_mix_id);
+#if defined(__aarch64__)
+    if (ramp_active) {
+        MixSourceFrameA64<true>(dest, current_frame, ramp_start, gains);
+    } else {
+        MixSourceFrameA64<false>(dest, current_frame, ramp_start, gains);
+    }
+#else
     constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
-
     for (std::size_t samplei = 0; samplei < samples_per_frame; samplei++) {
         const float progress = static_cast<float>(samplei) * ramp_scale;
         const float gain0 =
@@ -54,6 +156,7 @@ void Source::MixInto(PlanarQuadFrame32& dest, std::size_t intermediate_mix_id) {
         dest[2][samplei] += static_cast<s32>(gain2 * current_frame[samplei][0]);
         dest[3][samplei] += static_cast<s32>(gain3 * current_frame[samplei][1]);
     }
+#endif
 
     if (ramp_active) {
         state.gain_ramp_start.at(intermediate_mix_id) = gains;

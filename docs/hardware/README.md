@@ -26,6 +26,10 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   when the exact layout permits it; the A510 structured-store path is exceptionally slow.
 - For packed S8D24 staging, prefer ordinary paired loads plus narrowing/`UZP` and contiguous plane
   stores over `LD4`; A510 lists one-register `LD1` at `2/cycle` but Q-form byte `LD4` at `1/3`.
+- For interleaved stereo HLE audio that feeds planar mix buses, unroll eight samples and use
+  ordinary paired Q loads plus `UZP` before sharing widening/conversion work across outputs. The
+  A710, A715, and X3 guides recommend loop unrolling and non-writeback `LDP`/`STP` for throughput;
+  final ThinLTO must confirm this lowering instead of assuming an intrinsic avoids `LD2`.
 - Schedule latency-critical work on fast cores only when measurement proves a benefit. Unnecessary affinity and waking idle cores can increase power.
 - Do not compile the entire Android binary for Cortex-X3. The SoC is heterogeneous and the shipping device does not expose every optional Arm feature, including SVE/SVE2.
 

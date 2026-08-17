@@ -215,6 +215,15 @@ ordinary channel loads in downmix, and one contiguous 2.5 KiB copy per enabled a
 The old sample-major save-state archive layout is preserved explicitly. This is a manual- and
 code-generation-backed hot-path change, not a whole-game speed or wattage claim.
 
+Each enabled HLE source also applies four gains over 160 samples for each of three intermediate
+mix buses. The AArch64 mixer now handles eight stereo samples at once with one paired Q load,
+`UZP` deinterleave, shared signed widening/float conversion, and planar vector accumulation. The
+steady loop falls from 31 scalar instructions per sample to 52 instructions per eight samples
+(79.0% fewer), while the ramped loop falls from 38 per sample to 74 per eight samples (75.7%
+fewer). Gain interpolation and truncation remain exact, and the ramp choice moves outside the
+sample loop. These are final ThinLTO instruction-count reductions on this DSP path; whole-game
+speed and battery effects still require a controlled Thor A/B.
+
 The HLE source filters now vectorize stereo lanes while preserving time order. In final ThinLTO,
 the simple filter replaces two scalar channel multiply chains, shifts, and clamp sequences with one
 `SMULL`, one `SMLAL`, one `SSHR`, and one `SQXTN`. The biquad uses one `SMULL`, four `SMLAL`, one
