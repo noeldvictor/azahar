@@ -494,6 +494,38 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   frametimes, process CPU time, battery power, temperature, thermal slope, and visual
   correctness.
 
+## 2026-08-16 Dynarmic A32 ARM64 Conditions and Cycle Checks
+
+- A cycle-counted linked A32 block previously ended with `SUB Xticks`, `CMP Xticks, #0`,
+  and `B.LE`. The subtraction now sets host flags with `SUBS`, and an A32 `LinkBlock`
+  reuses those flags when the cycle subtraction produced them. The ordinary linked-block
+  budget check therefore falls from three instructions to two (33.3% fewer). Zero-cycle,
+  cycle-counting-disabled, single-step, and non-link paths keep their existing safe behavior.
+- A32 guest conditions no longer copy packed guest flags into the host NZCV system register.
+  EQ/NE, CS/CC, MI/PL, and VS/VC become one exact `TBZ`/`TBNZ` instead of `MSR` plus a
+  conditional branch: two instructions to one (50% fewer) and no system-register write.
+  HI/LS and GE/LT remain two instructions but avoid `MSR`; GT/LE need three flag-preserving
+  instructions, yet do not add instructions to the combined condition-plus-cycle terminal
+  because the separate cycle `CMP` is gone.
+- Combining the two changes takes a common simple conditional linked-block path from five
+  ARM64 control/cycle instructions (`MSR + B.cond + SUB + CMP + B.LE`) to three
+  (`TBZ/TBNZ + SUBS + B.LE`), a 40% static reduction. The condition sequences use only
+  flag-preserving bit-test branches and non-flag-setting `EOR`, so the signed `Xticks <= 0`
+  result remains valid until the link decision.
+- A focused regression covers all 16 N/Z/C/V combinations against all 14 meaningful ARM
+  conditions and places an unconditional guard immediately after the exact cycle boundary.
+  The source passes an Android ARM64 Clang syntax check. The standalone Dynarmic test runner
+  was not executed because the current restriction forbids using the Thor; an auxiliary CMake
+  attempt to enable that runner in the Android app tree was stopped after its cross-test
+  configuration hung, and `DYNARMIC_TESTS` was restored to `OFF`.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the modified ARM64 backend and
+  `libcitra-android.so` successfully in 1m13s. No ADB command, install, launch, or device test
+  was performed.
+- These are pervasive generated-instruction reductions, but they are not additive with the
+  earlier FastDispatch, page-table, or NZCV-cache percentages. Whole-game FPS, battery watts,
+  and thermal-slope effects remain unmeasured until a controlled parent-versus-candidate Thor
+  A/B is allowed.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

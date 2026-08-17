@@ -41,6 +41,7 @@ struct EmitContext {
     FastmemManager& fastmem;
 
     std::vector<std::function<void()>> deferred_emits;
+    bool cycle_count_flags_valid = false;
 
     FP::FPCR FPCR(bool fpcr_controlled = true) const {
         const FP::FPCR fpcr = conf.descriptor_to_fpcr(block.Location());

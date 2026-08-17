@@ -18,6 +18,72 @@ static A32::UserConfig GetUserConfig(ArmTestEnv* testenv) {
     return user_config;
 }
 
+TEST_CASE("arm: All conditions stop exactly at the cycle boundary", "[arm][A32]") {
+    ArmTestEnv test_env;
+    A32::Jit jit{GetUserConfig(&test_env)};
+
+    // MOV<cond> rN, #1 for EQ through LE, followed by an unconditional guard.
+    for (u32 cond = 0; cond < 14; cond++) {
+        test_env.code_mem.emplace_back((cond << 28) | 0x03a00001 | (cond << 12));
+    }
+    test_env.code_mem.emplace_back(0xe3a0e001);  // mov r14, #1
+    test_env.code_mem.emplace_back(0xeafffffe);  // b +#0
+
+    const auto condition_passes = [](u32 cond, u32 flags) {
+        const bool n = (flags & 0b1000) != 0;
+        const bool z = (flags & 0b0100) != 0;
+        const bool c = (flags & 0b0010) != 0;
+        const bool v = (flags & 0b0001) != 0;
+
+        switch (cond) {
+        case 0:
+            return z;
+        case 1:
+            return !z;
+        case 2:
+            return c;
+        case 3:
+            return !c;
+        case 4:
+            return n;
+        case 5:
+            return !n;
+        case 6:
+            return v;
+        case 7:
+            return !v;
+        case 8:
+            return c && !z;
+        case 9:
+            return !c || z;
+        case 10:
+            return n == v;
+        case 11:
+            return n != v;
+        case 12:
+            return !z && n == v;
+        case 13:
+            return z || n != v;
+        default:
+            return false;
+        }
+    };
+
+    for (u32 flags = 0; flags < 16; flags++) {
+        jit.Regs() = {};
+        jit.SetCpsr((flags << 28) | 0x000001d0);  // User-mode
+        test_env.ticks_left = 14;
+        jit.Run();
+
+        for (u32 cond = 0; cond < 14; cond++) {
+            CAPTURE(flags, cond);
+            REQUIRE(jit.Regs()[cond] == static_cast<u32>(condition_passes(cond, flags)));
+        }
+        CAPTURE(flags);
+        REQUIRE(jit.Regs()[14] == 0);
+    }
+}
+
 TEST_CASE("arm: Opt Failure: Const folding in MostSignificantWord", "[arm][A32]") {
     // This was a randomized test-case that was failing.
     // This was due to constant folding for MostSignificantWord

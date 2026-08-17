@@ -190,6 +190,7 @@ void EmitIR<IR::Opcode::NZCVFromPackedFlags>(oaknut::CodeGenerator&, EmitContext
 }
 
 static void EmitAddCycles(oaknut::CodeGenerator& code, EmitContext& ctx, size_t cycles_to_add) {
+    ctx.cycle_count_flags_valid = false;
     if (!ctx.conf.enable_cycle_counting) {
         return;
     }
@@ -198,11 +199,12 @@ static void EmitAddCycles(oaknut::CodeGenerator& code, EmitContext& ctx, size_t 
     }
 
     if (oaknut::AddSubImm::is_valid(cycles_to_add)) {
-        code.SUB(Xticks, Xticks, cycles_to_add);
+        code.SUBS(Xticks, Xticks, cycles_to_add);
     } else {
         code.MOV(Xscratch1, cycles_to_add);
-        code.SUB(Xticks, Xticks, Xscratch1);
+        code.SUBS(Xticks, Xticks, Xscratch1);
     }
+    ctx.cycle_count_flags_valid = true;
 }
 
 EmittedBlockInfo EmitArm64(oaknut::CodeGenerator& code, IR::Block block, const EmitConfig& conf, FastmemManager& fastmem_manager) {

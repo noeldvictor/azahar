@@ -70,6 +70,27 @@ This fork has moved away from stock Azahar in visible ways:
 - Thor Base/Pro/Max optimization notes are tracked in `docs/thor-optimization-notes.md`.
 - Cheat gap tracking is documented in `docs/thor-cheat-gaps.md`.
 
+## ARM64 Dynarmic Updates
+
+The fork vendors Dynarmic in-tree so its Snapdragon/AArch64 work can be reviewed, built, and
+bisected with Azahar instead of depending on a moving external checkout. Current ARM11 JIT changes
+include:
+
+- an ARM64 FastDispatch path with a measured **1.69x-1.95x isolated dispatch-throughput gain** on
+  the Thor; this is a microbenchmark result, not a whole-game FPS claim;
+- absolute-offset page-table entries that remove one address-add instruction from ordinary mapped
+  guest loads and stores;
+- a callee-saved A32 NZCV register cache that removes repeated guest-flag state loads/stores across
+  linked blocks while preserving callback-visible CPSR behavior; and
+- direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
+  normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
+  control/cycle instructions to three.
+
+These changes target CPU-bound emulation and sustainable performance. They do not stack as simple
+percentages, and no whole-game wattage claim is made without a matched device A/B. Exact emitted
+sequences, build evidence, limitations, and the required benchmark controls are recorded in the
+[Thor optimization notes](docs/thor-optimization-notes.md).
+
 ## Thor Screenshot
 
 This is a live AYN Thor screenshot of this Azahar Android fork showing the game library and visible bundled-cheat labels. It does not imply games are bundled with this repository.

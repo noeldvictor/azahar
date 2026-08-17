@@ -24,9 +24,73 @@ using namespace oaknut::util;
 
 oaknut::Label EmitA32Cond(oaknut::CodeGenerator& code, EmitContext&, IR::Cond cond) {
     oaknut::Label pass;
-    // TODO: Flags in host flags
-    code.MSR(oaknut::SystemReg::NZCV, Xnzcv);
-    code.B(static_cast<oaknut::Cond>(cond), pass);
+
+    // Test the packed guest flags without modifying the host flags. EmitAddCycles leaves
+    // the remaining-tick comparison in NZCV for the linked-block terminal below.
+    switch (cond) {
+    case IR::Cond::EQ:
+        code.TBNZ(Wnzcv, 30, pass);
+        break;
+    case IR::Cond::NE:
+        code.TBZ(Wnzcv, 30, pass);
+        break;
+    case IR::Cond::CS:
+        code.TBNZ(Wnzcv, 29, pass);
+        break;
+    case IR::Cond::CC:
+        code.TBZ(Wnzcv, 29, pass);
+        break;
+    case IR::Cond::MI:
+        code.TBNZ(Wnzcv, 31, pass);
+        break;
+    case IR::Cond::PL:
+        code.TBZ(Wnzcv, 31, pass);
+        break;
+    case IR::Cond::VS:
+        code.TBNZ(Wnzcv, 28, pass);
+        break;
+    case IR::Cond::VC:
+        code.TBZ(Wnzcv, 28, pass);
+        break;
+    case IR::Cond::HI: {
+        oaknut::Label fail;
+        code.TBZ(Wnzcv, 29, fail);
+        code.TBZ(Wnzcv, 30, pass);
+        code.l(fail);
+        break;
+    }
+    case IR::Cond::LS:
+        code.TBZ(Wnzcv, 29, pass);
+        code.TBNZ(Wnzcv, 30, pass);
+        break;
+    case IR::Cond::GE:
+        code.EOR(Wscratch0, Wnzcv, Wnzcv, LSL, 3);
+        code.TBZ(Wscratch0, 31, pass);
+        break;
+    case IR::Cond::LT:
+        code.EOR(Wscratch0, Wnzcv, Wnzcv, LSL, 3);
+        code.TBNZ(Wscratch0, 31, pass);
+        break;
+    case IR::Cond::GT: {
+        oaknut::Label fail;
+        code.TBNZ(Wnzcv, 30, fail);
+        code.EOR(Wscratch0, Wnzcv, Wnzcv, LSL, 3);
+        code.TBZ(Wscratch0, 31, pass);
+        code.l(fail);
+        break;
+    }
+    case IR::Cond::LE:
+        code.TBNZ(Wnzcv, 30, pass);
+        code.EOR(Wscratch0, Wnzcv, Wnzcv, LSL, 3);
+        code.TBNZ(Wscratch0, 31, pass);
+        break;
+    case IR::Cond::AL:
+        code.B(pass);
+        break;
+    case IR::Cond::NV:
+        ASSERT_FALSE("NV condition should not reach the A32 emitter");
+        break;
+    }
     return pass;
 }
 
@@ -64,7 +128,9 @@ void EmitA32Terminal(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Term::Li
 
     if (ctx.conf.HasOptimization(OptimizationFlag::BlockLinking) && !is_single_step) {
         if (ctx.conf.enable_cycle_counting) {
-            code.CMP(Xticks, 0);
+            if (!ctx.cycle_count_flags_valid) {
+                code.CMP(Xticks, 0);
+            }
             code.B(LE, fail);
             EmitBlockLinkRelocation(code, ctx, terminal.next, BlockRelocationType::Branch);
         } else {
