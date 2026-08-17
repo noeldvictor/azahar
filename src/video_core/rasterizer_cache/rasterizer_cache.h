@@ -17,6 +17,7 @@
 #include "video_core/pica/regs_external.h"
 #include "video_core/pica/regs_internal.h"
 #include "video_core/rasterizer_cache/rasterizer_cache_base.h"
+#include "video_core/rasterizer_cache/resource_retirement.h"
 #include "video_core/rasterizer_cache/surface_base.h"
 #include "video_core/renderer_base.h"
 #include "video_core/texture/texture_decode.h"
@@ -133,7 +134,7 @@ void RasterizerCache<T>::RunGarbageCollector() {
         const auto [surface_id, resource_tick] = *it;
         // A resource remains potentially in use until the runtime advances beyond the tick at
         // which it was sentenced. Once the completed tick is newer, it is safe to delete.
-        if (remove_tick <= resource_tick) {
+        if (!IsResourceRetirementComplete(remove_tick, resource_tick)) {
             ++it;
             continue;
         }

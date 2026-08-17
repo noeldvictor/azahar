@@ -507,6 +507,16 @@ and conservative garbage collection still protect in-flight resources. Screensho
 render-frame recreation, swapchain/window destruction, and renderer teardown keep their explicit
 completion waits.
 
+Normal native threaded presentation also no longer joins the Vulkan command worker at every frame
+boundary. The render submission is flushed first, then the presentation-queue callback is
+dispatched behind it in the same FIFO; the emulation thread can continue while the worker records
+and submits. Resource retirement uses completed timeline ticks and requires completion to advance
+strictly beyond the sentenced tick, so queued or in-flight surfaces remain alive. LibRetro and the
+synchronous presentation fallback retain their worker drains, and mutable presentation clear data
+is copied into the worker command. The final Android AArch64 `TickFrame()` is only a direct cache
+tick with no `WaitWorker()` call. This proves removal of one CPU worker join per normal native
+Vulkan frame, not a measured whole-game FPS or battery-watt percentage.
+
 ## Thor Screenshot
 
 This is a live AYN Thor screenshot of this Azahar Android fork showing the game library and visible bundled-cheat labels. It does not imply games are bundled with this repository.

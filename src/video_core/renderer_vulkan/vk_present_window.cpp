@@ -288,6 +288,10 @@ void PresentWindow::Present(Frame* frame) {
         present_queue.push(frame);
         frame_cv.notify_one();
     });
+    // The render submission was dispatched by Flush() immediately before Present(). Dispatch this
+    // callback behind it so the presentation thread can start without making the emulation thread
+    // wait for command recording and vkQueueSubmit to return.
+    scheduler.DispatchWork();
 }
 
 void PresentWindow::WaitPresent() {

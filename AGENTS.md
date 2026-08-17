@@ -129,6 +129,14 @@
   completed timeline ticks. Keep synchronous `Finish()` at explicit CPU readbacks, render-frame
   recreation, presentation-window destruction, and renderer teardown where the host actually needs
   completed work or is about to destroy its backing resources.
+- Native threaded Vulkan presentation must record its present-queue callback after the render
+  `Flush()` and immediately `DispatchWork()` so FIFO execution reaches that callback without a
+  per-frame producer-side `WaitWorker()`. Keep the original worker drain for LibRetro cache ticks
+  and the synchronous presentation fallback. Deferred rasterizer-cache destruction is safe only
+  when the runtime completion tick is strictly newer than the sentenced resource tick; equality
+  must retain the resource because that tick can still be queued or in flight. Any value read by a
+  worker callback while the producer may begin the next frame, such as the presentation clear
+  color, must be captured by value.
 - HLE audio intermediate mixes deliberately use `PlanarQuadFrame32` from `Source::MixInto()` through
   aux exchange and final downmix. Preserve channel-major live storage, contiguous whole-buffer aux
   copies on little-endian hosts, the endian-converting fallback, and the historical sample-major

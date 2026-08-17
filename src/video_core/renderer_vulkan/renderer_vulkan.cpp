@@ -217,7 +217,7 @@ void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& 
     }
 
     renderpass_cache.EndRendering();
-    scheduler.Record([this, layout, frame, present_set,
+    scheduler.Record([this, layout, frame, present_set, clear = clear_color,
                       renderpass = main_present_window.Renderpass(),
                       index = current_pipeline](vk::CommandBuffer cmdbuf) {
         const vk::Viewport viewport = {
@@ -237,7 +237,7 @@ void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& 
         cmdbuf.setViewport(0, viewport);
         cmdbuf.setScissor(0, scissor);
 
-        const vk::ClearValue clear{.color = clear_color};
+        const vk::ClearValue clear_value{.color = clear};
         const vk::PipelineLayout layout{*present_pipeline_layout};
         const vk::RenderPassBeginInfo renderpass_begin_info = {
             .renderPass = renderpass,
@@ -248,7 +248,7 @@ void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& 
                     .extent = {frame->width, frame->height},
                 },
             .clearValueCount = 1,
-            .pClearValues = &clear,
+            .pClearValues = &clear_value,
         };
 
         cmdbuf.beginRenderPass(renderpass_begin_info, vk::SubpassContents::eInline);

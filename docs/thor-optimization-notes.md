@@ -2793,6 +2793,47 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   pass removed it. Reported C: free space increased by 2,030,428,160 bytes to 109,023,707,136.
   The retained `.cxx` cache is 2,781,525,815 bytes and `app/build` contains only the final APK.
 
+## 2026-08-17 Native Vulkan Frame-Worker Overlap
+
+- `RasterizerVulkan::TickFrame()` inherited an unconditional `scheduler.WaitWorker()` from
+  Azahar commit `e8c75b410` (`libretro: vulkan: wait before ticking`). At that time rasterizer-cache
+  garbage collection used frame age, so an old surface could be destroyed while a lagging worker
+  command still referenced it. The later upstream completion-tick conversion in `b34de55b5`, plus
+  this fork's corrected strict comparison in `dcd3a58a0`, removed that lifetime dependency:
+  sentenced resources are retained while `completed_tick <= retirement_tick` and deleted only
+  after completion advances beyond their tick.
+- Native threaded presentation had one additional ordering dependency on the frame-end join. It
+  records the present-queue callback after `Flush()` dispatches the render submission. The callback
+  is now explicitly dispatched behind that submission in the scheduler's FIFO, so the presentation
+  thread is notified after `vkQueueSubmit` without forcing the emulation thread to wait for worker
+  completion. The synchronous presentation fallback keeps its explicit `WaitWorker()`, and LibRetro
+  keeps the original wait before its cache tick.
+- Removing the join lets the producer start the next frame while prior worker lambdas execute.
+  Presentation clear color is therefore captured by value rather than read through mutable
+  renderer state. Descriptor updates still finish on the producer before queuing; command and
+  descriptor pools remain timeline-tagged; stream-buffer wrap waits its exact watch tick; resize,
+  readback, window destruction, and renderer teardown retain explicit synchronization.
+- A focused constexpr regression covers completion older than, equal to, and newer than a resource
+  retirement tick. The full `arm64-v8a` native build compiled and linked that test plus production
+  `libcitra-android.so` successfully in 1 minute 29 seconds. The ARM64 test executable was not run
+  on this x64 host because device use remains forbidden.
+- Linked AArch64 inspection shows `RasterizerVulkan::TickFrame()` is 12 bytes and branches directly
+  to `RasterizerCache::TickFrame()` with no `Scheduler::WaitWorker()` call. Threaded
+  `PresentWindow::Present()` ends in a tail call to `Scheduler::DispatchWork()`; its only linked
+  `WaitWorker()` branch is the preserved non-threaded fallback.
+- `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed with JDK 17 in 2 minutes
+  23 seconds. The APK contains only `arm64-v8a`, is 28,969,839 bytes, and has SHA-256
+  `A2DC7360808C53E871C66D9CCF35E0A2C0D570B7761DE7C13F33C86154C9D8E1`.
+- This removes exactly one CPU-side Vulkan worker join from every normal native threaded frame and
+  permits command recording/submission to overlap the next emulation-frame setup. The saved time
+  depends on worker backlog and the title's CPU/GPU balance. No device, ADB, install, launch, game,
+  FPS, battery, wattage, temperature, or visual run was used, so no whole-game percentage is
+  claimed.
+- Cleanup retained that APK and the active ARM64 RelWithDebInfo CMake/Ninja cache while removing
+  2,471,565,068 logical bytes of Gradle staging, the ARM64 test ELF, and native helper executables.
+  Reported C: free space increased by 2,025,144,320 bytes to 100,816,732,160. The retained `.cxx`
+  cache is 2,781,916,118 bytes and `app/build` contains only the final APK.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

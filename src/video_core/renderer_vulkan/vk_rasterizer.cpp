@@ -140,7 +140,11 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
 RasterizerVulkan::~RasterizerVulkan() = default;
 
 void RasterizerVulkan::TickFrame() {
+#ifdef HAVE_LIBRETRO
+    // LibRetro owns presentation synchronization and still requires its original worker drain
+    // before the cache tick. Native Vulkan uses completion ticks to guard resource destruction.
     scheduler.WaitWorker();
+#endif
     res_cache.TickFrame();
 }
 

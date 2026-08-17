@@ -22,6 +22,7 @@ add_executable(tests
     audio_core/time_stretch.cpp
     video_core/command_list.cpp
     video_core/pica_types.cpp
+    video_core/rasterizer_cache.cpp
     video_core/renderer_base.cpp
     video_core/shader.cpp
     video_core/shader_setup.cpp
