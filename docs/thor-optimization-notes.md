@@ -30,7 +30,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - **RPCS3 timer-scaled `busy_wait`:** [RPCS3 #18055](https://github.com/RPCS3/rpcs3/pull/18055) fixed waits that treated a low-frequency ARM generic timer like a multi-GHz x86 cycle counter. Azahar has no equivalent host-timer-calibrated busy-wait utility in its active CPU, audio, or Vulkan paths, so there is no constant to copy. Adding a second correction would repeat the kind of double-calibration regression already seen in related ARM ports.
 - **ISB-based spin waiting:** Azahar has no equivalent hot emulator/render spin loop. Its Vulkan scheduler and master semaphore block on condition variables, Vulkan fences, or timeline semaphores, while Dynarmic's ARM64 lock already uses `SEVL`/`WFE`. [RPCS3 #18151](https://github.com/RPCS3/rpcs3/pull/18151) was a small improvement over ineffective ARM `yield`, and [RPCS3 #18830](https://github.com/RPCS3/rpcs3/pull/18830) later confirmed that hardware waits are the better primitive but did not measure an application-level power win at its first call sites.
 - **Single-instruction `FMAX`/`FMIN`:** PICA's asymmetric NaN behavior differs from the PPC operation RPCS3 optimized. Azahar's A64 shader JIT intentionally uses `FCMGT` plus `BIF` to preserve PICA results.
-- **SPU checksum, SHUFB, SHA3, and dot-product paths:** these target PS3 SPU/PPC workloads and have no direct 3DS guest equivalent. [RPCS3 #18056](https://github.com/RPCS3/rpcs3/pull/18056) is still useful as a method: express the guest permutation directly with native ARM vector operations and verify final codegen. Azahar's A64 PICA shader JIT already emits native table lookup for its swizzle operation, and its A64/x64 JIT compiler method sets are currently equal at 44 methods each.
+- **SPU checksum, SHUFB, SHA3, and dot-product paths:** these target PS3 SPU/PPC workloads and have no direct 3DS guest equivalent. [RPCS3 #18056](https://github.com/RPCS3/rpcs3/pull/18056) is still useful as a method: express the guest permutation directly with native ARM vector operations and verify final codegen. This review found that Azahar's A64 PICA source-swizzle fallback still used a vector copy plus serial lane inserts; the AArch64 shader-swizzle change below closes that specific gap. Its A64/x64 JIT compiler method sets remain equal at 44 methods each.
 - **LLVM ARM feature attributes:** [RPCS3 #18133](https://github.com/RPCS3/rpcs3/pull/18133) prevents LLVM from assuming that Snapdragon 8 Gen 2 exposes the Cortex-X3's disabled SVE feature. Azahar's 3DS CPU backend is Dynarmic rather than an LLVM guest recompiler and targets baseline AArch64/NEON, so it cannot reuse that patch. Azahar's existing AArch64 feature detector currently feeds host-information logging, not generated-code feature attributes; optional dot-product/i8mm paths should be added only with Android HWCAP gates and a proven hot integer kernel.
 - **A dedicated Vulkan garbage-collection thread:** Azahar already has a Vulkan scheduler, presentation thread, master-semaphore completion waiter, and shader/pipeline workers. Another wake-producing thread is not justified until a Thor trace shows render-thread GC stalls; if needed, GC should first be attached to the existing completion path.
 - **A global Cortex-X3 `-mcpu` setting:** Snapdragon 8 Gen 2 is a mixed X3/A715/A710/A510 system, and shipping Thor hardware does not expose every optional architecture feature such as SVE/SVE2. Runtime capability gates are safer than architecture-wide compiler assumptions.
@@ -532,6 +532,38 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   earlier FastDispatch, page-table, or NZCV-cache percentages. Whole-game FPS, battery watts,
   and thermal-slope effects remain unmeasured until a controlled parent-versus-candidate Thor
   A/B is allowed.
+
+## 2026-08-16 AArch64 PICA Shader Swizzles
+
+- The PICA AArch64 vertex-shader JIT's arbitrary source-swizzle fallback previously copied the
+  full vector to a scratch register and then inserted each changed 32-bit lane separately. That
+  executed two instructions for a one-lane change and three to five instructions when two to four
+  lanes changed.
+- Identity and four broadcast selectors retain their existing zero- and one-instruction fast
+  paths. A selector with exactly one changed lane now emits one direct lane move, a 50% reduction
+  from two instructions. Selectors changing two or more lanes load a 16-byte byte-index literal
+  and execute one baseline AdvSIMD `TBL`, reducing the old three-to-five-instruction sequence to
+  two instructions (33.3%-60% fewer executed shuffle instructions).
+- The byte-index literal is aligned and deduplicated by raw selector within each compiled shader.
+  Sparse label bookkeeping is cleared after literal emission instead of remaining in every cached
+  shader object. Compile-time assertions verify the identity and reverse mappings. The focused
+  regression builds a MOV shader for every one of the 256 selector encodings and checks all four
+  result lanes, for 1,024 lane assertions.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` completed from a full native rebuild in 10m37s. After
+  replacing the dense persistent label array with temporary sparse bookkeeping, an incremental
+  1m09s build recompiled the modified AArch64 JIT and exhaustive test source and relinked both the
+  ARM64 test runner and `libcitra-android.so`. The test runner was not executed because the active
+  restriction forbids using the Thor and the binary cannot run on the x64 host.
+- The first release-style APK attempt hit a transient Windows lock on R8's generated `classes.dex`.
+  After stopping Gradle daemons, final no-daemon packaging completed in 1m02s. The resulting
+  28,966,207-byte APK contains only `arm64-v8a` native libraries and has SHA-256
+  `3315A6500AB273EB7EFA744F5809BD40BB20A677FDF56B1C6D1AB88386F18381`.
+- This is an exact generated-instruction reduction, not a whole-game FPS or battery-watt claim.
+  The two-instruction path trades serial lane operations for a literal load, and each unique
+  multi-lane selector adds 16 bytes to the shader code pool. A future allowed matched A/B should
+  profile vertex-heavy scenes with identical title, driver, resolution, layout, cache state,
+  performance mode, brightness, and duration while recording shader time, frametimes, process CPU
+  time, battery power, temperature, thermal slope, and visual correctness.
 
 ## High-Value Optimization Places
 

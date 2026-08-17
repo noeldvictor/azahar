@@ -151,6 +151,22 @@ static const u8 NO_SRC_REG_SWIZZLE = 0x1b;
 /// Raw constant for the destination register enable mask that indicates all components are enabled
 static const u8 NO_DEST_REG_MASK = 0xf;
 
+constexpr std::array<u64, 2> MakeSwizzleTable(u8 selector) {
+    std::array<u64, 2> result{};
+    for (u32 output_lane = 0; output_lane < 4; output_lane++) {
+        const u32 source_lane = (selector >> (6 - output_lane * 2)) & 0b11;
+        for (u32 byte = 0; byte < 4; byte++) {
+            const u32 output_byte = output_lane * 4 + byte;
+            const u64 source_byte = source_lane * 4 + byte;
+            result[output_byte / 8] |= source_byte << ((output_byte % 8) * 8);
+        }
+    }
+    return result;
+}
+
+static_assert(MakeSwizzleTable(0x1b) == std::array<u64, 2>{0x0706050403020100, 0x0f0e0d0c0b0a0908});
+static_assert(MakeSwizzleTable(0xe4) == std::array<u64, 2>{0x0b0a09080f0e0d0c, 0x0302010007060504});
+
 static void LogCritical(const char* msg) {
     LOG_CRITICAL(HW_GPU, "{}", msg);
 }
@@ -275,21 +291,36 @@ void JitShader::Compile_SwizzleSrc(Instruction instr, u32 src_num, SourceRegiste
         DUP(dest.S4(), dest.Selem()[3]);
         break;
     default: {
-        const int table[] = {
+        const std::array<int, 4> table = {
             ((sel & 0b11'00'00'00) >> 6),
             ((sel & 0b00'11'00'00) >> 4),
             ((sel & 0b00'00'11'00) >> 2),
             ((sel & 0b00'00'00'11) >> 0),
         };
-        MOV(VSCRATCH0.B16(), dest.B16());
-        if (table[0] != 0)
-            MOV(dest.Selem()[0], VSCRATCH0.Selem()[table[0]]);
-        if (table[1] != 1)
-            MOV(dest.Selem()[1], VSCRATCH0.Selem()[table[1]]);
-        if (table[2] != 2)
-            MOV(dest.Selem()[2], VSCRATCH0.Selem()[table[2]]);
-        if (table[3] != 3)
-            MOV(dest.Selem()[3], VSCRATCH0.Selem()[table[3]]);
+
+        u32 changed_lane_count = 0;
+        int changed_lane = 0;
+        for (int lane = 0; lane < 4; lane++) {
+            if (table[lane] != lane) {
+                changed_lane_count++;
+                changed_lane = lane;
+            }
+        }
+
+        if (changed_lane_count == 1) {
+            MOV(dest.Selem()[changed_lane], dest.Selem()[table[changed_lane]]);
+            break;
+        }
+
+        auto [literal_iter, inserted] = swizzle_literals.try_emplace(sel);
+        auto& literal = literal_iter->second;
+        if (inserted) {
+            const auto values = MakeSwizzleTable(sel);
+            literal.lower = values[0];
+            literal.upper = values[1];
+        }
+        LDR(VSCRATCH0, literal.label);
+        TBL(dest.B16(), List{dest.B16()}, VSCRATCH0.B16());
         break;
     }
     }
@@ -1147,6 +1178,7 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     program_counter = 0;
     loop_depth = 0;
     instruction_labels.fill(Label());
+    swizzle_literals.clear();
 
     // Identify control-flow targets and the PICA state used by emitted code.
     AnalyzeProgram();
@@ -1210,6 +1242,17 @@ void JitShader::Compile(const std::array<u32, MAX_PROGRAM_CODE_LENGTH>* program_
     }
     if (exp2_used) {
         Compile_Exp2(exp2_subroutine);
+    }
+
+    if (!swizzle_literals.empty()) {
+        align(16);
+        for (auto& entry : swizzle_literals) {
+            auto& literal = entry.second;
+            l(literal.label);
+            dx(literal.lower);
+            dx(literal.upper);
+        }
+        swizzle_literals.clear();
     }
 
     // Free memory that's no longer needed

@@ -10,7 +10,7 @@
 #include <array>
 #include <bitset>
 #include <cstddef>
-#include <optional>
+#include <map>
 #include <utility>
 #include <vector>
 #include <nihstro/shader_bytecode.h>
@@ -160,6 +160,13 @@ private:
 
     oaknut::Label log2_subroutine;
     oaknut::Label exp2_subroutine;
+
+    struct SwizzleLiteral {
+        oaknut::Label label;
+        u64 lower = 0;
+        u64 upper = 0;
+    };
+    std::map<u8, SwizzleLiteral> swizzle_literals;
 };
 
 } // namespace Pica::Shader

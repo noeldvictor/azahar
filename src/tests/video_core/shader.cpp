@@ -948,4 +948,37 @@ SHADER_TEST_CASE("Source Swizzle", "[video_core][shader]") {
             Common::Vec4f(iota_vec.y, iota_vec.y, iota_vec.y, iota_vec.y));
 }
 
+TEST_CASE("All Source Swizzles", "[video_core][shader]") {
+    const auto sh_input = SourceRegister::MakeInput(0);
+    const auto sh_output = DestRegister::MakeOutput(0);
+    const Common::Vec4f input = {1.0f, 2.0f, 3.0f, 4.0f};
+    const std::array<float, 4> input_components = {input.x, input.y, input.z, input.w};
+
+    for (u32 raw_selector = 0; raw_selector < 256; raw_selector++) {
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::MOV, sh_output, "xyzw", sh_input, "xyzw", SourceRegister{}, ""},
+            {OpCode::Id::END},
+        });
+
+        nihstro::SwizzlePattern swizzle{};
+        swizzle.dest_mask = 0b1111;
+        std::array<u32, 4> selectors{};
+        for (u32 lane = 0; lane < selectors.size(); lane++) {
+            selectors[lane] = (raw_selector >> (6 - lane * 2)) & 0b11;
+            swizzle.SetSelectorSrc1(
+                lane, static_cast<nihstro::SwizzlePattern::Selector>(selectors[lane]));
+        }
+        shader_setup->UpdateSwizzleData(0, swizzle.hex);
+
+        ShaderJitTest shader{std::move(shader_setup)};
+        const Common::Vec4f result = shader.Run({input});
+        const std::array<float, 4> result_components = {result.x, result.y, result.z, result.w};
+
+        for (u32 lane = 0; lane < selectors.size(); lane++) {
+            CAPTURE(raw_selector, lane);
+            REQUIRE(result_components[lane] == input_components[selectors[lane]]);
+        }
+    }
+}
+
 #endif // CITRA_ARCH(x86_64) || CITRA_ARCH(arm64)
