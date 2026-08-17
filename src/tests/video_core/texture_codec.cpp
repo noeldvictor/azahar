@@ -198,6 +198,66 @@ void CheckD24S8() {
     REQUIRE(encoded == tiled);
 }
 
+void CheckLinearConvertedRGBA8() {
+    constexpr std::size_t pixel_count = 37;
+    std::array<u8, pixel_count * 4 + 3> encoded{};
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        encoded[i] = static_cast<u8>((i * 61 + 17) & 0xFF);
+    }
+
+    std::array<u8, pixel_count * 4 + 3> expected{};
+    expected.fill(0xCD);
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        for (std::size_t component = 0; component < 4; ++component) {
+            expected[pixel * 4 + component] = encoded[pixel * 4 + 3 - component];
+        }
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::LinearCopy<true, VideoCore::PixelFormat::RGBA8, true>(encoded, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, pixel_count * 4 + 3> roundtrip{};
+    roundtrip.fill(0xA5);
+    VideoCore::LinearCopy<false, VideoCore::PixelFormat::RGBA8, true>(decoded, roundtrip);
+    auto expected_roundtrip = encoded;
+    expected_roundtrip[pixel_count * 4] = 0xA5;
+    expected_roundtrip[pixel_count * 4 + 1] = 0xA5;
+    expected_roundtrip[pixel_count * 4 + 2] = 0xA5;
+    REQUIRE(roundtrip == expected_roundtrip);
+}
+
+void CheckLinearConvertedRGB8() {
+    constexpr std::size_t pixel_count = 37;
+    std::array<u8, pixel_count * 3 + 2> encoded{};
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        encoded[i] = static_cast<u8>((i * 67 + 29) & 0xFF);
+    }
+
+    std::array<u8, pixel_count * 4 + 3> expected{};
+    expected.fill(0xCD);
+    for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        expected[pixel * 4] = encoded[pixel * 3 + 2];
+        expected[pixel * 4 + 1] = encoded[pixel * 3 + 1];
+        expected[pixel * 4 + 2] = encoded[pixel * 3];
+        expected[pixel * 4 + 3] = 0xFF;
+    }
+
+    auto decoded = expected;
+    decoded.fill(0xCD);
+    VideoCore::LinearCopy<true, VideoCore::PixelFormat::RGB8, true>(encoded, decoded);
+    REQUIRE(decoded == expected);
+
+    std::array<u8, pixel_count * 3 + 2> roundtrip{};
+    roundtrip.fill(0xA5);
+    VideoCore::LinearCopy<false, VideoCore::PixelFormat::RGB8, true>(decoded, roundtrip);
+    auto expected_roundtrip = encoded;
+    expected_roundtrip[pixel_count * 3] = 0xA5;
+    expected_roundtrip[pixel_count * 3 + 1] = 0xA5;
+    REQUIRE(roundtrip == expected_roundtrip);
+}
+
 template <VideoCore::PixelFormat format>
 void CheckETC1() {
     static_assert(format == VideoCore::PixelFormat::ETC1 ||
@@ -305,5 +365,14 @@ TEST_CASE("PICA tile codec matches scalar Morton layout", "[video_core][texture]
     }
     SECTION("ETC1A4 block decode") {
         CheckETC1<VideoCore::PixelFormat::ETC1A4>();
+    }
+}
+
+TEST_CASE("PICA linear converted codec preserves pixel layout", "[video_core][texture]") {
+    SECTION("RGBA8 converted byte order") {
+        CheckLinearConvertedRGBA8();
+    }
+    SECTION("RGB8 converted to RGBA8") {
+        CheckLinearConvertedRGB8();
     }
 }

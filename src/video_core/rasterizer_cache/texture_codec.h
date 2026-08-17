@@ -564,6 +564,89 @@ inline void MortonCopyTile16To32A64(u32 stride, const u8* tile_buffer, u8* linea
     }
 }
 
+template <bool decode, u32 block>
+consteval std::array<u8, 16> MakeLinearRGB8ShuffleA64() {
+    std::array<u8, 16> indices{};
+    for (u32 lane = 0; lane < indices.size(); ++lane) {
+        const u32 output = block * 16 + lane;
+        if constexpr (decode) {
+            const u32 component = output % 4;
+            const u32 pixel = output / 4;
+            // The fourth table vector is opaque alpha.
+            indices[lane] = component == 3 ? 48 : static_cast<u8>(pixel * 3 + 2 - component);
+        } else {
+            const u32 component = output % 3;
+            const u32 pixel = output / 3;
+            indices[lane] = static_cast<u8>(pixel * 4 + 2 - component);
+        }
+    }
+    return indices;
+}
+
+inline constexpr std::array<std::array<u8, 16>, 4> LINEAR_RGB8_DECODE_SHUFFLES_A64 = {
+    MakeLinearRGB8ShuffleA64<true, 0>(),
+    MakeLinearRGB8ShuffleA64<true, 1>(),
+    MakeLinearRGB8ShuffleA64<true, 2>(),
+    MakeLinearRGB8ShuffleA64<true, 3>(),
+};
+inline constexpr std::array<std::array<u8, 16>, 3> LINEAR_RGB8_ENCODE_SHUFFLES_A64 = {
+    MakeLinearRGB8ShuffleA64<false, 0>(),
+    MakeLinearRGB8ShuffleA64<false, 1>(),
+    MakeLinearRGB8ShuffleA64<false, 2>(),
+};
+
+template <bool decode, PixelFormat format>
+inline std::size_t LinearCopyConvertedA64(const u8* src, u8* dst, std::size_t pixel_count) {
+    static_assert(format == PixelFormat::RGBA8 || format == PixelFormat::RGB8);
+    std::size_t pixel = 0;
+
+    if constexpr (format == PixelFormat::RGBA8) {
+        for (; pixel + 16 <= pixel_count; pixel += 16) {
+            const u8* const src_block = src + pixel * 4;
+            u8* const dst_block = dst + pixel * 4;
+            const uint8x16_t pixels_0 = vrev32q_u8(vld1q_u8(src_block));
+            const uint8x16_t pixels_1 = vrev32q_u8(vld1q_u8(src_block + 16));
+            const uint8x16_t pixels_2 = vrev32q_u8(vld1q_u8(src_block + 32));
+            const uint8x16_t pixels_3 = vrev32q_u8(vld1q_u8(src_block + 48));
+            vst1q_u8(dst_block, pixels_0);
+            vst1q_u8(dst_block + 16, pixels_1);
+            vst1q_u8(dst_block + 32, pixels_2);
+            vst1q_u8(dst_block + 48, pixels_3);
+        }
+    } else if constexpr (decode) {
+        const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[0].data());
+        const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[1].data());
+        const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[2].data());
+        const uint8x16_t shuffle_3 = vld1q_u8(LINEAR_RGB8_DECODE_SHUFFLES_A64[3].data());
+        const uint8x16_t opaque = vdupq_n_u8(0xFF);
+        for (; pixel + 16 <= pixel_count; pixel += 16) {
+            const u8* const src_block = src + pixel * 3;
+            u8* const dst_block = dst + pixel * 4;
+            const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
+                                        vld1q_u8(src_block + 32), opaque};
+            vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
+            vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
+            vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
+            vst1q_u8(dst_block + 48, vqtbl4q_u8(table, shuffle_3));
+        }
+    } else {
+        const uint8x16_t shuffle_0 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[0].data());
+        const uint8x16_t shuffle_1 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[1].data());
+        const uint8x16_t shuffle_2 = vld1q_u8(LINEAR_RGB8_ENCODE_SHUFFLES_A64[2].data());
+        for (; pixel + 16 <= pixel_count; pixel += 16) {
+            const u8* const src_block = src + pixel * 4;
+            u8* const dst_block = dst + pixel * 3;
+            const uint8x16x4_t table = {vld1q_u8(src_block), vld1q_u8(src_block + 16),
+                                        vld1q_u8(src_block + 32), vld1q_u8(src_block + 48)};
+            vst1q_u8(dst_block, vqtbl4q_u8(table, shuffle_0));
+            vst1q_u8(dst_block + 16, vqtbl4q_u8(table, shuffle_1));
+            vst1q_u8(dst_block + 32, vqtbl4q_u8(table, shuffle_2));
+        }
+    }
+
+    return pixel;
+}
+
 #endif
 
 template <bool morton_to_linear, PixelFormat format, bool converted>
@@ -763,7 +846,22 @@ static constexpr void LinearCopy(std::span<u8> src_buffer, std::span<u8> dst_buf
         src_size = Common::AlignDown(src_size, src_bytes_per_pixel);
         dst_size = Common::AlignDown(dst_size, dst_bytes_per_pixel);
 
-        for (std::size_t src_index = 0, dst_index = 0; src_index < src_size && dst_index < dst_size;
+        std::size_t first_scalar_pixel = 0;
+#if CITRA_ARCH(arm64)
+        if constexpr (format == PixelFormat::RGBA8 || format == PixelFormat::RGB8) {
+            const std::size_t pixel_count =
+                std::min(src_size / src_bytes_per_pixel, dst_size / dst_bytes_per_pixel);
+            first_scalar_pixel = LinearCopyConvertedA64<decode, format>(
+                src_buffer.data(), dst_buffer.data(), pixel_count);
+        }
+#endif
+
+#if CITRA_ARCH(arm64) && defined(__clang__)
+#pragma clang loop vectorize(disable)
+#endif
+        for (std::size_t src_index = first_scalar_pixel * src_bytes_per_pixel,
+                         dst_index = first_scalar_pixel * dst_bytes_per_pixel;
+             src_index < src_size && dst_index < dst_size;
              src_index += src_bytes_per_pixel, dst_index += dst_bytes_per_pixel) {
             const auto src_pixel = src_buffer.subspan(src_index, src_bytes_per_pixel);
             const auto dst_pixel = dst_buffer.subspan(dst_index, dst_bytes_per_pixel);

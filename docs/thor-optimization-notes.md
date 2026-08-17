@@ -213,6 +213,38 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   A future allowed matched A/B should target I4/A4-heavy texture uploads and compare upload time,
   frametimes, battery power, temperature, and visual correctness.
 
+## 2026-08-16 AArch64 Linear RGBA8/RGB8 Conversion
+
+- The tiled texture paths had gained explicit NEON coverage, but converted linear surfaces still
+  used the old per-pixel codec. Final ARM64 ThinLTO output showed RGBA8 uploads doing one scalar
+  load, byte reverse, and store per pixel. RGBA8 downloads were auto-vectorized into twelve shifts,
+  four table lookups, and an interleaved `ST4` per 16 pixels. Both RGB8 directions remained scalar.
+- Converted linear RGBA8 now handles 16 pixels with two paired 128-bit loads, four `REV32`
+  operations, and two paired stores. RGB8 uses a compile-time-verified four-register `TBL` mapping:
+  uploads turn 48 packed BGR bytes into 64 RGBA bytes with opaque alpha, while downloads remove
+  alpha and restore packed BGR order. Buffers shorter than 16 pixels and final partial blocks retain
+  the scalar oracle path.
+- In the steady 16-pixel loop bodies visible in final ThinLTO code, RGBA8 upload fell from about 96
+  instructions to 14 (85.4%), and RGBA8 download from 21 to 14 (33.3%) while eliminating `ST4`.
+  RGB8 upload fell from about 208 instructions to 13 (93.75%), and RGB8 download from about 208 to
+  12 (94.2%). The RGBA8 download wrapper also shrank from 372 to 148 bytes. Across all four wrappers
+  the explicit vector loops add only 124 bytes because the other three now carry both a vector loop
+  and scalar tail.
+- An independent shuffle model checked 100,000 arbitrary 16-pixel RGB8 and RGBA8 blocks: 1.6
+  million pixels per direction matched exact scalar decode, alpha insertion, byte reversal, and
+  round-trip packing. Permanent Catch2 tests use 37 pixels to cover two vector blocks, a five-pixel
+  scalar tail, and deliberately incomplete final source/destination bytes. The ARM64 tests compiled
+  and linked but were not executed because the current restriction forbids using the Thor.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` and
+  `:app:assembleVanillaRelWithDebInfoLite` both passed. The APK is 28,963,935 bytes with SHA-256
+  `EC094D00FAB9D6556F4AE68BA9367A49055A341CC56049EC470107380CD2651C`. Only the active
+  `arm64-v8a` RelWithDebInfo CMake hash remains. No ADB command, install, launch, or Thor execution
+  was performed.
+- This proves a large CPU instruction reduction whenever a game uploads or reads back converted
+  linear RGBA8/RGB8 surfaces. It is not yet a whole-game FPS or wattage result; a future allowed
+  matched A/B should target linear-surface-heavy scenes and record conversion time, frametimes,
+  battery power, temperature, and visual correctness.
+
 ## 2026-08-16 Vulkan Anime4K Repair
 
 - The old Vulkan path did not implement Anime4K. It bound one surface as all three shader inputs and ran only the final refine shader while rendering back into that same image. That omitted both gradient passes and created an invalid sample/render feedback dependency.
