@@ -128,10 +128,22 @@
   rear gains are exact signed zero and, during a ramp, both starting rear gains are also exact
   signed zero. Preserve the integer `AND`/`TST #0x7fffffff7fffffff` predicate: any nonzero bit
   pattern after removing the two sign bits, including a subnormal, infinity, or NaN, must use the
-  full four-channel path. The front path must not load or write rear destinations; the full steady
-  and ramped loops must remain the original 52 and 74 instructions per eight samples. Keep each
-  nested `std::array` pointer within its own array object instead of relying on cross-subarray
-  pointer arithmetic. Recheck final ThinLTO and the front/rear destination canaries after edits.
+  full four-channel path. The accumulating front path must not load or write rear destinations;
+  the first-definition front path must clear both rear planes once so the complete bus is defined.
+  Accumulating full steady/ramped loops must remain 52/74 instructions per eight samples, with
+  front loops at 32/46. Direct full loops should remain 38/60, and direct front loops 26/40 with
+  no destination load or vector add. Keep each nested `std::array` pointer within its own array
+  object instead of relying on cross-subarray pointer arithmetic. Recheck final ThinLTO and the
+  front/rear destination canaries after edits.
+- `GenerateCurrentFrame()` deliberately leaves the complete three-bus set pending instead of
+  clearing all 7,680 bytes up front. Until one source is audible, use `MixIntoFirst()` to direct-
+  write every bus that source routes; then clear its adjacent silent-bus runs and return every later
+  source to the original `MixInto()` accumulation path. Do not carry per-bus initialization checks
+  through later sources: their recurring control work can exceed the one-time direct-write saving.
+  The all-silent case must remain one contiguous 7,680-byte clear. Preserve exact signed-zero/NaN
+  predicates and advance each gain ramp exactly once. Keep first steady/ramped full/front,
+  multi-bus, all-silent, disabled-state, existing-destination, and canary coverage. Final ThinLTO
+  must keep the 1,244-byte spill-free accumulator and direct loops without destination loads/adds.
 - The final HLE mixer skips a 160-sample downmix only when that bus's frame-wide mixer volume
   compares equal to exact signed zero; every nonzero or NaN volume retains the arithmetic path.
   The first audible bus, including an auxiliary bus after leading signed-zero buses, must define

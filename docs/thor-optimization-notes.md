@@ -2257,6 +2257,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   bounded always-on DSP memory-system reduction, not evidence for a specific whole-game FPS or
   battery-watt gain.
 
+## 2026-08-17 First-Source Intermediate-Bus Definition
+
+- `DspHle::Impl::GenerateCurrentFrame()` previously value-initialized all three 2,560-byte source
+  buses before visiting the 24 HLE sources. The first source with any audible routing then loaded
+  the known-zero destinations, added its converted samples, and stored the result. That source can
+  instead define each bus it routes directly without changing later accumulation order.
+- The complete three-bus set now starts pending. Until one source is audible,
+  `Source::MixIntoFirst()` tests the same exact ending gains and ramp starts, direct-writes every
+  bus that source routes, and returns a three-bit mask. The caller clears adjacent silent-bus runs
+  immediately, marks the complete set initialized, and sends every later source through the
+  original `MixInto()` accumulator. This deliberately gives up a later per-bus direct opportunity
+  to avoid carrying recurring initialization checks across the remaining sources. An all-silent
+  frame still performs one contiguous 7,680-byte `memset`. Signed zero remains silent; NaN and
+  every nonzero start/end gain take arithmetic, and every ramp state advances exactly once.
+- AArch64 direct full-bus steady/ramped loops are 38/60 instructions per eight samples versus
+  52/74 for accumulation. They contain no destination loads or vector adds, saving 280 repeated
+  instructions and 5,120 bytes of load/store traffic per 160-sample first contribution. That is
+  1,047,296 bytes/second at 32,728 Hz. Direct front-stereo loops are 26/40 versus 32/46, saving 120
+  instructions and 2,560 bytes per frame, or 523,648 bytes/second; one 1,280-byte contiguous clear
+  explicitly defines the omitted rear planes. If that first source fully routes all three buses,
+  the bound is 840 instructions and 15,360 bytes per frame, or 3,141,888 bytes/second.
+- Final production ThinLTO removes the unconditional entry clear. `GenerateCurrentFrame()` grows
+  from 584 to 768 bytes; `MixInto()`, `MixIntoFirst()`, and the direct helper are 1,244, 440, and
+  940 bytes. Against the former 1,828-byte source/driver pair, the complete retained set is 3,392
+  bytes, a 1,564-byte code-size cost. `DspHle::Impl::Tick()` remains 124 bytes. The accumulator is
+  exactly its baseline size, stays a leaf with only the established `d8`/`d9` save pair, and keeps
+  its 52/74 full and 32/46 front loop counts without spills. The initialized state stays in `w19`,
+  leaving one `TBNZ` choice per later source rather than per-bus checks. The all-silent route retains
+  one bulk clear with no final flag scan.
+- Permanent Catch2 coverage checks accumulated output plus first steady/ramped full and front
+  contributions, exact rear zeroing, simultaneous direct main/final-bus output and mask, a silent
+  first source with ramp transition, disabled-source state, existing destinations, and guard
+  canaries. The full ELF64/AArch64 test executable and production ThinLTO library compile and link
+  successfully in 1 minute 10 seconds; the final coverage-only test relink passed in 35 seconds.
+  The ARM64 executable was not run on this x64 host.
+- `:app:assembleVanillaRelWithDebInfoLite` passed in 1 minute 20 seconds and produced an ARM64-only
+  28,969,479-byte APK with SHA-256
+  `2E4346084247EEE1C375745BBB240A7B0864DF1C2F1BCB615AB3D715DDD96112`.
+- After verification, 2,334,959,336 logical bytes of the native test executable and disposable
+  Gradle intermediates were removed. Reported C: free space increased by 1,896,804,352 bytes; the
+  final APK and active ARM64 RelWithDebInfo CMake cache remain in the workspace.
+- No device, ADB, install, launch, game run, FPS test, or battery measurement was used. These are
+  continuous DSP path-local instruction and memory-system reductions, not evidence for a specific
+  whole-game FPS or wattage gain. A future allowed matched Thor A/B should hold title, scene, save,
+  caches, renderer, resolution, driver, display layout, performance/fan mode, brightness, audio
+  backend, speed limit, and duration constant, then record first-source routing, active source
+  counts, DSP/audio-thread time and placement, underruns, frametimes, battery power, temperature,
+  thermal slope, output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

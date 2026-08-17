@@ -63,9 +63,15 @@ public:
 
     /**
      * Mix this source's output into the three intermediate mixing buffers.
-     * Entries correspond to the main bus followed by the two auxiliary buses.
+     * The entries are main, auxiliary 0, and auxiliary 1.
      */
     void MixInto(std::array<PlanarQuadFrame32, 3>& dest);
+
+    /**
+     * Define every audible bus without loading prior destinations.
+     * Returns the written-bus mask, or zero when the source is silent.
+     */
+    u32 MixIntoFirst(std::array<PlanarQuadFrame32, 3>& dest);
 
 private:
     const std::size_t source_id;

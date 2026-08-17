@@ -72,6 +72,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   prefix. This saves store-pipeline, cache, and dirty-line work across every Thor core class without
   assuming an optional ISA feature. Preserve full clears on early returns and tail silence before
   recurrent filters, then verify the control-flow shape in the linked AArch64 binary.
+- Apply the same rule to multi-producer accumulators, but count recurring bookkeeping as well as
+  vector work. Let the first audible producer direct-write its complete routed buses without
+  loading or adding known zeros, clear the rest of the accumulator set immediately, and return
+  later producers to the original fast path. A front-only specialization must explicitly define
+  its omitted rear planes. Preserve arithmetic order and state transitions, and inspect final
+  direct and accumulated loops separately; source templates alone do not prove loads disappeared.
 - For SoundTouch's integer 64-tap stereo FIR, use an exact 32-bit accumulator on Android LP64 and
   feed both channels from one coefficient vector. Two Q-form `LD2` sample loads plus one paired
   coefficient load per sixteen taps avoid the duplicated coefficient structured loads while eight

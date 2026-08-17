@@ -190,7 +190,8 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
     };
 
     const auto run_case = [&](bool ramp_active, const std::array<float, 4>& case_ramp_start,
-                              const std::array<float, 4>& case_gains) {
+                              const std::array<float, 4>& case_gains,
+                              bool first_contribution = false) {
         GuardedMix actual{};
         actual.prefix.fill(0x13579BDF);
         actual.suffix.fill(0x2468ACE0);
@@ -207,12 +208,19 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
         }
         const GuardedMix initial = actual;
         auto expected = actual.output;
+        if (first_contribution) {
+            expected[mix_id] = {};
+        }
         ReferenceSourceMix(expected[mix_id], input, case_ramp_start, case_gains, ramp_active);
 
         AudioCore::HLE::Source source{0};
         AudioCore::HLE::SourceMixTestAccess::Configure(source, input, case_ramp_start, case_gains,
                                                        mix_id, ramp_active);
-        source.MixInto(actual.output);
+        if (first_contribution) {
+            REQUIRE(source.MixIntoFirst(actual.output) == (u32{1} << mix_id));
+        } else {
+            source.MixInto(actual.output);
+        }
 
         REQUIRE(actual.output == expected);
         REQUIRE(actual.prefix == initial.prefix);
@@ -234,11 +242,63 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
     SECTION("ramped front-stereo gains leave rear destinations untouched") {
         run_case(true, front_ramp_start, front_gains);
     }
+    SECTION("first steady full contribution defines the complete bus") {
+        run_case(false, ramp_start, gains, true);
+    }
+    SECTION("first ramped full contribution defines the complete bus") {
+        run_case(true, ramp_start, gains, true);
+    }
+    SECTION("first steady front contribution defines the bus and clears rear channels") {
+        run_case(false, front_ramp_start, front_gains, true);
+    }
+    SECTION("first ramped front contribution defines the bus and clears rear channels") {
+        run_case(true, front_ramp_start, front_gains, true);
+    }
+    SECTION("first source defines every audible bus in one pass") {
+        std::array<AudioCore::PlanarQuadFrame32, 3> actual{};
+        for (std::size_t mix = 0; mix < actual.size(); ++mix) {
+            for (std::size_t channel = 0; channel < actual[mix].size(); ++channel) {
+                actual[mix][channel].fill(static_cast<s32>(mix * 101 + channel * 17) - 23);
+            }
+        }
+        auto expected = actual;
+        expected[0] = {};
+        expected[2] = {};
+        ReferenceSourceMix(expected[0], input, ramp_start, gains, false);
+        ReferenceSourceMix(expected[2], input, front_ramp_start, front_gains, true);
+
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::Configure(source, input, ramp_start, gains, 0, false);
+        AudioCore::HLE::SourceMixTestAccess::Configure(source, input, front_ramp_start, front_gains,
+                                                       2, true);
+
+        REQUIRE(source.MixIntoFirst(actual) == 0b101);
+        REQUIRE(actual == expected);
+        REQUIRE_FALSE(AudioCore::HLE::SourceMixTestAccess::RampActive(source, 2));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::RampStart(source, 2) == front_gains);
+    }
     SECTION("steady signed-zero gains leave every destination untouched") {
         run_case(false, ramp_start, zero_gains);
     }
     SECTION("zero-to-zero ramp leaves every destination untouched") {
         run_case(true, zero_gains, zero_gains);
+    }
+    SECTION("silent first contribution leaves the bus pending and untouched") {
+        std::array<AudioCore::PlanarQuadFrame32, 3> actual{};
+        for (std::size_t mix = 0; mix < actual.size(); ++mix) {
+            for (std::size_t channel = 0; channel < actual[mix].size(); ++channel) {
+                actual[mix][channel].fill(static_cast<s32>(mix * 101 + channel * 17) - 23);
+            }
+        }
+        const auto expected = actual;
+        AudioCore::HLE::Source source{0};
+        AudioCore::HLE::SourceMixTestAccess::Configure(source, input, zero_gains, zero_gains,
+                                                       mix_id, true);
+        REQUIRE(source.MixIntoFirst(actual) == 0);
+
+        REQUIRE(actual == expected);
+        REQUIRE_FALSE(AudioCore::HLE::SourceMixTestAccess::RampActive(source, mix_id));
+        REQUIRE(AudioCore::HLE::SourceMixTestAccess::RampStart(source, mix_id) == zero_gains);
     }
     SECTION("nonzero-to-zero ramp is still mixed") {
         run_case(true, ramp_start, zero_gains);
@@ -270,7 +330,7 @@ TEST_CASE("HLE source mixing preserves exact steady and ramped output", "[audio_
             AudioCore::HLE::SourceMixTestAccess::Configure(source, input, disabled_ramp_starts[mix],
                                                            disabled_gains[mix], mix, true, false);
         }
-        source.MixInto(actual);
+        REQUIRE(source.MixIntoFirst(actual) == 0);
 
         REQUIRE(actual == expected);
         for (std::size_t mix = 0; mix < actual.size(); ++mix) {

@@ -353,6 +353,20 @@ The containing function grows from 832 to 1,244 bytes for the two specialized lo
 verify exact front output and untouched rear buffers for steady and ramped routing; whole-game FPS
 and battery effects still require a matched Thor run.
 
+The complete three-bus source-mix set also remains uninitialized until the first source with any
+audible contribution. That source writes each routed bus directly, avoiding the old clear followed
+by destination loads and adds; its silent buses are cleared together, and every later source uses
+the original accumulation path with no recurring initialization checks. For the common first
+front-stereo main bus with two silent auxiliaries, final AArch64 ThinLTO reduces the direct steady/
+ramped loops from the accumulated 32/46 to 26/40 instructions per eight samples. That removes 120
+repeated inner-loop instructions and 2,560 bytes of load/store traffic per DSP frame, or 523,648
+bytes/second. A full bus falls from 52/74 to 38/60, saving 280 inner-loop instructions and 5,120
+bytes per frame, or 1,047,296 bytes/second. If that first source routes all three buses fully, the
+bound is 840 instructions and 15,360 bytes per frame, or 3,141,888 bytes/second. The all-silent
+route still makes one 7,680-byte clear. The retained source/driver code grows by 1,564 bytes, while
+the original accumulation function stays byte-for-byte at 1,244 bytes. These are exact inner-loop
+and traffic bounds, not measured whole-game FPS or battery-watt gains.
+
 The final HLE mixer also bypasses a bus's complete 160-sample downmix when its frame-wide volume is
 exact `+0` or `-0`. NaN and every nonzero volume retain the original arithmetic, while aux exchange
 and intermediate state remain unchanged. The earlier AArch64 rewrite reduced the then-scalar

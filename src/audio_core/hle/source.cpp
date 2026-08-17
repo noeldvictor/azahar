@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
+#include <type_traits>
 #if defined(__aarch64__)
 #include <arm_neon.h>
 #endif
@@ -12,6 +14,7 @@
 #include "audio_core/hle/source.h"
 #include "audio_core/interpolate.h"
 #include "common/assert.h"
+#include "common/common_funcs.h"
 #include "common/logging/log.h"
 #include "core/memory.h"
 
@@ -33,9 +36,13 @@ bool HasAudibleGain(const std::array<float, 4>& gains) {
 #if defined(__aarch64__)
 namespace {
 
-inline void AccumulateSourceBand(s32* dest, float32x4_t samples, float32x4_t gain) {
-    const int32x4_t mixed = vcvtq_s32_f32(vmulq_f32(samples, gain));
-    vst1q_s32(dest, vaddq_s32(vld1q_s32(dest), mixed));
+template <bool accumulate>
+inline void MixSourceBand(s32* dest, float32x4_t samples, float32x4_t gain) {
+    int32x4_t mixed = vcvtq_s32_f32(vmulq_f32(samples, gain));
+    if constexpr (accumulate) {
+        mixed = vaddq_s32(vld1q_s32(dest), mixed);
+    }
+    vst1q_s32(dest, mixed);
 }
 
 inline bool HasAudibleRearGain(const std::array<float, 4>& gains) {
@@ -45,7 +52,7 @@ inline bool HasAudibleRearGain(const std::array<float, 4>& gains) {
     return (bits & 0x7FFF'FFFF'7FFF'FFFFULL) != 0;
 }
 
-template <bool ramp_active, bool rear_active>
+template <bool ramp_active, bool rear_active, bool accumulate>
 void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
                        const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains) {
     static_assert(samples_per_frame % 8 == 0);
@@ -136,23 +143,77 @@ void MixSourceFrameA64(PlanarQuadFrame32& dest, const StereoFrame16& source,
             sample_indices_1 = vaddq_u32(sample_indices_1, sample_index_step);
         }
 
-        AccumulateSourceBand(dest_0_band, left_0, band_gain_0_0);
-        AccumulateSourceBand(dest_0_band + 4, left_1, band_gain_0_1);
-        AccumulateSourceBand(dest_1_band, right_0, band_gain_1_0);
-        AccumulateSourceBand(dest_1_band + 4, right_1, band_gain_1_1);
+        MixSourceBand<accumulate>(dest_0_band, left_0, band_gain_0_0);
+        MixSourceBand<accumulate>(dest_0_band + 4, left_1, band_gain_0_1);
+        MixSourceBand<accumulate>(dest_1_band, right_0, band_gain_1_0);
+        MixSourceBand<accumulate>(dest_1_band + 4, right_1, band_gain_1_1);
         if constexpr (rear_active) {
-            AccumulateSourceBand(dest_2_band, left_0, band_gain_2_0);
-            AccumulateSourceBand(dest_2_band + 4, left_1, band_gain_2_1);
-            AccumulateSourceBand(dest_3_band, right_0, band_gain_3_0);
-            AccumulateSourceBand(dest_3_band + 4, right_1, band_gain_3_1);
+            MixSourceBand<accumulate>(dest_2_band, left_0, band_gain_2_0);
+            MixSourceBand<accumulate>(dest_2_band + 4, left_1, band_gain_2_1);
+            MixSourceBand<accumulate>(dest_3_band, right_0, band_gain_3_0);
+            MixSourceBand<accumulate>(dest_3_band + 4, right_1, band_gain_3_1);
             dest_2_band += 8;
             dest_3_band += 8;
         }
+    }
+
+    if constexpr (!accumulate && !rear_active) {
+        static_assert(std::is_trivially_copyable_v<PlanarQuadFrame32::value_type>);
+        std::memset(dest.data() + 2, 0, 2 * sizeof(dest[0]));
     }
 }
 
 } // Anonymous namespace
 #endif
+
+namespace {
+
+template <bool accumulate>
+void MixSourceFrame(PlanarQuadFrame32& dest, const StereoFrame16& source,
+                    const std::array<float, 4>& ramp_start, const std::array<float, 4>& gains,
+                    bool ramp_active) {
+#if defined(__aarch64__)
+    const bool rear_silent =
+        !HasAudibleRearGain(gains) && (!ramp_active || !HasAudibleRearGain(ramp_start));
+    if (ramp_active) {
+        if (rear_silent) {
+            MixSourceFrameA64<true, false, accumulate>(dest, source, ramp_start, gains);
+        } else {
+            MixSourceFrameA64<true, true, accumulate>(dest, source, ramp_start, gains);
+        }
+    } else {
+        if (rear_silent) {
+            MixSourceFrameA64<false, false, accumulate>(dest, source, ramp_start, gains);
+        } else {
+            MixSourceFrameA64<false, true, accumulate>(dest, source, ramp_start, gains);
+        }
+    }
+#else
+    constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
+    for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
+        const float progress = static_cast<float>(sample) * ramp_scale;
+        for (std::size_t channel = 0; channel < dest.size(); ++channel) {
+            const float gain = ramp_active ? ramp_start[channel] +
+                                                 (gains[channel] - ramp_start[channel]) * progress
+                                           : gains[channel];
+            const s32 mixed = static_cast<s32>(gain * source[sample][channel & 1]);
+            if constexpr (accumulate) {
+                dest[channel][sample] += mixed;
+            } else {
+                dest[channel][sample] = mixed;
+            }
+        }
+    }
+#endif
+}
+
+CITRA_NO_INLINE void DefineSourceFrame(PlanarQuadFrame32& dest, const StereoFrame16& source,
+                                       const std::array<float, 4>& ramp_start,
+                                       const std::array<float, 4>& gains, bool ramp_active) {
+    MixSourceFrame<false>(dest, source, ramp_start, gains, ramp_active);
+}
+
+} // Anonymous namespace
 
 SourceStatus::Status Source::Tick(SourceConfiguration::Configuration& config,
                                   const s16_le (&adpcm_coeffs)[16]) {
@@ -182,42 +243,7 @@ void Source::MixInto(std::array<PlanarQuadFrame32, 3>& dest) {
         // NaN and every nonzero ramp still take the arithmetic path.
         const bool silent = !HasAudibleGain(gains) && (!ramp_active || !HasAudibleGain(ramp_start));
         if (!silent) {
-#if defined(__aarch64__)
-            const bool rear_silent =
-                !HasAudibleRearGain(gains) && (!ramp_active || !HasAudibleRearGain(ramp_start));
-            if (ramp_active) {
-                if (rear_silent) {
-                    MixSourceFrameA64<true, false>(dest[mix], current_frame, ramp_start, gains);
-                } else {
-                    MixSourceFrameA64<true, true>(dest[mix], current_frame, ramp_start, gains);
-                }
-            } else {
-                if (rear_silent) {
-                    MixSourceFrameA64<false, false>(dest[mix], current_frame, ramp_start, gains);
-                } else {
-                    MixSourceFrameA64<false, true>(dest[mix], current_frame, ramp_start, gains);
-                }
-            }
-#else
-            constexpr float ramp_scale = 1.0f / static_cast<float>(samples_per_frame - 1);
-            for (std::size_t sample = 0; sample < samples_per_frame; ++sample) {
-                const float progress = static_cast<float>(sample) * ramp_scale;
-                const float gain0 =
-                    ramp_active ? ramp_start[0] + (gains[0] - ramp_start[0]) * progress : gains[0];
-                const float gain1 =
-                    ramp_active ? ramp_start[1] + (gains[1] - ramp_start[1]) * progress : gains[1];
-                const float gain2 =
-                    ramp_active ? ramp_start[2] + (gains[2] - ramp_start[2]) * progress : gains[2];
-                const float gain3 =
-                    ramp_active ? ramp_start[3] + (gains[3] - ramp_start[3]) * progress : gains[3];
-
-                // Conversion from stereo (current_frame) to planar quadraphonic occurs here.
-                dest[mix][0][sample] += static_cast<s32>(gain0 * current_frame[sample][0]);
-                dest[mix][1][sample] += static_cast<s32>(gain1 * current_frame[sample][1]);
-                dest[mix][2][sample] += static_cast<s32>(gain2 * current_frame[sample][0]);
-                dest[mix][3][sample] += static_cast<s32>(gain3 * current_frame[sample][1]);
-            }
-#endif
+            MixSourceFrame<true>(dest[mix], current_frame, ramp_start, gains, ramp_active);
         }
 
         if (ramp_active) {
@@ -225,6 +251,32 @@ void Source::MixInto(std::array<PlanarQuadFrame32, 3>& dest) {
             state.gain_ramp_active[mix] = false;
         }
     }
+}
+
+CITRA_NO_INLINE u32 Source::MixIntoFirst(std::array<PlanarQuadFrame32, 3>& dest) {
+    if (!state.enabled) {
+        state.gain_ramp_start = state.gain;
+        state.gain_ramp_active.fill(false);
+        return 0;
+    }
+
+    u32 defined_mask = 0;
+    for (std::size_t mix = 0; mix < dest.size(); ++mix) {
+        const std::array<float, 4>& gains = state.gain[mix];
+        const bool ramp_active = state.gain_ramp_active[mix];
+        const std::array<float, 4>& ramp_start = state.gain_ramp_start[mix];
+        const bool silent = !HasAudibleGain(gains) && (!ramp_active || !HasAudibleGain(ramp_start));
+        if (!silent) {
+            DefineSourceFrame(dest[mix], current_frame, ramp_start, gains, ramp_active);
+            defined_mask |= u32{1} << mix;
+        }
+
+        if (ramp_active) {
+            state.gain_ramp_start[mix] = gains;
+            state.gain_ramp_active[mix] = false;
+        }
+    }
+    return defined_mask;
 }
 
 void Source::Reset() {

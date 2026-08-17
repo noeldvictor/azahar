@@ -3,6 +3,8 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <cstring>
+#include <type_traits>
 
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/base_object.hpp>
@@ -415,13 +417,44 @@ StereoFrame16 DspHle::Impl::GenerateCurrentFrame() {
     HLE::SharedMemory& read = ReadRegion();
     HLE::SharedMemory& write = WriteRegion();
 
-    std::array<PlanarQuadFrame32, 3> intermediate_mixes = {};
+    std::array<PlanarQuadFrame32, 3> intermediate_mixes;
+    bool intermediate_mixes_initialized = false;
 
     // Generate intermediate mixes
     for (std::size_t i = 0; i < HLE::num_sources; i++) {
         write.source_statuses.status[i] =
             sources[i].Tick(read.source_configurations.config[i], read.adpcm_coefficients.coeff[i]);
-        sources[i].MixInto(intermediate_mixes);
+        if (intermediate_mixes_initialized) {
+            sources[i].MixInto(intermediate_mixes);
+            continue;
+        }
+
+        const u32 defined_mask = sources[i].MixIntoFirst(intermediate_mixes);
+        if (defined_mask == 0) {
+            continue;
+        }
+
+        // Once one source produces audio, define every still-silent bus so later sources can use
+        // the original accumulation fast path without carrying per-bus initialization checks.
+        for (std::size_t mix = 0; mix < intermediate_mixes.size();) {
+            if ((defined_mask & (u32{1} << mix)) != 0) {
+                ++mix;
+                continue;
+            }
+            const std::size_t pending_begin = mix;
+            do {
+                ++mix;
+            } while (mix < intermediate_mixes.size() && (defined_mask & (u32{1} << mix)) == 0);
+            static_assert(std::is_trivially_copyable_v<PlanarQuadFrame32>);
+            std::memset(intermediate_mixes.data() + pending_begin, 0,
+                        (mix - pending_begin) * sizeof(intermediate_mixes[0]));
+        }
+        intermediate_mixes_initialized = true;
+    }
+
+    if (!intermediate_mixes_initialized) {
+        static_assert(std::is_trivially_copyable_v<PlanarQuadFrame32>);
+        std::memset(intermediate_mixes.data(), 0, sizeof(intermediate_mixes));
     }
 
     // Generate final mix
