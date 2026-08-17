@@ -225,7 +225,7 @@ SoundTouch's 64-tap anti-alias FIR also carried a hidden x86/Windows assumption:
 lets Clang use 32-bit NEON `SMLAL` lanes. The AArch64 stereo loop also loads one canonical
 coefficient vector for both channels instead of fetching the duplicated stereo coefficient table.
 Final linked core-loop work falls from about 800 scalar instructions per output frame to 68 NEON
-instructions, a 91.5% path-local reduction; coefficient traffic falls from 64 to 32 bytes per
+instructions, a 91.5% path-local reduction; coefficient traffic falls from 256 to 128 bytes per
 output frame. Exact-output/canary tests cover 64-tap anti-alias coefficients and signed-16 extremes.
 This helps the audio time-stretch/anti-alias path when active, but is not a measured game FPS or
 battery-watt result.

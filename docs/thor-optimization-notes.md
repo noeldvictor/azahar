@@ -1702,7 +1702,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   68 instructions per output frame: 91.5% fewer than the roughly 800-instruction scalar baseline.
   The first 32-bit auto-vectorized form was 24 instructions repeated four times; using the canonical
   coefficients removes another 28 instructions per output frame (29.2%) and cuts coefficient reads
-  from 64 to 32 bytes. Total sample-plus-coefficient input traffic falls from 128 to 96 bytes per
+  from 256 to 128 bytes. Total sample-plus-coefficient input traffic falls from 512 to 384 bytes per
   output frame. The full function grows from 336 to 444 bytes to hold vector and remainder paths.
 - A coefficient sweep across 100,001 cutoffs from 0 through 0.5 found a maximum absolute 64-tap
   coefficient sum of 36,421. Even full-scale signed-16 input bounds accumulation at 1,193,443,328,
