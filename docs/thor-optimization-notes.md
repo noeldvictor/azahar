@@ -639,16 +639,17 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   from bank 0, then verifies the following write lands in bank 1. The same source covers the
   interpreter and JIT implementations.
 - `:app:buildCMakeRelWithDebInfo[arm64-v8a]` rebuilt both changed sources and linked the AArch64
-  test executable and `libcitra-android.so` successfully in 1m05s. The test executable cannot run
+  test executable and `libcitra-android.so` successfully in 1m05s. After merging the two newest
+  Azahar upstream commits, the same target passed again in 1m09s. The test executable cannot run
   on the x64 host and the active restriction forbids using the Thor, so this is compile/link plus
-  regression-source evidence, not a runtime test. `:app:assembleVanillaRelWithDebInfoLite` then
-  completed in 34s. The resulting 28,965,491-byte APK contains only `arm64-v8a` native libraries
-  and has SHA-256 `DA4927B3F0D5843D9FEE7ACC2DD715B8D618E5504D5343A6969B499AE8942303`.
-  No ADB command, install, launch, or device test was performed.
-- After verification, the exact 1.73 GiB reproducible `src/android/app/build/intermediates` tree
-  was removed. Two Gradle daemons were stopped to release the final locked 5,179,280-byte R8
-  `classes.dex`; the final APK and active `arm64-v8a` RelWithDebInfo CMake cache were retained.
-  Free C: space returned to 101.27 GiB.
+  regression-source evidence, not a runtime test. The final
+  `:app:assembleVanillaRelWithDebInfoLite` completed in 1m58s. Its 28,966,043-byte APK contains only
+  `arm64-v8a` native libraries and has SHA-256
+  `3E0783EC7BE887AC38AECBEED34D5851462EDDB2D4CC0327BB7C705F3038616C`. No ADB command, install,
+  launch, or device test was performed.
+- After verification, the final exact 1,854,228,806-byte reproducible
+  `src/android/app/build/intermediates` tree was removed. The Gradle daemon was stopped first; the
+  final APK and active `arm64-v8a` RelWithDebInfo CMake cache were retained.
 - A future allowed Thor A/B should use the same title and vertex-heavy scene, cache state, driver,
   resolution, layout, performance mode, fan mode, brightness, and duration. Record frametimes,
   process CPU time, battery power, temperature, thermal slope, stability, and visual correctness;
