@@ -907,8 +907,10 @@ void TDStretch::calculateOverlapLength(int aoverlapMs)
 
 double TDStretch::calcCrossCorr(const short *mixingPos, const short *compare, double &norm)
 {
-    long corr;
-    unsigned long lnorm;
+    // The scaling algorithm and adaptive thresholds are designed for a 32-bit
+    // accumulator. C++ long accidentally widened both values on Android LP64.
+    int32_t corr;
+    uint32_t lnorm;
     int i;
 
     #ifdef ST_SIMD_AVOID_UNALIGNED
@@ -921,6 +923,12 @@ double TDStretch::calcCrossCorr(const short *mixingPos, const short *compare, do
 
     corr = lnorm = 0;
     // Same routine for stereo and mono
+#if defined(__aarch64__) && defined(__clang__) && defined(ANDROID)
+    // One interleaved vector group keeps the hot loop within caller-saved NEON
+    // registers on Android while retaining enough independent accumulators for
+    // the Cortex-X3/A715/A710/A510 multiply and horizontal-reduction pipelines.
+    #pragma clang loop interleave_count(1)
+#endif
     for (i = 0; i < ilength; i += 2)
     {
         corr += (mixingPos[i] * compare[i] +
@@ -949,8 +957,8 @@ double TDStretch::calcCrossCorr(const short *mixingPos, const short *compare, do
 /// Update cross-correlation by accumulating "norm" coefficient by previously calculated value
 double TDStretch::calcCrossCorrAccumulate(const short *mixingPos, const short *compare, double &norm)
 {
-    long corr;
-    long lnorm;
+    int32_t corr;
+    int32_t lnorm;
     int i;
 
     // hint compiler autovectorization that loop length is divisible by 8
@@ -965,6 +973,9 @@ double TDStretch::calcCrossCorrAccumulate(const short *mixingPos, const short *c
 
     corr = 0;
     // Same routine for stereo and mono.
+#if defined(__aarch64__) && defined(__clang__) && defined(ANDROID)
+    #pragma clang loop interleave_count(1)
+#endif
     for (i = 0; i < ilength; i += 2)
     {
         corr += (mixingPos[i] * compare[i] +
@@ -981,7 +992,7 @@ double TDStretch::calcCrossCorrAccumulate(const short *mixingPos, const short *c
     norm += (double)lnorm;
     if (norm > maxnorm)
     {
-        maxnorm = (unsigned long)norm;
+        maxnorm = static_cast<uint32_t>(norm);
     }
 
     // Normalize result by dividing by sqrt(norm) - this step is easiest

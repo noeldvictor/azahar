@@ -99,6 +99,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Integer SoundTouch stereo overlap uses exact AArch64 NEON widening multiply-accumulate and
   power-of-two shifts, processing four frames per vector loop without the old per-channel scalar
   divides. SoundTouch is vendored here so this ARM64 path does not depend on a separate fork.
+- SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
+  Android's LP64 ABI. A spill-free AArch64 NEON loop cuts the repeatedly used correlation body by
+  20% versus the prior linked code while preserving the rolling-normalizer arithmetic.
 - The HLE DSP keeps its temporary quadraphonic mixes channel-planar, eliminating structured
   `LD4`/`ST4` transposes from source accumulation and final downmix and turning enabled auxiliary
   bus exchange into contiguous copies.
@@ -214,11 +217,21 @@ be measured under controlled conditions.
 
 ## AArch64 Audio Updates
 
-Thor's integer SoundTouch path already receives useful compiler-generated NEON for WSOLA
-cross-correlation. The remaining scalar stereo-overlap loop now uses explicit baseline AArch64 NEON
-for four frames at a time and eliminates eight `SDIV` instructions over that span. Negative results
-retain C++ truncation-toward-zero behavior. ARM64 compile/link and differential regression sources
-validate the path; sustained speed and power effects still require a controlled Thor A/B.
+Thor's integer SoundTouch stereo-overlap loop uses explicit baseline AArch64 NEON for four frames
+at a time and eliminates eight `SDIV` instructions over that span. Negative results retain C++
+truncation-toward-zero behavior. ARM64 compile/link and differential regression sources validate
+the path; sustained speed and power effects still require a controlled Thor A/B.
+
+WSOLA cross-correlation had a second Windows-to-Android width mismatch: C++ `long` kept its
+correlation state at 32 bits on Windows but widened it to 64 bits on Android AArch64, despite the
+algorithm's explicit 32-bit scaling and adaptive thresholds. Exact-width state plus a
+manual-guided Clang interleave limit keeps the linked loop spill-free. The direct loop falls from
+24 to 20 instructions per eight stereo frames, while the repeatedly called rolling-correlation
+loop falls from an equivalent 30 to 24 instructions per sixteen frames (20%). At a 512-frame
+overlap that removes 256 and 192 inner-loop instructions, respectively. Permanent scalar-reference
+coverage preserves paired correlation rounding, per-sample rolling-normalizer rounding, signed
+results, and 16/256/1024-frame configurations. These are path-local code-generation results, not
+measured game FPS or battery watts.
 
 SoundTouch's 64-tap anti-alias FIR also carried a hidden x86/Windows assumption: its documented
 32-bit accumulator was C++ `long`, which is 64-bit on Android AArch64. Making the width explicit

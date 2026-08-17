@@ -117,7 +117,7 @@ protected:
     int seekWindowMs;
     int overlapMs;
 
-    unsigned long maxnorm;
+    uint32_t maxnorm; // Intentionally 32-bit on Android's LP64 ABI.
     float maxnormf;
 
     double tempo;

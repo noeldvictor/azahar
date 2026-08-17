@@ -47,10 +47,30 @@ short ShiftAndClamp(std::int64_t sum) {
 
 class TDStretchHarness final : public soundtouch::TDStretch {
 public:
+    static constexpr std::size_t MaxNormBytes() {
+        return sizeof(maxnorm);
+    }
+
     int Prepare(int sample_rate, int overlap_ms) {
         setChannels(2);
         setParameters(sample_rate, 40, 15, overlap_ms);
         return overlapLength;
+    }
+
+    int DividerBits() const {
+        return overlapDividerBitsNorm;
+    }
+
+    std::uint32_t MaxNorm() const {
+        return maxnorm;
+    }
+
+    double CrossCorr(const short* mixing, const short* compare, double& norm) {
+        return calcCrossCorr(mixing, compare, norm);
+    }
+
+    double CrossCorrAccumulate(const short* mixing, const short* compare, double& norm) {
+        return calcCrossCorrAccumulate(mixing, compare, norm);
     }
 
     void SetMidBuffer(const std::vector<short>& samples) {
@@ -62,9 +82,51 @@ public:
     }
 };
 
+struct CorrelationReference {
+    std::int64_t correlation;
+    std::uint64_t norm;
+};
+
+std::int64_t ArithmeticShiftRight(std::int64_t value, int bits) {
+    const std::int64_t divisor = std::int64_t{1} << bits;
+    return value >= 0 ? value / divisor : -((-value + divisor - 1) / divisor);
+}
+
+CorrelationReference CalculateCorrelationReference(const short* mixing, const short* compare,
+                                                   int sample_count, int divider_bits) {
+    CorrelationReference result{};
+    for (int i = 0; i < sample_count; i += 2) {
+        const std::int64_t corr_pair =
+            static_cast<std::int32_t>(mixing[i]) * static_cast<std::int32_t>(compare[i]) +
+            static_cast<std::int32_t>(mixing[i + 1]) *
+                static_cast<std::int32_t>(compare[i + 1]);
+        const std::int64_t norm_pair =
+            static_cast<std::int32_t>(mixing[i]) * static_cast<std::int32_t>(mixing[i]) +
+            static_cast<std::int32_t>(mixing[i + 1]) *
+                static_cast<std::int32_t>(mixing[i + 1]);
+        result.correlation += ArithmeticShiftRight(corr_pair, divider_bits);
+        result.norm += static_cast<std::uint64_t>(norm_pair) >> divider_bits;
+    }
+    return result;
+}
+
+std::int64_t CalculateNormalizerDelta(const short* mixing, int sample_count, int divider_bits) {
+    std::int64_t delta = 0;
+    for (int i = 1; i <= 2; ++i) {
+        const std::int64_t sample = mixing[-i];
+        delta -= (sample * sample) >> divider_bits;
+    }
+    for (int i = sample_count - 2; i < sample_count; ++i) {
+        const std::int64_t sample = mixing[i];
+        delta += (sample * sample) >> divider_bits;
+    }
+    return delta;
+}
+
 } // namespace
 
 static_assert(sizeof(soundtouch::LONG_SAMPLETYPE) == sizeof(std::int32_t));
+static_assert(TDStretchHarness::MaxNormBytes() == sizeof(std::uint32_t));
 
 TEST_CASE("SoundTouch stereo FIR matches a 32-bit scalar reference", "[audio_core][soundtouch]") {
     constexpr std::array<short, 12> values{
@@ -154,5 +216,73 @@ TEST_CASE("SoundTouch stereo overlap matches scalar integer division", "[audio_c
         stretch.SetMidBuffer(mid);
         stretch.Overlap(actual, input);
         REQUIRE(actual == expected);
+    }
+}
+
+TEST_CASE("SoundTouch WSOLA correlation matches bounded 32-bit scalar arithmetic",
+          "[audio_core][soundtouch]") {
+    constexpr std::array<std::array<int, 2>, 3> configurations{{
+        {8000, 2},
+        {44100, 8},
+        {48000, 30},
+    }};
+    constexpr int offsets_to_check = 9;
+    constexpr int prefix_samples = 2;
+
+    for (const auto [sample_rate, overlap_ms] : configurations) {
+        TDStretchHarness stretch;
+        const int overlap_length = stretch.Prepare(sample_rate, overlap_ms);
+        const int sample_count = 2 * overlap_length;
+        const int divider_bits = stretch.DividerBits();
+        CAPTURE(sample_rate, overlap_ms, overlap_length, divider_bits);
+
+        std::vector<short> mixing(static_cast<std::size_t>(prefix_samples + sample_count +
+                                                           2 * offsets_to_check));
+        std::vector<short> compare(static_cast<std::size_t>(sample_count));
+        for (std::size_t i = 0; i < mixing.size(); ++i) {
+            mixing[i] = static_cast<short>((i * 4051 + i * i * 29 + 7919) % 32001 - 16000);
+        }
+        for (std::size_t i = 0; i < compare.size(); ++i) {
+            compare[i] = static_cast<short>((i * 3253 + i * i * 17 + 1237) % 32001 - 16000);
+        }
+
+        const short* const first = mixing.data() + prefix_samples;
+        const auto initial =
+            CalculateCorrelationReference(first, compare.data(), sample_count, divider_bits);
+        REQUIRE(initial.correlation >= std::numeric_limits<std::int32_t>::min());
+        REQUIRE(initial.correlation <= std::numeric_limits<std::int32_t>::max());
+        REQUIRE(initial.norm <= std::numeric_limits<std::uint32_t>::max());
+
+        double running_norm = 0.0;
+        const double initial_actual = stretch.CrossCorr(first, compare.data(), running_norm);
+        const double initial_expected =
+            static_cast<double>(initial.correlation) / std::sqrt(static_cast<double>(initial.norm));
+        REQUIRE(running_norm == static_cast<double>(initial.norm));
+        REQUIRE(initial_actual == initial_expected);
+        REQUIRE(stretch.MaxNorm() == initial.norm);
+
+        std::int64_t expected_running_norm = static_cast<std::int64_t>(initial.norm);
+        for (int offset = 1; offset <= offsets_to_check; ++offset) {
+            const short* const position = first + 2 * offset;
+            const auto expected =
+                CalculateCorrelationReference(position, compare.data(), sample_count, divider_bits);
+            REQUIRE(expected.correlation >= std::numeric_limits<std::int32_t>::min());
+            REQUIRE(expected.correlation <= std::numeric_limits<std::int32_t>::max());
+            const std::int64_t norm_delta =
+                CalculateNormalizerDelta(position, sample_count, divider_bits);
+            REQUIRE(norm_delta >= std::numeric_limits<std::int32_t>::min());
+            REQUIRE(norm_delta <= std::numeric_limits<std::int32_t>::max());
+            expected_running_norm += norm_delta;
+            REQUIRE(expected_running_norm >= 0);
+            REQUIRE(expected_running_norm <= std::numeric_limits<std::uint32_t>::max());
+
+            const double actual =
+                stretch.CrossCorrAccumulate(position, compare.data(), running_norm);
+            const double expected_value = static_cast<double>(expected.correlation) /
+                                          std::sqrt(static_cast<double>(expected_running_norm));
+            CAPTURE(offset, expected.correlation, norm_delta, expected_running_norm);
+            REQUIRE(running_norm == static_cast<double>(expected_running_norm));
+            REQUIRE(actual == expected_value);
+        }
     }
 }

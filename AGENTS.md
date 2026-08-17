@@ -12,6 +12,14 @@
   saturation, generic non-AArch64 coefficient-table path, and exact output. Final linked code should
   retain paired coefficient loads, two sample `LD2`, independent `SMLAL`/`SMLAL2` accumulators, and
   `ADDV` reductions per sixteen taps rather than duplicated coefficient `LD2` or scalar `SMADDL`.
+- SoundTouch's integer WSOLA correlation state (`corr`, rolling `lnorm`, and `maxnorm`) is also
+  intentionally 32-bit. Do not restore C++ `long`/`unsigned long` on Android LP64. Preserve the
+  distinction between the initial paired normalizer shift and the accumulator path's per-sample
+  shifted subtraction/addition, including their possible rounding-unit difference. Android
+  AArch64 Clang should retain `interleave_count(1)`: final linked code must stay spill-free and use
+  two `LD2`, four `SMULL`/`SMLAL`, two shifts, two vector adds, and one loop branch per eight stereo
+  frames before the `ADDV` reduction. Re-run the 16/256/1024-frame differential coverage after
+  changing the correlation math or compiler hints.
 - Ask the user before making a materially different product, source-policy, or UX choice when the repository and existing requirements do not settle it. Keep moving with safe, reversible assumptions when the choice does not materially change the result.
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.

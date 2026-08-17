@@ -1729,6 +1729,53 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   then record DSP/audio-thread time, audio underruns, frametimes, battery power, temperature,
   thermal slope, output correctness, and stability.
 
+## 2026-08-17 AArch64 SoundTouch WSOLA Correlation
+
+- SoundTouch's integer WSOLA code explicitly scales its correlation to avoid overflowing a 32-bit
+  register, and its adaptive normalizer thresholds top out at 1.6 billion. Nevertheless, it used
+  C++ `long`/`unsigned long` for `corr`, `lnorm`, and `maxnorm`: 32 bits on Windows LLP64 but 64
+  bits on Android AArch64 LP64. The linked Android loops consequently widened every shifted 32-bit
+  lane into 64-bit accumulators even though the pair products and shifts were already 32-bit.
+- Those values are now exact `int32_t`/`uint32_t`. The code keeps SoundTouch's paired product/shift
+  arithmetic and adaptive thresholds unchanged. Android AArch64 Clang is limited to one vector
+  interleave group: its unrestricted 32-bit lowering processed sixteen frames per iteration but
+  spilled/restored callee-saved `d8`; the selected eight-frame loop exposes four independent 4S
+  accumulators and has no stack or vector-register spill.
+- The complete relevant pages were visually checked in the external Cortex-X3 issue 4.0 guide
+  (pages 26-28), Cortex-A715 issue 5.0 guide (pages 28-29), Cortex-A710 issue 4.0 guide (pages
+  42-43), and Cortex-A510 issue 6.0 guide (pages 35-36). Their basic/widening arithmetic,
+  `SMULL`/`SMLAL`, reduction, dependency, latency, and throughput tables drove the decision to
+  retain multiple independent 32-bit chains and defer `ADDV` until after the loop.
+- Final linked `calcCrossCorr` shrinks from 464 to 416 bytes (10.3%). Its core loop falls from 24
+  to 20 instructions per eight stereo frames (16.7%); at a 512-frame overlap, that is 1,536 to
+  1,280 inner instructions, saving 256 for the initial correlation window.
+- Final linked `calcCrossCorrAccumulate`, used at every subsequent full-search offset, shrinks from
+  1,004 to 788 bytes (21.5%). Its correlation body falls from 30 instructions per sixteen frames
+  to 12 per eight, or 24 per sixteen (20%); at a 512-frame overlap, that is 960 to 768 inner
+  instructions, saving 192 per tested search offset. The final body is exactly two `LD2`, four
+  `SMULL`/`SMLAL`, two vector shifts, two vector adds, loop control, and a deferred `ADDV`.
+- Permanent Catch2 coverage uses independently generated signed samples and checks the real
+  16-, 256-, and 1024-frame overlap configurations across an initial correlation plus nine rolling
+  offsets. It asserts every tested correlation, normalizer, and delta fits the intended width and
+  models SoundTouch's important rounding detail: initial norm shifts paired squares, while rolling
+  updates shift the outgoing/incoming samples individually. An optimized Windows build of the
+  real SoundTouch sources passed the same scalar differential algorithm and was removed afterward.
+- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` compiled and linked the permanent test and production
+  ThinLTO library. `:app:assembleVanillaRelWithDebInfoLite` then passed in 2 minutes 19 seconds. The
+  resulting 28,965,755-byte APK contains only `arm64-v8a` libraries and has SHA-256
+  `E8DD5F641E9DDFB4E1A949ADDAFFA5D9DD82CC7F3B923F60ADC6B61D29A33DF9`.
+- After verification, exact Gradle intermediates and downloaded JNI copies, mapping/debug-symbol
+  output, the 444,622,688-byte ARM64 test executable, host-verifier objects, and repo-local manual
+  renders were removed. The APK and active ARM64 CMake cache were retained; net free C: space
+  increased by 1,050,345,472 bytes (about 0.98 GiB). No source, external manual, save, or unrelated
+  file was touched.
+- No device, ADB, install, launch, game, FPS run, or battery measurement was used. These are exact
+  path-local instruction/code-size reductions, not a whole-game speed or wattage claim. A future
+  allowed Thor A/B should hold title, scene, save, caches, renderer, resolution, driver, layout,
+  performance/fan mode, brightness, audio backend, speed limit, and duration constant, then record
+  DSP/audio-thread time, audio underruns, frametimes, battery power, temperature, thermal slope,
+  output correctness, and stability.
+
 ## High-Value Optimization Places
 
 1. PICA AArch64 source-swizzle lowering
