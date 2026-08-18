@@ -3074,6 +3074,47 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   3,229,693,469-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains. C: reported
   87,055,941,632 bytes free after cleanup.
 
+## 2026-08-17 AArch64 PICA Reciprocal-Square-Root Refinement
+
+- The x64 PICA shader backend implements `RCP` and `RSQ` with approximate host instructions, while
+  AArch64 used exact scalar `FDIV` for `RCP` and exact `FSQRT` followed by `FDIV` for `RSQ`. The
+  Cortex-X3, A715, and A710 timing tables list F32 divide/square-root latency at 7-10 cycles,
+  reciprocal estimates at three, and refinement steps at four; A510 lists divide at 13, square root
+  at 12, and estimate/refinement/multiply at four cycles.
+- A temporary ARM64 Android benchmark compared exact operations with one- and two-step hardware
+  estimate sequences over 8,388,608 operations, taking the best of five runs with `FPCR=0`. Pinned
+  results for exact versus one-step `RSQ` were 8.1428 versus 5.9943 ns/op on CPU 0 (26.4% faster),
+  1.4515 versus 0.8241 on CPU 3 (43.2%), 1.3848 versus 0.8300 on CPU 5 (40.1%), and 0.6619 versus
+  0.5547 on CPU 7 (16.2%). One-step `RCP` was slower on all four cores, and two-step sequences were
+  slower than exact, so `RCP` stays exact and `RSQ` uses exactly one refinement.
+- Over 1,000,000 positive-normal values, the selected `RSQ` sequence had maximum relative error
+  `1.6128e-5` and maximum error 195 ULP. Positive and negative zero, positive infinity, negative
+  infinity, NaN, and negative finite inputs retained the prior result classes and bit patterns.
+  Squaring the estimate before `FRSQRTS` is intentional: rearranging the operand as input times
+  estimate would disturb the architecture's infinity-times-zero special handling.
+- The AArch64 JIT now emits scalar `FRSQRTE`, squares the estimate, applies `FRSQRTS` with the
+  original source, and performs the final `FMUL` before broadcasting the lane. Permanent tests cover
+  zero plus 8,000 dense positive-normal inputs across exponents `-62..62`; both template backends
+  therefore execute 16,000 dense assertions.
+- A fresh 2,199-action ARM64 native build passed in 11 minutes 12 seconds. Over Wi-Fi ADB
+  `192.168.1.33:5555`, the focused `RSQ*` suite passed all 16,028 assertions in two cases, and the
+  complete `[shader]` suite passed all 18,278 assertions in 50 cases. The stripped test executable
+  was removed from both host and device. Source commit `10a238446` was pushed to `master`.
+- Final release-style packaging passed in 2 minutes 54 seconds. The ARM64-only, v2-signed APK is
+  28,975,596 bytes, reports `10a238446-vanilla-thor`, and has SHA-256
+  `1A9BD9C26782526D7F5D39FD8EDF8E8F432226EB99D93D8AB4241F82FDABA028`. It installed successfully
+  over `org.azahar_emu.azahar.debug` and reports `primaryCpuAbi=arm64-v8a`; Azahar was force-stopped
+  before and after installation, and no app UI or game was launched. The Thor reported USB power,
+  no AC or wireless power, 80% battery, 4.214 V, and 25.0 C. USB power is not a battery-discharge
+  watt measurement.
+- Post-verification cleanup removed 2,024,213,566 logical bytes of Gradle/native staging, native
+  helper binaries, and the local Gradle cache. `app/build` now contains only the 28,975,596-byte APK
+  and its 476-byte metadata; the 3,224,935,167-byte active ARM64 RelWithDebInfo CMake/Ninja cache
+  remains. C: reported 86,472,650,752 bytes free after cleanup.
+- These are local operation timings and correctness results, not a whole-game FPS or power claim.
+  A matched game A/B is still required with title, save, caches, renderer, driver, resolution,
+  layout, performance/fan mode, brightness, and duration held constant.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

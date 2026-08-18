@@ -89,6 +89,13 @@
   with scalar `SCVTF`, never unsigned `UCVTF` or a GPR-to-vector move first. Preserve its
   `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value
   vectors and branches. Keep power-of-two coverage across negative and positive exponents on ARM64.
+- Keep AArch64 PICA `RCP` on exact scalar `FDIV`: a hardware estimate plus one or two Newton steps
+  measured slower on every Thor core class. `RSQ` deliberately uses one scalar `FRSQRTE`, squares
+  that estimate, applies `FRSQRTS` with the original input, then performs the final `FMUL`. Do not
+  replace the squared-estimate operand with a precomputed `input * estimate`; that changes the
+  architecture's infinity-times-zero special handling. Preserve zero, infinity, negative, and NaN
+  behavior, keep one refinement only (two were slower than exact everywhere), and retain dense
+  positive-normal exponent coverage on real ARM64.
 - The AArch64 PICA `CMP` helper combines X/Y only when both lanes use the same operation. Preserve
   the ordered `FCMEQ`/`FCMGT`/`FCMGE` masks, inverted-equality implementation of `NotEqual` so NaN
   remains unordered/true, sign-bit extraction for lanes zero and one, and the unchanged scalar path

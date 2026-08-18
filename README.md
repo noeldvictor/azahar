@@ -255,6 +255,15 @@ could become `4294967296.0` instead of `-1.0`. It now uses one direct scalar `SC
 matching x64 signed conversion while removing the old GPR-to-vector move. The complete ARM64 shader
 suite passes all 2,276 assertions on the Thor.
 
+The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
+contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
+`FDIV`. A pinned Thor microbenchmark measured the isolated operation 16.2% to 43.2% faster across
+the little, middle, and prime core classes. One million positive-normal samples had maximum relative
+error `1.613e-5`, while zero, infinity, negative, and NaN handling matched the prior helper; the full
+on-device shader suite passes all 18,278 assertions. `RCP` deliberately remains exact because its
+estimate-and-refine candidate was slower on every tested core. These are path-local measurements,
+not a whole-game FPS or battery-watt result.
+
 The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
 `LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;
 nonconsecutive or duplicate IDs retain ordered writes, while special, extended, invalid, and short
