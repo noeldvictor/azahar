@@ -1398,6 +1398,87 @@ TEST_CASE("Dynarmic A32 mixed saturated add-sub preserves lanes and flags",
     CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
 }
 
+TEST_CASE("Dynarmic A32 unsigned byte absolute-difference sums preserve four-lane semantics",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        bool accumulate;
+        bool source_alias;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe780f312, false, false, false},  // ARM USAD8 R0, R2, R3
+        Operation{0xe7804312, true, false, false},   // ARM USADA8 R0, R2, R3, R4
+        Operation{0xe780f110, false, true, false},   // ARM USAD8 R0, R0, R1
+        Operation{0xe7800110, true, true, false},    // ARM USADA8 R0, R0, R1, R0
+        Operation{0xf003fb72, false, false, true},  // Thumb USAD8 R0, R2, R3
+        Operation{0x4003fb72, true, false, true},   // Thumb USADA8 R0, R2, R3, R4
+        Operation{0xf001fb70, false, true, true},   // Thumb USAD8 R0, R0, R1
+        Operation{0x0001fb70, true, true, true},    // Thumb USADA8 R0, R0, R1, R0
+    };
+    struct Inputs {
+        std::uint32_t accumulator;
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0, 0x00000000, 0xffffffff},
+        Inputs{0xffffffff, 0x00000000, 0xffffffff},
+        Inputs{0x80000000, 0x00ff7f80, 0xff00807f},
+        Inputs{0x12345678, 0x01234567, 0x89abcdef},
+        Inputs{0xdeadbeef, 0xa5a5a5a5, 0x5a5a5a5a},
+    };
+    const auto difference_sum = [](std::uint32_t n, std::uint32_t m) {
+        std::uint32_t sum = 0;
+        for (std::size_t byte = 0; byte < 4; ++byte) {
+            const auto n_byte = static_cast<std::uint8_t>(n >> (byte * 8));
+            const auto m_byte = static_cast<std::uint8_t>(m >> (byte * 8));
+            sum += n_byte > m_byte ? n_byte - m_byte : m_byte - n_byte;
+        }
+        return sum;
+    };
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe,  // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+
+            const std::uint32_t n = operation.source_alias ? input.accumulator : input.n;
+            const std::uint32_t expected =
+                difference_sum(n, input.m) + (operation.accumulate ? input.accumulator : 0);
+            CAPTURE(operation.instruction, input.accumulator, n, input.m, expected);
+
+            jit.Regs() = {};
+            jit.Regs()[0] = input.accumulator;
+            jit.Regs()[1] = input.m;
+            jit.Regs()[2] = input.n;
+            jit.Regs()[3] = input.m;
+            jit.Regs()[4] = input.accumulator;
+            jit.Regs()[5] = 0xcafebabe;
+            constexpr std::uint32_t initial_flags = 0xf80f0000;  // NZCV/Q/GE
+            jit.SetCpsr(initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == expected);
+            CHECK(jit.Regs()[5] == 0xcafebabe);
+            if (!operation.source_alias) {
+                CHECK(jit.Regs()[2] == input.n);
+                CHECK(jit.Regs()[3] == input.m);
+                CHECK(jit.Regs()[4] == input.accumulator);
+            } else {
+                CHECK(jit.Regs()[1] == input.m);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == initial_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

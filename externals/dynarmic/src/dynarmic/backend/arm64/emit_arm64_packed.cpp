@@ -482,10 +482,11 @@ void EmitIR<IR::Opcode::PackedSaturatedSubAddS16>(oaknut::CodeGenerator& code, E
 template<>
 void EmitIR<IR::Opcode::PackedAbsDiffSumU8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitPackedOp(code, ctx, inst, [&](auto& Vresult, auto& Va, auto& Vb) {
-        code.MOVI(D2, oaknut::RepImm{0b00001111});
-        code.UABD(Vresult->B8(), Va->B8(), Vb->B8());
-        code.AND(Vresult->B8(), Vresult->B8(), V2.B8());  // TODO: Zext tracking
-        code.UADDLV(Vresult->toH(), Vresult->B8());
+        // USAD8 consumes exactly the low four bytes. Widening all eight byte differences places
+        // those four lanes in the low 4H arrangement, so the following reduction ignores any
+        // undefined upper word in the packed operands without materializing and applying a mask.
+        code.UABDL(Vresult->toQ().H8(), Va->B8(), Vb->B8());
+        code.UADDLV(Vresult->toS(), Vresult->H4());
     });
 }
 
