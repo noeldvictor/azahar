@@ -218,3 +218,31 @@ TEST_CASE("Dynarmic A32 SEL preserves per-byte GE selection", "[core][arm][dynar
         CHECK((jit.Cpsr() & 0x000f0000) == ge << 16);
     }
 }
+
+TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe6af1070,  // SXTB R1, R0
+        0xe6bf2070,  // SXTH R2, R0
+        0xe1630480,  // SMULBB R3, R0, R4
+        0xe1a05410,  // LSL R5, R0, R4
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.Regs() = {};
+    jit.Regs()[0] = 0x12348081;
+    jit.Regs()[4] = 0xffff0001;
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    CHECK(jit.Regs()[1] == 0xffffff81);
+    CHECK(jit.Regs()[2] == 0xffff8081);
+    CHECK(jit.Regs()[3] == 0xffff8081);
+    CHECK(jit.Regs()[5] == 0x24690102);
+}

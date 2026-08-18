@@ -121,6 +121,11 @@ public:
     size_t UseCount() const { return use_count; }
     bool HasUses() const { return use_count > 0; }
 
+    /// Gets the next instruction in this block, or nullptr at the block end.
+    const Inst* GetNextInstruction() const {
+        return next && !next->is_sentinel() ? static_cast<const Inst*>(next) : nullptr;
+    }
+
     /// Determines if there is a pseudo-operation associated with this instruction.
     bool HasAssociatedPseudoOperation() const;
     /// Gets a pseudo-operation associated with this instruction.

@@ -44,6 +44,20 @@ static void EmitThreeOp(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* inst
     emit(Rresult, Ra, Rb);
 }
 
+static bool IsImmediatelySignExtended(const IR::Inst* value, IR::Opcode word_opcode,
+                                      IR::Opcode long_opcode) {
+    if (value->UseCount() != 1) {
+        return false;
+    }
+
+    const IR::Inst* consumer = value->GetNextInstruction();
+    if (!consumer ||
+        (consumer->GetOpcode() != word_opcode && consumer->GetOpcode() != long_opcode)) {
+        return false;
+    }
+    return consumer->GetArg(0).GetInst() == value;
+}
+
 template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -104,6 +118,12 @@ template<>
 void EmitIR<IR::Opcode::LeastSignificantHalf>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
+    if (IsImmediatelySignExtended(inst, IR::Opcode::SignExtendHalfToWord,
+                                  IR::Opcode::SignExtendHalfToLong)) {
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     auto Wresult = ctx.reg_alloc.WriteW(inst);
     auto Woperand = ctx.reg_alloc.ReadW(args[0]);
     RegAlloc::Realize(Wresult, Woperand);
@@ -114,6 +134,12 @@ void EmitIR<IR::Opcode::LeastSignificantHalf>(oaknut::CodeGenerator& code, EmitC
 template<>
 void EmitIR<IR::Opcode::LeastSignificantByte>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    if (IsImmediatelySignExtended(inst, IR::Opcode::SignExtendByteToWord,
+                                  IR::Opcode::SignExtendByteToLong)) {
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
 
     auto Wresult = ctx.reg_alloc.WriteW(inst);
     auto Woperand = ctx.reg_alloc.ReadW(args[0]);
