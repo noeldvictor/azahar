@@ -3039,6 +3039,41 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   its 476-byte metadata; the 3,229,579,753-byte active ARM64 RelWithDebInfo CMake/Ninja cache is
   retained. C: reported 87,276,048,384 bytes free after cleanup.
 
+## 2026-08-17 AArch64 PICA LG2 Signed Exponent Repair
+
+- The complete ARM64 shader suite exposed an old x86-to-AArch64 porting error in the PICA `LG2`
+  helper. After extracting the IEEE-754 exponent and subtracting bias 127, AArch64 moved the signed
+  bits into a SIMD lane and executed unsigned `UCVTF`. For `0.5`, exponent `-1` was therefore
+  interpreted as `0xffffffff` and converted to `4294967296.0`; x64 correctly uses signed
+  `cvtsi2ss`.
+- AArch64 now converts the unbiased 32-bit GPR exponent directly with scalar `SCVTF`. This restores
+  negative exponents and replaces the old `MOV` plus `UCVTF` pair with one instruction, removing
+  one generated instruction from every normal positive-input `LG2` helper execution. Polynomial
+  coefficients, Horner/FMA order, mantissa reduction, and NaN/zero/negative branches are unchanged.
+- The Cortex-X3, A715, A710, and A510 software optimization guides list signed and unsigned FP
+  conversion forms in the conversion tables spanning pages 28-29, 30-31, 46-47, and 39-40
+  respectively. This is baseline hardware available on every Thor core class; the signed form is
+  required by the algorithm rather than an optional X3-only acceleration.
+- Permanent regression coverage now checks every exact power-of-two exponent from `-32` through
+  `+32`, plus the existing NaN, negative, zero, fractional-mantissa, and large-value cases. On the
+  wall-powered Wi-Fi Thor, the exact interpreter and JIT cases each passed 70 assertions, and the
+  complete `[shader]` suite passed all 2,276 assertions across 50 test cases. The prior LG2 failure
+  is gone; the 25,852,440-byte stripped test ELF was removed from host and device immediately.
+- The ARM64 native compile/link passed in 1 minute 17 seconds. Commit `7dd086fad` was pushed before
+  the final `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build, which passed in
+  2 minutes 1 second. The ARM64-only, v2-signed APK is 28,974,880 bytes, reports
+  `7dd086fad-vanilla-thor`, and has SHA-256
+  `55404C7006CAD4AEDF225C5AE641BC03BF31E1CA8B1C595BBB4318B27EC97242`.
+- The APK installed successfully over `org.azahar_emu.azahar.debug` through Wi-Fi ADB
+  `192.168.1.33:5555` and reports `primaryCpuAbi=arm64-v8a`. The device reported AC power, no USB
+  power, and 71% battery. Azahar was force-stopped before and after installation; no UI or game was
+  launched, so this is correctness plus a local one-instruction reduction, not a whole-game FPS or
+  wattage measurement.
+- Post-verification cleanup removed 2,022,514,627 logical bytes of Gradle/native staging and manual
+  render PNGs. `app/build` now contains only the APK and its 476-byte metadata; the
+  3,229,693,469-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains. C: reported
+  87,055,941,632 bytes free after cleanup.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

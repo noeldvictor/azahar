@@ -250,7 +250,10 @@ The normal positive-input `LG2` path uses the same paired-load strategy for its 
 polynomial coefficients. Two separately addressed groups that required five setup instructions now
 use one `ADR` plus one Q-form `LDP`, removing three instructions from every positive `LG2` helper
 execution. NaN, zero, negative, and infinity paths retain their existing branches and literal
-vectors.
+vectors. The original ARM64 port also treated the signed unbiased exponent as unsigned, so `0.5`
+could become `4294967296.0` instead of `-1.0`. It now uses one direct scalar `SCVTF` from the GPR,
+matching x64 signed conversion while removing the old GPR-to-vector move. The complete ARM64 shader
+suite passes all 2,276 assertions on the Thor.
 
 The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
 `LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;

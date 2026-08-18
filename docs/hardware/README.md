@@ -169,6 +169,11 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   tables list `FCMEQ`/`FCMGE`/`FCMGT` at latency/throughput 2/4 on X3 page 28, 2/2 on A715 page 30,
   2/2 on A710 page 46, and 3/`2,1` on A510 page 39. Preserve ordered NaN behavior by implementing
   `NotEqual` as inverted equality, and leave mixed operations on the scalar path.
+- Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
+  IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
+  not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The
+  checked conversion tables list both signed and unsigned forms across X3 pages 28-29, A715 pages
+  30-31, A710 pages 46-47, and A510 pages 39-40; the choice is semantic, not interchangeable.
 - For the PICA CPU-fallback vertex cache's tiny fully associative `u16` scan, compare sixteen IDs
   per band with two ordinary Q loads, narrow the two halfword equality masks with `XTN`/`XTN2`,
   select lane indices, and use one byte `UMINV` to recover the first match. The checked manuals put
