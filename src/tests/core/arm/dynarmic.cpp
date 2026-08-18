@@ -23,6 +23,11 @@ public:
         0xeafffffe,  // B .
     };
     std::uint64_t ticks_left{};
+    bool allow_data_writes{};
+    std::size_t data_write_count{};
+    std::uint32_t data_write_address{};
+    std::uint64_t data_write_value{};
+    std::uint8_t data_write_bits{};
 
     std::optional<std::uint32_t> MemoryReadCode(std::uint32_t address) override {
         if ((address & 3) == 0 && address / 4 < code.size()) {
@@ -44,11 +49,23 @@ public:
         return 0;
     }
 
-    void MemoryWrite8(std::uint32_t, std::uint8_t) override {
-        FAIL("unexpected A32 byte write");
+    void MemoryWrite8(std::uint32_t address, std::uint8_t value) override {
+        if (!allow_data_writes) {
+            FAIL("unexpected A32 byte write");
+        }
+        data_write_count++;
+        data_write_address = address;
+        data_write_value = value;
+        data_write_bits = 8;
     }
-    void MemoryWrite16(std::uint32_t, std::uint16_t) override {
-        FAIL("unexpected A32 halfword write");
+    void MemoryWrite16(std::uint32_t address, std::uint16_t value) override {
+        if (!allow_data_writes) {
+            FAIL("unexpected A32 halfword write");
+        }
+        data_write_count++;
+        data_write_address = address;
+        data_write_value = value;
+        data_write_bits = 16;
     }
     void MemoryWrite32(std::uint32_t, std::uint32_t) override {
         FAIL("unexpected A32 word write");
@@ -3177,6 +3194,94 @@ TEST_CASE("Dynarmic A32 MOVT replaces only the top half without corrupting regis
             }
             CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
             CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}
+
+TEST_CASE("Dynarmic A32 narrow stores discard dirty high bits on callback and fastmem paths",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t bits;
+        std::uint8_t base;
+        std::uint8_t source;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe5c12000, 8, 1, 2, false},  // ARM STRB R2, [R1]
+        Operation{0xe5c11000, 8, 1, 1, false},  // ARM STRB R1, [R1]
+        Operation{0xe1c120b0, 16, 1, 2, false}, // ARM STRH R2, [R1]
+        Operation{0xe1c110b0, 16, 1, 1, false}, // ARM STRH R1, [R1]
+        Operation{0xe7fe700a, 8, 1, 2, true},   // Thumb STRB R2, [R1]; B .
+        Operation{0xe7fe7009, 8, 1, 1, true},   // Thumb STRB R1, [R1]; B .
+        Operation{0xe7fe800a, 16, 1, 2, true},  // Thumb STRH R2, [R1]; B .
+        Operation{0xe7fe8009, 16, 1, 1, true},  // Thumb STRH R1, [R1]; B .
+    };
+    constexpr std::array<std::uint32_t, 8> inputs{
+        0x00000000, 0xffffffff, 0xffffff00, 0xffff0000,
+        0x01234567, 0x89abcdef, 0x80000001, 0xa5a55a5a,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        for (const std::uint32_t input : inputs) {
+            for (const bool fastmem : {false, true}) {
+                CAPTURE(operation.instruction, operation.bits, operation.base, operation.source,
+                        operation.thumb, input, fastmem);
+                ArmTestCallbacks callbacks;
+                callbacks.code = {
+                    operation.instruction,
+                    operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+                };
+                callbacks.allow_data_writes = !fastmem;
+
+                std::array<std::uint8_t, 256> backing_memory{};
+                backing_memory.fill(0xcd);
+                Dynarmic::A32::UserConfig config{&callbacks};
+                if (fastmem) {
+                    config.fastmem_pointer = reinterpret_cast<std::uintptr_t>(backing_memory.data());
+                    config.recompile_on_fastmem_failure = false;
+                }
+                Dynarmic::A32::Jit jit{config};
+
+                std::array<std::uint32_t, 16> initial_regs{
+                    0xdeadbeef, 0x00000040, 0x2468ace0, 0x55aa55aa,
+                    0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                    0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                    0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+                };
+                const std::uint32_t source_value =
+                    operation.source == operation.base ? 0x40U + (input & 0x1eU) : input;
+                initial_regs[operation.source] = source_value;
+                const std::uint32_t address = initial_regs[operation.base];
+                const std::uint32_t mask = operation.bits == 8 ? 0xffU : 0xffffU;
+                const std::uint32_t expected = source_value & mask;
+                jit.Regs() = initial_regs;
+                jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+                jit.SetFpscr(initial_fpscr);
+                callbacks.ticks_left = 2;
+                jit.Run();
+
+                if (fastmem) {
+                    CHECK(callbacks.data_write_count == 0);
+                    CHECK(backing_memory[address] == (expected & 0xff));
+                    if (operation.bits == 16) {
+                        CHECK(backing_memory[address + 1] == (expected >> 8));
+                    }
+                } else {
+                    CHECK(callbacks.data_write_count == 1);
+                    CHECK(callbacks.data_write_address == address);
+                    CHECK(callbacks.data_write_bits == operation.bits);
+                    CHECK(callbacks.data_write_value == expected);
+                }
+                for (std::size_t reg = 0; reg < 15; ++reg) {
+                    CAPTURE(reg);
+                    CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                }
+                CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+                CHECK(jit.Fpscr() == initial_fpscr);
+            }
         }
     }
 }

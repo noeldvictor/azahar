@@ -91,6 +91,12 @@ static bool IsSoleVariableShiftConsumer(const IR::Inst* value) {
     }
 }
 
+static bool IsSoleNarrowStoreConsumer(const IR::Inst* value, IR::Opcode store_opcode) {
+    const IR::Inst* consumer = FindSoleConsumer(value);
+    return consumer && consumer->GetOpcode() == store_opcode &&
+           consumer->GetArg(2).GetInst() == value;
+}
+
 static bool IsUnmaterializedByteShift(const IR::Value& value) {
     if (value.IsImmediate()) {
         return false;
@@ -170,7 +176,8 @@ void EmitIR<IR::Opcode::LeastSignificantHalf>(oaknut::CodeGenerator& code, EmitC
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
     if (IsImmediatelySignExtended(inst, IR::Opcode::SignExtendHalfToWord,
-                                  IR::Opcode::SignExtendHalfToLong)) {
+                                  IR::Opcode::SignExtendHalfToLong) ||
+        IsSoleNarrowStoreConsumer(inst, IR::Opcode::A32WriteMemory16)) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -188,7 +195,8 @@ void EmitIR<IR::Opcode::LeastSignificantByte>(oaknut::CodeGenerator& code, EmitC
 
     if (IsImmediatelySignExtended(inst, IR::Opcode::SignExtendByteToWord,
                                   IR::Opcode::SignExtendByteToLong) ||
-        IsSoleVariableShiftConsumer(inst)) {
+        IsSoleVariableShiftConsumer(inst) ||
+        IsSoleNarrowStoreConsumer(inst, IR::Opcode::A32WriteMemory8)) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
