@@ -2442,6 +2442,54 @@ void EmitX64::EmitVectorMultiplyUnsignedWiden32(EmitContext&, IR::Inst*) {
     ASSERT_FALSE("Unexpected VectorMultiplyUnsignedWiden32");
 }
 
+void EmitX64::EmitVectorRoundingNarrow16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorRoundingNarrow16");
+}
+
+void EmitX64::EmitVectorRoundingNarrow32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorRoundingNarrow32");
+}
+
+void EmitX64::EmitVectorRoundingNarrow64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorRoundingNarrow64");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToSigned16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToSigned16");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToSigned32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToSigned32");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToSigned64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToSigned64");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToUnsigned16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToUnsigned16");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToUnsigned32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToUnsigned32");
+}
+
+void EmitX64::EmitVectorSignedSaturatedRoundingNarrowToUnsigned64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedSaturatedRoundingNarrowToUnsigned64");
+}
+
+void EmitX64::EmitVectorUnsignedSaturatedRoundingNarrow16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedSaturatedRoundingNarrow16");
+}
+
+void EmitX64::EmitVectorUnsignedSaturatedRoundingNarrow32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedSaturatedRoundingNarrow32");
+}
+
+void EmitX64::EmitVectorUnsignedSaturatedRoundingNarrow64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedSaturatedRoundingNarrow64");
+}
+
 void EmitX64::EmitVectorNarrow16(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 

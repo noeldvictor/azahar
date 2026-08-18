@@ -302,6 +302,7 @@ public:
     U128 VectorRotateWholeVectorRight(const U128& a, u8 amount);
     U128 VectorRoundingHalvingAddSigned(size_t esize, const U128& a, const U128& b);
     U128 VectorRoundingHalvingAddUnsigned(size_t esize, const U128& a, const U128& b);
+    U128 VectorRoundingNarrow(size_t original_esize, const U128& a, u8 shift_amount);
     U128 VectorRoundingShiftLeftSigned(size_t esize, const U128& a, const U128& b);
     U128 VectorRoundingShiftLeftUnsigned(size_t esize, const U128& a, const U128& b);
     U128 VectorSignExtend(size_t original_esize, const U128& a);
@@ -318,6 +319,8 @@ public:
     U128 VectorSignedSaturatedDoublingMultiplyLong(size_t esize, const U128& a, const U128& b);
     U128 VectorSignedSaturatedNarrowToSigned(size_t original_esize, const U128& a);
     U128 VectorSignedSaturatedNarrowToUnsigned(size_t original_esize, const U128& a);
+    U128 VectorSignedSaturatedRoundingNarrowToSigned(size_t original_esize, const U128& a, u8 shift_amount);
+    U128 VectorSignedSaturatedRoundingNarrowToUnsigned(size_t original_esize, const U128& a, u8 shift_amount);
     U128 VectorSignedSaturatedNeg(size_t esize, const U128& a);
     U128 VectorSignedSaturatedShiftLeft(size_t esize, const U128& a, const U128& b);
     U128 VectorSignedSaturatedShiftLeftUnsigned(size_t esize, const U128& a, u8 shift_amount);
@@ -336,6 +339,7 @@ public:
     U128 VectorUnsignedRecipSqrtEstimate(const U128& a);
     U128 VectorUnsignedSaturatedAccumulateSigned(size_t esize, const U128& a, const U128& b);
     U128 VectorUnsignedSaturatedNarrow(size_t esize, const U128& a);
+    U128 VectorUnsignedSaturatedRoundingNarrow(size_t original_esize, const U128& a, u8 shift_amount);
     U128 VectorUnsignedSaturatedShiftLeft(size_t esize, const U128& a, const U128& b);
     U128 VectorZeroExtend(size_t original_esize, const U128& a);
     U128 VectorZeroUpper(const U128& a);

@@ -473,7 +473,7 @@ TEST_CASE("Dynarmic A32 VSHLL fuses widening shifts on ARM64", "[core][arm][dyna
     }
 }
 
-TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
+TEST_CASE("Dynarmic A32 shift-right narrowing preserves rounding and saturation on ARM64",
           "[core][arm][dynarmic]") {
     enum class NarrowKind {
         Truncate,
@@ -488,6 +488,7 @@ TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
         std::uint8_t source_bits;
         std::uint8_t shift;
         NarrowKind kind;
+        bool rounding{};
     };
     constexpr std::array operations{
         Operation{0xf28b0812, 0, 4, 16, 5, NarrowKind::Truncate},       // VSHRN.I16 D0, Q1, #5
@@ -508,6 +509,29 @@ TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
                   NarrowKind::SignedToUnsigned}, // VQSHRUN.S32 D16, Q9, #11
         Operation{0xf3edf83e, 62, 60, 64, 19,
                   NarrowKind::SignedToUnsigned}, // VQSHRUN.S64 D31, Q15, #19
+        Operation{0xf28b0852, 0, 4, 16, 5, NarrowKind::Truncate, true}, // VRSHRN.I16 D0, Q1, #5
+        Operation{0xf2d50872, 32, 36, 32, 11, NarrowKind::Truncate,
+                  true}, // VRSHRN.I32 D16, Q9, #11
+        Operation{0xf2edf87e, 62, 60, 64, 19, NarrowKind::Truncate,
+                  true}, // VRSHRN.I64 D31, Q15, #19
+        Operation{0xf28b0952, 0, 4, 16, 5, NarrowKind::SignedToSigned,
+                  true}, // VQRSHRN.S16 D0, Q1, #5
+        Operation{0xf2d50972, 32, 36, 32, 11, NarrowKind::SignedToSigned,
+                  true}, // VQRSHRN.S32 D16, Q9, #11
+        Operation{0xf2edf97e, 62, 60, 64, 19, NarrowKind::SignedToSigned,
+                  true}, // VQRSHRN.S64 D31, Q15, #19
+        Operation{0xf38b0952, 0, 4, 16, 5, NarrowKind::UnsignedToUnsigned,
+                  true}, // VQRSHRN.U16 D0, Q1, #5
+        Operation{0xf3d50972, 32, 36, 32, 11, NarrowKind::UnsignedToUnsigned,
+                  true}, // VQRSHRN.U32 D16, Q9, #11
+        Operation{0xf3edf97e, 62, 60, 64, 19, NarrowKind::UnsignedToUnsigned,
+                  true}, // VQRSHRN.U64 D31, Q15, #19
+        Operation{0xf38b0852, 0, 4, 16, 5, NarrowKind::SignedToUnsigned,
+                  true}, // VQRSHRUN.S16 D0, Q1, #5
+        Operation{0xf3d50872, 32, 36, 32, 11, NarrowKind::SignedToUnsigned,
+                  true}, // VQRSHRUN.S32 D16, Q9, #11
+        Operation{0xf3edf87e, 62, 60, 64, 19, NarrowKind::SignedToUnsigned,
+                  true}, // VQRSHRUN.S64 D31, Q15, #19
     };
 
     constexpr std::array<std::uint32_t, 4> source_words{
@@ -522,7 +546,7 @@ TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
 
     for (const auto& operation : operations) {
         CAPTURE(operation.instruction, operation.destination_s, operation.source_s,
-                operation.source_bits, operation.shift, operation.kind);
+                operation.source_bits, operation.shift, operation.kind, operation.rounding);
 
         ArmTestCallbacks callbacks;
         callbacks.code = {
@@ -560,6 +584,10 @@ TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
             std::uint64_t shifted = input >> operation.shift;
             if (signed_input && (input & (std::uint64_t{1} << (operation.source_bits - 1))) != 0) {
                 shifted |= ~std::uint64_t{0} << (operation.source_bits - operation.shift);
+            }
+            if (operation.rounding &&
+                (input & (std::uint64_t{1} << (operation.shift - 1))) != 0) {
+                ++shifted;
             }
 
             std::uint64_t result = shifted & result_mask;

@@ -106,19 +106,26 @@ bool ShiftRightNarrowing(TranslatorVisitor& v, bool D, size_t imm6, size_t Vd, b
     const auto m = ToVector(true, Vm, M);
 
     const auto reg_m = v.ir.GetVector(m);
-    auto wide_result = [&] {
-        if (signedness == Signedness::Signed) {
-            return v.ir.VectorArithmeticShiftRight(source_esize, reg_m, shift_amount);
-        }
-        return v.ir.VectorLogicalShiftRight(source_esize, reg_m, shift_amount);
-    }();
-
-    if (rounding == Rounding::Round) {
-        const u64 round_value = 1ULL << (shift_amount - 1);
-        wide_result = PerformRoundingCorrection(v, source_esize, round_value, reg_m, wide_result);
-    }
-
     const auto result = [&] {
+        if (rounding == Rounding::Round) {
+            switch (narrowing) {
+            case Narrowing::Truncation:
+                return v.ir.VectorRoundingNarrow(source_esize, reg_m, shift_amount);
+            case Narrowing::SaturateToUnsigned:
+                if (signedness == Signedness::Signed) {
+                    return v.ir.VectorSignedSaturatedRoundingNarrowToUnsigned(source_esize, reg_m, shift_amount);
+                }
+                return v.ir.VectorUnsignedSaturatedRoundingNarrow(source_esize, reg_m, shift_amount);
+            case Narrowing::SaturateToSigned:
+                ASSERT(signedness == Signedness::Signed);
+                return v.ir.VectorSignedSaturatedRoundingNarrowToSigned(source_esize, reg_m, shift_amount);
+            }
+            UNREACHABLE();
+        }
+
+        const auto wide_result = signedness == Signedness::Signed
+                                   ? v.ir.VectorArithmeticShiftRight(source_esize, reg_m, shift_amount)
+                                   : v.ir.VectorLogicalShiftRight(source_esize, reg_m, shift_amount);
         switch (narrowing) {
         case Narrowing::Truncation:
             return v.ir.VectorNarrow(source_esize, wide_result);

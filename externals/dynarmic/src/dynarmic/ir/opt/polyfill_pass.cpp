@@ -192,6 +192,51 @@ void PolyfillVectorMultiplyAccumulateWiden(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(result);
 }
 
+enum class RoundingNarrowKind {
+    Truncate,
+    SignedSaturatedToSigned,
+    SignedSaturatedToUnsigned,
+    UnsignedSaturated,
+};
+
+template<size_t source_size, RoundingNarrowKind kind>
+void PolyfillVectorRoundingNarrow(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U128 operand = (IR::U128)inst.GetArg(0);
+    const u8 shift_amount = inst.GetArg(1).GetU8();
+    const IR::U128 shifted = [&] {
+        if constexpr (kind == RoundingNarrowKind::SignedSaturatedToSigned || kind == RoundingNarrowKind::SignedSaturatedToUnsigned) {
+            return ir.VectorArithmeticShiftRight(source_size, operand, shift_amount);
+        } else {
+            return ir.VectorLogicalShiftRight(source_size, operand, shift_amount);
+        }
+    }();
+    const IR::U128 round_const = [&] {
+        const u64 value = 1ULL << (shift_amount - 1);
+        if constexpr (source_size == 16) {
+            return ir.VectorBroadcast(16, ir.Imm16(static_cast<u16>(value)));
+        } else if constexpr (source_size == 32) {
+            return ir.VectorBroadcast(32, ir.Imm32(static_cast<u32>(value)));
+        } else {
+            return ir.VectorBroadcast(64, ir.Imm64(value));
+        }
+    }();
+    const IR::U128 round_correction = ir.VectorEqual(source_size, ir.VectorAnd(operand, round_const), round_const);
+    const IR::U128 rounded = ir.VectorSub(source_size, shifted, round_correction);
+    const IR::U128 result = [&] {
+        if constexpr (kind == RoundingNarrowKind::Truncate) {
+            return ir.VectorNarrow(source_size, rounded);
+        } else if constexpr (kind == RoundingNarrowKind::SignedSaturatedToSigned) {
+            return ir.VectorSignedSaturatedNarrowToSigned(source_size, rounded);
+        } else if constexpr (kind == RoundingNarrowKind::SignedSaturatedToUnsigned) {
+            return ir.VectorSignedSaturatedNarrowToUnsigned(source_size, rounded);
+        } else {
+            return ir.VectorUnsignedSaturatedNarrow(source_size, rounded);
+        }
+    }();
+
+    inst.ReplaceUsesWith(result);
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -353,6 +398,66 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::VectorSignedMultiplyAccumulateWiden32:
             if (polyfill.vector_multiply_accumulate_widen) {
                 PolyfillVectorMultiplyAccumulateWiden<32, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorRoundingNarrow16:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<16, RoundingNarrowKind::Truncate>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorRoundingNarrow32:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<32, RoundingNarrowKind::Truncate>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorRoundingNarrow64:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<64, RoundingNarrowKind::Truncate>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToSigned16:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<16, RoundingNarrowKind::SignedSaturatedToSigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToSigned32:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<32, RoundingNarrowKind::SignedSaturatedToSigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToSigned64:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<64, RoundingNarrowKind::SignedSaturatedToSigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned16:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<16, RoundingNarrowKind::SignedSaturatedToUnsigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned32:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<32, RoundingNarrowKind::SignedSaturatedToUnsigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned64:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<64, RoundingNarrowKind::SignedSaturatedToUnsigned>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedSaturatedRoundingNarrow16:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<16, RoundingNarrowKind::UnsignedSaturated>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedSaturatedRoundingNarrow32:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<32, RoundingNarrowKind::UnsignedSaturated>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedSaturatedRoundingNarrow64:
+            if (polyfill.vector_rounding_narrow) {
+                PolyfillVectorRoundingNarrow<64, RoundingNarrowKind::UnsignedSaturated>(ir, inst);
             }
             break;
         case IR::Opcode::VectorUnsignedMultiplyAccumulateWiden8:

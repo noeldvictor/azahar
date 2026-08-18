@@ -26,6 +26,7 @@ struct PolyfillOptions {
     bool vector_add_sub_widen = false;
     bool vector_multiply_accumulate_widen = false;
     bool vector_multiply_widen = false;
+    bool vector_rounding_narrow = false;
 
     bool operator==(const PolyfillOptions&) const = default;
 };

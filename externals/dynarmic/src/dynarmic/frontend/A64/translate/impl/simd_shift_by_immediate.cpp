@@ -101,20 +101,26 @@ bool ShiftRightNarrowing(TranslatorVisitor& v, bool Q, Imm<4> immh, Imm<3> immb,
     const u8 shift_amount = static_cast<u8>(source_esize - concatenate(immh, immb).ZeroExtend());
 
     const IR::U128 operand = v.V(128, Vn);
-
-    IR::U128 wide_result = [&] {
-        if (signedness == Signedness::Signed) {
-            return v.ir.VectorArithmeticShiftRight(source_esize, operand, shift_amount);
-        }
-        return v.ir.VectorLogicalShiftRight(source_esize, operand, shift_amount);
-    }();
-
-    if (rounding == Rounding::Round) {
-        const u64 round_value = 1ULL << (shift_amount - 1);
-        wide_result = PerformRoundingCorrection(v, source_esize, round_value, operand, wide_result);
-    }
-
     const IR::U128 result = [&] {
+        if (rounding == Rounding::Round) {
+            switch (narrowing) {
+            case Narrowing::Truncation:
+                return v.ir.VectorRoundingNarrow(source_esize, operand, shift_amount);
+            case Narrowing::SaturateToUnsigned:
+                if (signedness == Signedness::Signed) {
+                    return v.ir.VectorSignedSaturatedRoundingNarrowToUnsigned(source_esize, operand, shift_amount);
+                }
+                return v.ir.VectorUnsignedSaturatedRoundingNarrow(source_esize, operand, shift_amount);
+            case Narrowing::SaturateToSigned:
+                ASSERT(signedness == Signedness::Signed);
+                return v.ir.VectorSignedSaturatedRoundingNarrowToSigned(source_esize, operand, shift_amount);
+            }
+            UNREACHABLE();
+        }
+
+        const IR::U128 wide_result = signedness == Signedness::Signed
+                                       ? v.ir.VectorArithmeticShiftRight(source_esize, operand, shift_amount)
+                                       : v.ir.VectorLogicalShiftRight(source_esize, operand, shift_amount);
         switch (narrowing) {
         case Narrowing::Truncation:
             return v.ir.VectorNarrow(source_esize, wide_result);

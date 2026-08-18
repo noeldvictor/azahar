@@ -1470,6 +1470,19 @@ U128 IREmitter::VectorNarrow(size_t original_esize, const U128& a) {
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorRoundingNarrow(size_t original_esize, const U128& a, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= original_esize / 2);
+    switch (original_esize) {
+    case 16:
+        return Inst<U128>(Opcode::VectorRoundingNarrow16, a, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorRoundingNarrow32, a, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorRoundingNarrow64, a, Imm8(shift_amount));
+    }
+    UNREACHABLE();
+}
+
 U128 IREmitter::VectorNot(const U128& a) {
     return Inst<U128>(Opcode::VectorNot, a);
 }
@@ -1961,6 +1974,32 @@ U128 IREmitter::VectorSignedSaturatedNarrowToUnsigned(size_t original_esize, con
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorSignedSaturatedRoundingNarrowToSigned(size_t original_esize, const U128& a, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= original_esize / 2);
+    switch (original_esize) {
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToSigned16, a, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToSigned32, a, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToSigned64, a, Imm8(shift_amount));
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorSignedSaturatedRoundingNarrowToUnsigned(size_t original_esize, const U128& a, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= original_esize / 2);
+    switch (original_esize) {
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned16, a, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned32, a, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorSignedSaturatedRoundingNarrowToUnsigned64, a, Imm8(shift_amount));
+    }
+    UNREACHABLE();
+}
+
 U128 IREmitter::VectorSignedSaturatedNeg(size_t esize, const U128& a) {
     switch (esize) {
     case 8:
@@ -2144,6 +2183,19 @@ U128 IREmitter::VectorUnsignedSaturatedNarrow(size_t esize, const U128& a) {
         return Inst<U128>(Opcode::VectorUnsignedSaturatedNarrow32, a);
     case 64:
         return Inst<U128>(Opcode::VectorUnsignedSaturatedNarrow64, a);
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorUnsignedSaturatedRoundingNarrow(size_t original_esize, const U128& a, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= original_esize / 2);
+    switch (original_esize) {
+    case 16:
+        return Inst<U128>(Opcode::VectorUnsignedSaturatedRoundingNarrow16, a, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorUnsignedSaturatedRoundingNarrow32, a, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorUnsignedSaturatedRoundingNarrow64, a, Imm8(shift_amount));
     }
     UNREACHABLE();
 }
