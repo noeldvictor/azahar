@@ -42,12 +42,6 @@ enum class FloatConversionDirection {
     FloatToFixed,
 };
 
-IR::U128 PerformRoundingCorrection(TranslatorVisitor& v, size_t esize, u64 round_value, IR::U128 original, IR::U128 shifted) {
-    const IR::U128 round_const = v.ir.VectorBroadcast(esize, v.I(esize, round_value));
-    const IR::U128 round_correction = v.ir.VectorEqual(esize, v.ir.VectorAnd(original, round_const), round_const);
-    return v.ir.VectorSub(esize, shifted, round_correction);
-}
-
 bool ShiftRight(TranslatorVisitor& v, bool Q, Imm<4> immh, Imm<3> immb, Vec Vn, Vec Vd, Rounding rounding, Accumulating accumulating, Signedness signedness) {
     if (immh == 0b0000) {
         return v.DecodeError();
@@ -64,22 +58,27 @@ bool ShiftRight(TranslatorVisitor& v, bool Q, Imm<4> immh, Imm<3> immb, Vec Vn, 
 
     const IR::U128 operand = v.V(datasize, Vn);
 
-    IR::U128 result = [&] {
-        if (signedness == Signedness::Signed) {
-            return v.ir.VectorArithmeticShiftRight(esize, operand, shift_amount);
+    const IR::U128 result = [&] {
+        if (rounding == Rounding::Round) {
+            if (accumulating == Accumulating::Accumulate) {
+                const IR::U128 accumulator = v.V(datasize, Vd);
+                return signedness == Signedness::Signed
+                         ? v.ir.VectorRoundingShiftRightAccumulateSigned(esize, accumulator, operand, shift_amount)
+                         : v.ir.VectorRoundingShiftRightAccumulateUnsigned(esize, accumulator, operand, shift_amount);
+            }
+            return signedness == Signedness::Signed
+                     ? v.ir.VectorRoundingShiftRightSigned(esize, operand, shift_amount)
+                     : v.ir.VectorRoundingShiftRightUnsigned(esize, operand, shift_amount);
         }
-        return v.ir.VectorLogicalShiftRight(esize, operand, shift_amount);
+
+        const IR::U128 shifted = signedness == Signedness::Signed
+                                   ? v.ir.VectorArithmeticShiftRight(esize, operand, shift_amount)
+                                   : v.ir.VectorLogicalShiftRight(esize, operand, shift_amount);
+        if (accumulating == Accumulating::Accumulate) {
+            return v.ir.VectorAdd(esize, shifted, v.V(datasize, Vd));
+        }
+        return shifted;
     }();
-
-    if (rounding == Rounding::Round) {
-        const u64 round_value = 1ULL << (shift_amount - 1);
-        result = PerformRoundingCorrection(v, esize, round_value, operand, result);
-    }
-
-    if (accumulating == Accumulating::Accumulate) {
-        const IR::U128 accumulator = v.V(datasize, Vd);
-        result = v.ir.VectorAdd(esize, result, accumulator);
-    }
 
     v.V(datasize, Vd, result);
     return true;

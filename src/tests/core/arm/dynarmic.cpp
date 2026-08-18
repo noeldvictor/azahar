@@ -644,6 +644,116 @@ TEST_CASE("Dynarmic A32 shift-right narrowing preserves rounding and saturation 
     }
 }
 
+TEST_CASE("Dynarmic A32 vector rounding shift-right preserves lane semantics on ARM64",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::size_t destination_s;
+        std::size_t source_s;
+        std::uint8_t vector_bits;
+        std::uint8_t element_bits;
+        std::uint8_t shift;
+        bool is_signed;
+        bool accumulate;
+    };
+    constexpr std::array operations{
+        Operation{0xf2880212, 0, 4, 64, 8, 8, true, false},       // VRSHR.S8 D0, D2, #8
+        Operation{0xf3c80272, 32, 36, 128, 8, 8, false, false},   // VRSHR.U8 Q8, Q9, #8
+        Operation{0xf2990252, 0, 4, 128, 16, 7, true, false},     // VRSHR.S16 Q0, Q1, #7
+        Operation{0xf3d90232, 32, 36, 64, 16, 7, false, false},   // VRSHR.U16 D16, D18, #7
+        Operation{0xf2a10212, 0, 4, 64, 32, 31, true, false},     // VRSHR.S32 D0, D2, #31
+        Operation{0xf3e10272, 32, 36, 128, 32, 31, false, false}, // VRSHR.U32 Q8, Q9, #31
+        Operation{0xf28002d2, 0, 4, 128, 64, 64, true, false},    // VRSHR.S64 Q0, Q1, #64
+        Operation{0xf3c002b2, 32, 36, 64, 64, 64, false, false},  // VRSHR.U64 D16, D18, #64
+        Operation{0xf2880310, 0, 0, 64, 8, 8, true, true},        // VRSRA.S8 D0, D0, #8
+        Operation{0xf3c80370, 32, 32, 128, 8, 8, false, true},    // VRSRA.U8 Q8, Q8, #8
+        Operation{0xf2990352, 0, 4, 128, 16, 7, true, true},      // VRSRA.S16 Q0, Q1, #7
+        Operation{0xf3d90332, 32, 36, 64, 16, 7, false, true},    // VRSRA.U16 D16, D18, #7
+        Operation{0xf2a10310, 0, 0, 64, 32, 31, true, true},      // VRSRA.S32 D0, D0, #31
+        Operation{0xf3e10370, 32, 32, 128, 32, 31, false, true},  // VRSRA.U32 Q8, Q8, #31
+        Operation{0xf28003d2, 0, 4, 128, 64, 64, true, true},     // VRSRA.S64 Q0, Q1, #64
+        Operation{0xf3c003b2, 32, 36, 64, 64, 64, false, true},   // VRSRA.U64 D16, D18, #64
+    };
+    constexpr std::array<std::uint32_t, 4> source_words{
+        0x80000080,
+        0x7fffff7f,
+        0x00000004,
+        0xfffffffc,
+    };
+    constexpr std::array<std::uint32_t, 4> accumulator_words{
+        0xffffffff,
+        0x7fffffff,
+        0x80000000,
+        0x12345678,
+    };
+    constexpr std::uint32_t initial_cpsr = 0xa80f01d0;  // N/C/Q/GE, user mode
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination_s, operation.source_s,
+                operation.vector_bits, operation.element_bits, operation.shift, operation.is_signed,
+                operation.accumulate);
+
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        jit.ExtRegs().fill(0xa5a5a5a5);
+        const std::size_t vector_words = operation.vector_bits / 32;
+        std::copy_n(accumulator_words.begin(), vector_words,
+                    jit.ExtRegs().begin() + operation.destination_s);
+        std::copy_n(source_words.begin(), vector_words, jit.ExtRegs().begin() + operation.source_s);
+
+        auto expected_regs = jit.ExtRegs();
+        const auto* source_bytes =
+            reinterpret_cast<const std::uint8_t*>(expected_regs.data() + operation.source_s);
+        auto* destination_bytes =
+            reinterpret_cast<std::uint8_t*>(expected_regs.data() + operation.destination_s);
+        const std::size_t element_bytes = operation.element_bits / 8;
+        const std::size_t lane_count = operation.vector_bits / operation.element_bits;
+        const std::uint64_t mask = operation.element_bits == 64
+                                       ? ~std::uint64_t{0}
+                                       : (std::uint64_t{1} << operation.element_bits) - 1;
+        const std::uint64_t sign_bit = std::uint64_t{1} << (operation.element_bits - 1);
+
+        for (std::size_t lane = 0; lane < lane_count; ++lane) {
+            std::uint64_t input{};
+            std::uint64_t accumulator{};
+            std::memcpy(&input, source_bytes + lane * element_bytes, element_bytes);
+            std::memcpy(&accumulator, destination_bytes + lane * element_bytes, element_bytes);
+
+            std::uint64_t shifted{};
+            if (operation.shift == operation.element_bits) {
+                shifted = operation.is_signed && (input & sign_bit) != 0 ? mask : 0;
+            } else {
+                shifted = input >> operation.shift;
+                if (operation.is_signed && (input & sign_bit) != 0) {
+                    shifted |= mask << (operation.element_bits - operation.shift);
+                }
+            }
+            if ((input & (std::uint64_t{1} << (operation.shift - 1))) != 0) {
+                shifted = (shifted + 1) & mask;
+            }
+            const std::uint64_t result =
+                operation.accumulate ? (accumulator + shifted) & mask : shifted & mask;
+            std::memcpy(destination_bytes + lane * element_bytes, &result, element_bytes);
+        }
+
+        jit.SetCpsr(initial_cpsr);
+        jit.SetFpscr(initial_fpscr);
+        callbacks.ticks_left = 2;
+        jit.Run();
+
+        CHECK(jit.ExtRegs() == expected_regs);
+        CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
+        CHECK(jit.Fpscr() == initial_fpscr);
+    }
+}
+
 TEST_CASE("Dynarmic A32 VMLAL and VMLSL widen before modular accumulation",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

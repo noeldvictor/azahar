@@ -56,6 +56,7 @@ static Optimization::PolyfillOptions GenPolyfillOptions(const BlockOfCode& code)
         .vector_multiply_accumulate_widen = true,
         .vector_multiply_widen = true,
         .vector_rounding_narrow = true,
+        .vector_rounding_shift_right = true,
     };
 }
 

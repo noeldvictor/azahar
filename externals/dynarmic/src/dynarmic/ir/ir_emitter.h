@@ -305,6 +305,10 @@ public:
     U128 VectorRoundingNarrow(size_t original_esize, const U128& a, u8 shift_amount);
     U128 VectorRoundingShiftLeftSigned(size_t esize, const U128& a, const U128& b);
     U128 VectorRoundingShiftLeftUnsigned(size_t esize, const U128& a, const U128& b);
+    U128 VectorRoundingShiftRightSigned(size_t esize, const U128& a, u8 shift_amount);
+    U128 VectorRoundingShiftRightUnsigned(size_t esize, const U128& a, u8 shift_amount);
+    U128 VectorRoundingShiftRightAccumulateSigned(size_t esize, const U128& accumulator, const U128& a, u8 shift_amount);
+    U128 VectorRoundingShiftRightAccumulateUnsigned(size_t esize, const U128& accumulator, const U128& a, u8 shift_amount);
     U128 VectorSignExtend(size_t original_esize, const U128& a);
     U128 VectorSignedAbsoluteDifference(size_t esize, const U128& a, const U128& b);
     U128 VectorSignedAbsoluteDifferenceWiden(size_t esize, const U128& a, const U128& b);

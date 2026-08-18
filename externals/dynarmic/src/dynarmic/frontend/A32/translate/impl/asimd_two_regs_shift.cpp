@@ -32,12 +32,6 @@ enum class Signedness {
     Unsigned
 };
 
-IR::U128 PerformRoundingCorrection(TranslatorVisitor& v, size_t esize, u64 round_value, IR::U128 original, IR::U128 shifted) {
-    const auto round_const = v.ir.VectorBroadcast(esize, v.I(esize, round_value));
-    const auto round_correction = v.ir.VectorEqual(esize, v.ir.VectorAnd(original, round_const), round_const);
-    return v.ir.VectorSub(esize, shifted, round_correction);
-}
-
 std::pair<size_t, size_t> ElementSizeAndShiftAmount(bool right_shift, bool L, size_t imm6) {
     if (right_shift) {
         if (L) {
@@ -72,18 +66,25 @@ bool ShiftRight(TranslatorVisitor& v, bool U, bool D, size_t imm6, size_t Vd, bo
     const auto m = ToVector(Q, Vm, M);
 
     const auto reg_m = v.ir.GetVector(m);
-    auto result = U ? v.ir.VectorLogicalShiftRight(esize, reg_m, static_cast<u8>(shift_amount))
-                    : v.ir.VectorArithmeticShiftRight(esize, reg_m, static_cast<u8>(shift_amount));
+    const auto shift = static_cast<u8>(shift_amount);
+    const auto result = [&] {
+        if (rounding == Rounding::Round) {
+            if (accumulate == Accumulating::Accumulate) {
+                const auto reg_d = v.ir.GetVector(d);
+                return U ? v.ir.VectorRoundingShiftRightAccumulateUnsigned(esize, reg_d, reg_m, shift)
+                         : v.ir.VectorRoundingShiftRightAccumulateSigned(esize, reg_d, reg_m, shift);
+            }
+            return U ? v.ir.VectorRoundingShiftRightUnsigned(esize, reg_m, shift)
+                     : v.ir.VectorRoundingShiftRightSigned(esize, reg_m, shift);
+        }
 
-    if (rounding == Rounding::Round) {
-        const u64 round_value = 1ULL << (shift_amount - 1);
-        result = PerformRoundingCorrection(v, esize, round_value, reg_m, result);
-    }
-
-    if (accumulate == Accumulating::Accumulate) {
-        const auto reg_d = v.ir.GetVector(d);
-        result = v.ir.VectorAdd(esize, result, reg_d);
-    }
+        const auto shifted = U ? v.ir.VectorLogicalShiftRight(esize, reg_m, shift)
+                               : v.ir.VectorArithmeticShiftRight(esize, reg_m, shift);
+        if (accumulate == Accumulating::Accumulate) {
+            return v.ir.VectorAdd(esize, shifted, v.ir.GetVector(d));
+        }
+        return shifted;
+    }();
 
     v.ir.SetVector(d, result);
     return true;

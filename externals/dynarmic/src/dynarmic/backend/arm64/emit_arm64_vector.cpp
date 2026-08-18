@@ -327,6 +327,27 @@ static void EmitImmShift(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* ins
     }
 }
 
+template<size_t size, typename EmitFn>
+static void EmitImmShiftAccumulate(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* inst, EmitFn emit) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Qaccumulator = ctx.reg_alloc.ReadWriteQ(args[0], inst);
+    auto Qoperand = ctx.reg_alloc.ReadQ(args[1]);
+    const u8 shift_amount = args[2].GetImmediateU8();
+    RegAlloc::Realize(Qaccumulator, Qoperand);
+
+    if constexpr (size == 8) {
+        emit(Qaccumulator->B16(), Qoperand->B16(), shift_amount);
+    } else if constexpr (size == 16) {
+        emit(Qaccumulator->H8(), Qoperand->H8(), shift_amount);
+    } else if constexpr (size == 32) {
+        emit(Qaccumulator->S4(), Qoperand->S4(), shift_amount);
+    } else if constexpr (size == 64) {
+        emit(Qaccumulator->D2(), Qoperand->D2(), shift_amount);
+    } else {
+        static_assert(Common::always_false_v<mcl::mp::lift_value<size>>);
+    }
+}
+
 template<size_t narrow_size>
 static bool IsImmediatelyWidenShifted(const IR::Inst* extension, IR::Opcode shift_opcode, bool allow_maximum_shift) {
     if (extension->UseCount() != 1) {
@@ -1848,6 +1869,86 @@ void EmitIR<IR::Opcode::VectorRoundingShiftLeftU32>(oaknut::CodeGenerator& code,
 template<>
 void EmitIR<IR::Opcode::VectorRoundingShiftLeftU64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitThreeOpArranged<64>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.URSHL(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<8>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SRSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<16>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SRSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<32>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SRSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<64>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SRSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<8>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.URSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<16>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.URSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<32>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.URSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShift<64>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.URSHR(Vresult, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<8>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.SRSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<16>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.SRSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<32>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.SRSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<64>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.SRSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<8>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.URSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<16>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.URSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<32>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.URSRA(Vaccumulator, Voperand, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<64>(code, ctx, inst, [&](auto Vaccumulator, auto Voperand, u8 shift_amount) { code.URSRA(Vaccumulator, Voperand, shift_amount); });
 }
 
 template<>

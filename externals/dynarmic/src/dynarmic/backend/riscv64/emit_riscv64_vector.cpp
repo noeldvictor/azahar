@@ -1073,6 +1073,86 @@ void EmitIR<IR::Opcode::VectorRoundingShiftLeftU64>(biscuit::Assembler&, EmitCon
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightS64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightU64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateS64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignExtend8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
