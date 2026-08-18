@@ -1581,6 +1581,13 @@ void EmitIR<IR::Opcode::ByteReverseDual>(oaknut::CodeGenerator& code, EmitContex
 }
 
 template<>
+void EmitIR<IR::Opcode::ReverseBits32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitTwoOp<32>(
+        code, ctx, inst,
+        [&](auto& Wresult, auto& Woperand) { code.RBIT(Wresult, Woperand); });
+}
+
+template<>
 void EmitIR<IR::Opcode::CountLeadingZeros32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitTwoOp<32>(
         code, ctx, inst,

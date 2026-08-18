@@ -1615,6 +1615,10 @@ void EmitX64::EmitByteReverseDual(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitReverseBits32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected ReverseBits32");
+}
+
 void EmitX64::EmitCountLeadingZeros32(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     if (code.HasHostFeature(HostFeature::LZCNT)) {

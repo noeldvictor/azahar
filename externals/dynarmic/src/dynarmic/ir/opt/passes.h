@@ -25,6 +25,7 @@ struct PolyfillOptions {
     bool pack_halfword = false;
     bool packed_sign_extend_byte_to_half = false;
     bool packed_saturation16 = false;
+    bool reverse_bits = false;
     bool sha256 = false;
     bool vector_absolute_difference_widen = false;
     bool vector_add_sub_widen = false;

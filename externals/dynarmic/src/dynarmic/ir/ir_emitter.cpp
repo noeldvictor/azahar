@@ -501,6 +501,10 @@ U64 IREmitter::ByteReverseDual(const U64& a) {
     return Inst<U64>(Opcode::ByteReverseDual, a);
 }
 
+U32 IREmitter::ReverseBits(const U32& a) {
+    return Inst<U32>(Opcode::ReverseBits32, a);
+}
+
 U32U64 IREmitter::CountLeadingZeros(const U32U64& a) {
     if (a.GetType() == IR::Type::U32) {
         return Inst<U32>(Opcode::CountLeadingZeros32, a);

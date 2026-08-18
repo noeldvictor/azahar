@@ -530,6 +530,11 @@ void EmitIR<IR::Opcode::ByteReverseDual>(biscuit::Assembler&, EmitContext&, IR::
 }
 
 template<>
+void EmitIR<IR::Opcode::ReverseBits32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::CountLeadingZeros32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

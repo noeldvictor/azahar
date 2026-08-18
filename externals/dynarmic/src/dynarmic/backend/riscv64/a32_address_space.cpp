@@ -31,6 +31,7 @@ IR::Block A32AddressSpace::GenerateIR(IR::LocationDescriptor descriptor) const {
                                 .pack_halfword = true,
                                 .packed_sign_extend_byte_to_half = true,
                                 .packed_saturation16 = true,
+                                .reverse_bits = true,
                                 .vector_rounding_narrow = true,
                                 .vector_rounding_shift_right = true,
                                 .vector_shift_insert = true});

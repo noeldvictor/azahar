@@ -2621,3 +2621,78 @@ TEST_CASE("Dynarmic A32 SXTAB16 preserves rotations, aliases, flags, and FPSCR",
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 RBIT reverses every bit and preserves aliases, flags, and FPSCR",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t destination;
+        std::uint8_t source;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe6ff0f32, 0, 2, false}, // ARM RBIT R0, R2
+        Operation{0xe6ff4f34, 4, 4, false}, // ARM RBIT R4, R4
+        Operation{0xf0a2fa92, 0, 2, true},  // Thumb RBIT R0, R2
+        Operation{0xf4a4fa94, 4, 4, true},  // Thumb RBIT R4, R4
+    };
+    constexpr std::array inputs{
+        0x00000000u,
+        0x00000001u,
+        0x80000000u,
+        0xffffffffu,
+        0x01234567u,
+        0x89abcdefu,
+        0xa5a55a5au,
+        0x01020408u,
+        0xf00dcafeu,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    const auto reverse_bits = [](std::uint32_t value) {
+        std::uint32_t result = 0;
+        for (std::size_t bit = 0; bit < 32; ++bit) {
+            result |= ((value >> bit) & 1U) << (31 - bit);
+        }
+        return result;
+    };
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination, operation.source, operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const std::uint32_t input : inputs) {
+            CAPTURE(input);
+            std::array<std::uint32_t, 16> initial_regs{
+                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+            };
+            initial_regs[operation.source] = input;
+            jit.Regs() = initial_regs;
+            jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            jit.SetFpscr(initial_fpscr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[operation.destination] == reverse_bits(input));
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.destination) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}

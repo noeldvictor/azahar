@@ -382,6 +382,27 @@ void PolyfillPackedSignExtendByteToHalf(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(ir.Or(low_byte, ir.Mul(sign_bit, ir.Imm32(0x1FE))));
 }
 
+void PolyfillReverseBits(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U32 swapped = ir.ByteReverseWord((IR::U32)inst.GetArg(0));
+
+    const IR::U32 first_lsr =
+        ir.LogicalShiftRight(ir.And(swapped, ir.Imm32(0xF0F0F0F0)), ir.Imm8(4));
+    const IR::U32 first_lsl =
+        ir.LogicalShiftLeft(ir.And(swapped, ir.Imm32(0x0F0F0F0F)), ir.Imm8(4));
+    const IR::U32 corrected = ir.Or(first_lsl, first_lsr);
+
+    const IR::U32 second_lsr =
+        ir.LogicalShiftRight(ir.And(corrected, ir.Imm32(0x88888888)), ir.Imm8(3));
+    const IR::U32 third_lsr =
+        ir.LogicalShiftRight(ir.And(corrected, ir.Imm32(0x44444444)), ir.Imm8(1));
+    const IR::U32 second_lsl =
+        ir.LogicalShiftLeft(ir.And(corrected, ir.Imm32(0x22222222)), ir.Imm8(1));
+    const IR::U32 third_lsl =
+        ir.LogicalShiftLeft(ir.And(corrected, ir.Imm32(0x11111111)), ir.Imm8(3));
+
+    inst.ReplaceUsesWith(ir.Or(ir.Or(ir.Or(second_lsr, third_lsr), second_lsl), third_lsl));
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -408,6 +429,11 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::PackedSignExtendByteToHalf:
             if (polyfill.packed_sign_extend_byte_to_half) {
                 PolyfillPackedSignExtendByteToHalf(ir, inst);
+            }
+            break;
+        case IR::Opcode::ReverseBits32:
+            if (polyfill.reverse_bits) {
+                PolyfillReverseBits(ir, inst);
             }
             break;
         case IR::Opcode::PackHalfwordBottom:

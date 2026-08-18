@@ -149,6 +149,7 @@ public:
     U32 ByteReverseWord(const U32& a);
     U16 ByteReverseHalf(const U16& a);
     U64 ByteReverseDual(const U64& a);
+    U32 ReverseBits(const U32& a);
     U32U64 CountLeadingZeros(const U32U64& a);
     U32U64 ExtractRegister(const U32U64& a, const U32U64& b, const U8& lsb);
     U32U64 ReplicateBit(const U32U64& a, u8 bit);

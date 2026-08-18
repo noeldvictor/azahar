@@ -58,6 +58,7 @@ static Optimization::PolyfillOptions GenPolyfillOptions(const BlockOfCode& code)
         .pack_halfword = true,
         .packed_sign_extend_byte_to_half = true,
         .packed_saturation16 = true,
+        .reverse_bits = true,
         .sha256 = !code.HasHostFeature(HostFeature::SHA),
         .vector_absolute_difference_widen = true,
         .vector_add_sub_widen = true,
