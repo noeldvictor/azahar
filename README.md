@@ -793,6 +793,17 @@ tied at 1.000965x. The new 2,721-assertion test passed separately on all four Th
 the final 53,728-assertion focused suite passed. This is optimization 109; the measurements cover
 only this guest instruction path and are not whole-game FPS or battery-watt results.
 
+A32 ARM/Thumb-2 `SXTAB16` with rotations 8/16/24 now reuses that same first-class packed sign
+extension before its packed halfword add. On ARM64 the measured nonzero-rotation path falls from
+ten host instructions to eight, including the required `ROR`; x64 and RISC-V polyfill back to the
+established portable DAG. ROR8 exact-path medians improved **1.05x-1.07x on A510, 1.16x on A715,
+1.09x-1.12x on A710, and 1.07x-1.08x on X3** across four independent chains and a sequential
+source-alias chain. Rotation zero deliberately keeps its old lowering because the shorter scalar
+composition regressed X3 throughput by 2.0%. A proposed five-instruction `UZP1` + `SADDW` route was
+also rejected after regressing X3 by up to 10.6%. The new 6,801-assertion test passed separately on
+all four Thor CPU classes, and the full focused suite passed 60,529 assertions in 32 cases. This is
+optimization 110; the measurements are path-local, not whole-game FPS or battery-watt results.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

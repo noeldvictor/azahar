@@ -4966,6 +4966,70 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
   brightness/duration A/B run.
 
+## ARM64 A32 Rotated Packed Sign-Extend-and-Add (2026-08-18)
+
+- A32 ARM/Thumb-2 `SXTAB16` sign-extends bytes 0 and 2 of an optionally rotated source, adds them
+  independently to the two destination halfwords, and wraps each lane modulo 16 bits. Dynarmic's
+  old frontend rebuilt the same two-mask, sign-mask-times-`0x1FE`, and OR DAG used by the former
+  `SXTB16` lowering, then crossed into SIMD for `PackedAddU16`. With a nonzero guest rotation the
+  complete ARM64 body was ten host instructions: one `ROR`, five sign-extension instructions, two
+  GPR-to-SIMD `FMOV`s, one halfword `ADD`, and one SIMD-to-GPR `FMOV`.
+- Three disassembly-checked bodies were measured. The accepted composition routes rotations
+  8/16/24 through `PackedSignExtendByteToHalf`, replacing the five-instruction sign-extension body
+  with `SBFX`, `SXTB`, and `BFI`; the required `ROR` plus shared packed-add transfers remain, so the
+  full nonzero path falls from ten instructions to eight. The unmodified x64 and RISC-V polyfill
+  expands the first-class operation back into the same portable DAG.
+- A more aggressive five-instruction rotation-zero AdvSIMD body used GPR-to-SIMD `FMOV`, byte
+  `UZP1`, another `FMOV`, signed widening `SADDW`, and a final `FMOV` (six instructions with a
+  rotation). It was rejected: the doubled X3 run measured 0.894154x for independent rotation zero
+  and 0.978046x for independent ROR8, regressions of 10.6% and 2.2%. Applying the scalar
+  composition to rotation zero was also rejected after its doubled X3 independent result repeated
+  at 0.979993x, a 2.0% regression. Rotation zero therefore retains the old lowering.
+- The Cortex-A510/A710 AArch32 tables document native `SXTAB16` latency/throughput differences,
+  while all four AArch64 tables document materially different `SBFM`/`BFM` costs. That manual
+  evidence correctly warned against accepting instruction count alone. No manual PDF or rendered
+  page was copied into the repository.
+- `llvm-objdump` verified the exact old, composed, and rejected fused bodies. The standalone
+  benchmark used four independent source-alias chains and one source-alias chain repeated four
+  times sequentially per loop. Each sample executed 16,000,000 affected operations; the final X3
+  confirmation used 32,000,000. Nine rounds rotated the order of all three candidates, and every
+  checksum matched and remained nonzero. The accepted ROR8 old/composed median ratios were:
+
+  | ROR8 dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | Four independent chains | 1.065097x | 1.159406x | 1.120201x | 1.067154x |
+  | Sequential chain | 1.050745x | 1.159727x | 1.089628x | 1.076240x |
+
+- Permanent coverage generates all 40 encoding/rotation/alias combinations: ARM and Thumb,
+  rotations 0/8/16/24, all-distinct operands, destination/addend alias, destination/source alias,
+  addend/source alias, and all operands aliased. Ten addend/source pairs cover positive and negative
+  byte edges, ignored-byte garbage, carry and borrow wrap, and mixed lanes while verifying exact
+  output, every unrelated GPR, unchanged NZCV/Q/GE, and unchanged FPSCR. The new test passed all
+  6,801 assertions when pinned separately to CPU 0/A510, CPU 3/A715, CPU 5/A710, and CPU 7/X3.
+  The final focused suite passed 60,529 assertions in 32 cases. The retained ARM64 Ninja graph built
+  both the native tests and `libcitra-android.so`; source/test commit `624534787` was pushed directly
+  to `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 3 minutes 23 seconds after the pinned Khronos validation-layer ZIP was
+  restored to its expected build-temp path. Its ARM64-only APK is 29,002,140 bytes, reports
+  `624534787-vanilla-thor`, and has SHA-256
+  `B440EE1C11C3883D7558953442DDAB3371CE0F6AF35AC44888BEFD09DBEA3494`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 57%, 3.911 V, and 23.0 C, so
+  this is not battery-discharge watt evidence.
+- Cleanup removed 2,493,587,500 logical host bytes: the 447,603,224-byte native test ELF,
+  standalone benchmark/source and stripped test copy, rendered manual pages, pinned validation
+  ZIP, and reproducible Gradle/JNI/R8/native-symbol/mapping staging. It retained the 29,002,140-byte
+  APK, 476-byte metadata, and 2,785,715,434-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,053,017,600 physical bytes and reported 79,950,155,776 bytes free immediately afterward. The
+  629,032-byte benchmark and 26,095,448-byte stripped test helper were also removed from the Thor;
+  no PDF, manual page, benchmark binary, or scratch note was committed.
+- This is optimization 110 in the overlapping Thor work tally. The 1.05x-1.16x measurements apply
+  only while executing these exact nonzero-rotation packed sign-extend-and-add forms. They cannot
+  be added to the other 109 items or treated as a whole-game FPS, sustained battery-watt,
+  frametime, or thermal result. Those still require a matched title/scene/cache/renderer/driver/
+  resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

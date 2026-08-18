@@ -633,6 +633,17 @@
   measured 1.00x-1.33x on Thor A510, 1.54x-2.04x on A715, 1.24x-1.33x on A710, and 1.24x-1.62x on
   X3; the A510 rotation-eight independent form was effectively tied at 1.000965x. Keep these claims
   path-local until a matched title and battery-power A/B exists.
+- A32 ARM/Thumb-2 `SXTAB16` may use `PackedSignExtendByteToHalf` before `PackedAddU16` only for
+  rotations 8/16/24. Keep rotation zero on the established mask/mask/constant/multiply/OR DAG: the
+  shorter scalar composition regressed the doubled Thor X3 independent run by 2.0%. Do not replace
+  the accepted path with the tested `FMOV`/`UZP1`/`FMOV`/`SADDW`/`FMOV` fusion; despite wins on
+  A510/A715/A710 and dependent X3 chains, it regressed X3 independent rotation zero by 10.6% and
+  rotation eight by 2.2%. x64 and RISC-V must continue to polyfill the first-class operation back
+  to the portable DAG. Preserve ARM and Thumb encodings, rotations 0/8/16/24, distinct operands,
+  every two-way alias, all-way aliasing, modular halfword wrap, untouched GPRs, unchanged NZCV/Q/GE,
+  and unchanged FPSCR. The accepted ROR8 path measured 1.050745x-1.065097x on A510,
+  1.159406x-1.159727x on A715, 1.089628x-1.120201x on A710, and 1.067154x-1.076240x on X3. Keep
+  these claims path-local until a matched title and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the
