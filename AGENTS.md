@@ -115,6 +115,13 @@
   the ordered `FCMEQ`/`FCMGT`/`FCMGE` masks, inverted-equality implementation of `NotEqual` so NaN
   remains unordered/true, sign-bit extraction for lanes zero and one, and the unchanged scalar path
   for mixed operators. Keep all six operators covered against the interpreter on real ARM64.
+- AArch64 PICA conditional flow relies on `COND0`/`COND1` remaining canonical zero/one values from
+  byte loads, bit extraction, or `CSET`. Keep `Compile_EvaluateCondition()` to one flag-setting
+  instruction and return the condition code that means guest-true: OR uses `CMN/NE`, `TST/EQ`, or
+  `CMP/GE/LE`; AND uses `TST/NE`, `CMN/EQ`, or `CMP/GT/LT`; JustX/JustY use `CMP/EQ`. IFC and CALLC
+  branch on the inverse, while BREAKC and JMPC branch on the returned condition. Do not restore
+  scratch-register boolean inversion/materialization or assume every result is EQ/NE. Preserve all
+  sixteen truth-table combinations and permanent IFC/CALLC/JMPC/BREAKC interpreter/JIT coverage.
 - The AArch64 PICA source-swizzle planner must preserve exact four-lane selector composition. Its
   26 primitive `EXT`/`REV64`/`ZIP`/`UZP`/`TRN`/`DUP`/lane-move operations cover exactly one
   identity, 26 one-operation, and 122 two-operation selectors; the remaining 107 selectors retain

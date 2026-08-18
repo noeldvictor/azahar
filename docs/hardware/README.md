@@ -181,6 +181,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   tables list `FCMEQ`/`FCMGE`/`FCMGT` at latency/throughput 2/4 on X3 page 28, 2/2 on A715 page 30,
   2/2 on A710 page 46, and 3/`2,1` on A510 page 39. Preserve ordered NaN behavior by implementing
   `NotEqual` as inverted equality, and leave mixed operations on the scalar path.
+- For canonical zero/one PICA condition flags, select one arithmetic/logical flag-setting operation
+  whose returned AArch64 condition code directly represents the guest truth table; do not first
+  invert booleans into scratch registers. The basic integer arithmetic/logical tables cover `CMP`,
+  `CMN`, and `TST` on Cortex-X3 page 15, Cortex-A715 page 17, Cortex-A710 page 17, and Cortex-A510
+  page 14. These are baseline operations across every Thor core class. Prove all sixteen reference/
+  input combinations and every branch consumer because the true condition is not always EQ/NE.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

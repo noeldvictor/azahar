@@ -219,7 +219,7 @@ function grows by 92 bytes. Every valid-prefix length and every 16-bit lookup va
 first-match behavior, passes the focused test on the Thor. Hardware-accelerated vertex draws bypass
 this fallback, so this is not a whole-game FPS or wattage claim.
 
-The PICA vertex-shader JIT now attacks seven common AArch64 lowering costs. Source swizzles use
+The PICA vertex-shader JIT now attacks several common AArch64 lowering costs. Source swizzles use
 register-only AdvSIMD permutations where possible, `ST1` lane stores handle partial destination
 masks without reading untouched lanes, and a cached output-bank pointer removes repeated bank
 loads and address generation. Its `EX2` approximation also packs eight exact constants into two Q registers:
@@ -275,6 +275,15 @@ before the final scalar add, removing the GPR-to-vector zero insertion from its 
 while preserving sanitized multiplication, x64's `(X + Y) + Z` grouping, and ignored W. Its
 isolated 33.6-million-operation benchmark was 16.7% to 26.0% faster. The complete ARM64 shader suite
 passes all 18,304 assertions; whole-game and watt effects remain unmeasured.
+
+PICA conditional control flow now evaluates every OR/AND/reference truth-table shape with exactly
+one AArch64 flag-setting instruction and returns the matching host condition code to IFC, CALLC,
+JMPC, and BREAKC. The old lowering materialized inverted booleans and needed two to four
+instructions for OR or one to three for AND. Disassembly-checked Thor tests measured the isolated
+condition evaluator 29.7% to 63.6% faster across A510, A710, A715, and X3 cases. The permanent
+truth-table and control-flow coverage plus the complete on-device shader suite pass all 18,316
+assertions. This removes PICA CPU shader-JIT work; it does not imply the same whole-game FPS gain or
+a measured battery-watt reduction.
 
 The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
 `LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;

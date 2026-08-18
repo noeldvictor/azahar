@@ -3205,6 +3205,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   wattage result. A matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
   duration A/B remains required before claiming a sustained system-level gain.
 
+## 2026-08-17 AArch64 PICA Conditional Flow
+
+- The AArch64 PICA condition evaluator still inherited an x64-shaped boolean-materialization
+  strategy. OR inverted up to two canonical condition flags into scratch registers, combined them,
+  then compared with zero, taking two to four generated instructions. AND used one to three.
+  Every caller then assumed that guest-true was host `NE`, even though the truth tables can be
+  represented directly by other AArch64 condition codes.
+- `COND0` and `COND1` are canonical zero/one values: shader entry loads their C++ `bool` bytes,
+  same-operation `CMP` extracts single bits, and mixed comparisons use `CSET`. The sixteen OR/AND
+  reference/input combinations therefore reduce exactly to one flag-setting instruction. OR uses
+  `CMN/NE` for refs 1/1, `TST/EQ` for 0/0, and `CMP/GE` or `CMP/LE` for mixed refs. AND uses
+  `TST/NE`, `CMN/EQ`, or `CMP/GT/LT`. JustX/JustY compare the selected flag with its reference and
+  return `EQ`. IFC and CALLC branch on the inverse returned condition; BREAKC and JMPC use it
+  directly. Uniform-controlled flow retains its prior zero/nonzero `CMP` behavior.
+- The Cortex-X3, A715, A710, and A510 basic arithmetic/logical timing tables on pages 15, 17, 17,
+  and 14 respectively list the relevant flag-setting operations as one-cycle-latency instructions.
+  A disassembly-checked ARM64 benchmark executed eight evaluations per loop, alternated A/B order
+  across seven rounds, and took the best result on every Thor core class. Current versus selected
+  one-instruction sequences measured, in ns/evaluation:
+  - A510 CPU 0: OR11 0.560538 -> 0.373591 (33.35%), OR00 0.902216 -> 0.372051
+    (58.76%), OR10 0.747175 -> 0.372039 (50.21%), AND00 0.750218 -> 0.373479
+    (50.22%), and AND10 0.561308 -> 0.373529 (33.45%).
+  - A710 CPU 3: 0.292621 -> 0.196484 (32.85%), 0.509576 -> 0.196484 (61.44%),
+    0.385394 -> 0.196484 (49.02%), 0.382662 -> 0.196497 (48.65%), and
+    0.294664 -> 0.196484 (33.32%).
+  - A715 CPU 5: 0.302723 -> 0.212689 (29.74%), 0.476968 -> 0.212677 (55.41%),
+    0.387151 -> 0.212739 (45.05%), 0.384922 -> 0.212689 (44.74%), and
+    0.302618 -> 0.212739 (29.70%).
+  - X3 CPU 7: 0.243131 -> 0.158492 (34.81%), 0.429650 -> 0.156431 (63.59%),
+    0.353369 -> 0.159157 (54.96%), 0.341156 -> 0.156394 (54.16%), and
+    0.232713 -> 0.161858 (30.45%).
+- Permanent IFC coverage already exhausts all sixteen `refx/refy/COND0/COND1` combinations for
+  JustX, JustY, OR, and AND in both the interpreter and JIT. New control-flow coverage deliberately
+  uses a `CMP/GE` condition whose equal true case would fail an old hard-coded EQ/NE assumption,
+  and checks both true and false CALLC, JMPC, and BREAKC paths. The focused `Conditional*` device
+  run passed all 140 assertions in four cases; the complete `[shader]` run passed all 18,316
+  assertions in 52 cases. The ARM64 native build passed in 1 minute 34 seconds. Temporary test and
+  benchmark executables were removed from Thor and host, and rendered manual pages were removed.
+  Source commit `341bfc574` was pushed to `master` before packaging.
+- Release-style packaging passed in 2 minutes 51 seconds. The ARM64-only, v2-signed APK is
+  28,976,928 bytes, reports `341bfc574-vanilla-thor`, and has SHA-256
+  `09E2459C73B18A7C70096DF56F200D5BD203ADEC889EFE7651735E0E513E9680`. It installed successfully
+  over `org.azahar_emu.azahar.debug`, reports `primaryCpuAbi=arm64-v8a`, and remains force-stopped;
+  no app UI or game was launched. Thor reported USB power, no AC/wireless power, 79% battery,
+  4.188 V, and 23.0 C. Charging telemetry is not a battery-discharge watt measurement.
+- Post-verification cleanup removed 2,052,971,095 logical bytes of Gradle/JNI/native staging,
+  native helper binaries, and the repo-local Gradle cache. `app/build` retains only the APK and
+  metadata; the 3,225,922,442-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains. C:
+  reported 86,168,379,392 bytes free after cleanup.
+- This is an isolated generated-condition speedup of 29.7-63.6% in the measured cases, not a
+  whole-game FPS or wattage claim. A matched title/scene/cache/renderer/driver/resolution/layout/
+  mode/fan/brightness/duration A/B remains required before attributing sustained system-level gain.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
