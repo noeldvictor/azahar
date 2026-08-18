@@ -272,6 +272,45 @@ TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its l
     }
 }
 
+TEST_CASE("Dynarmic A32 VZIP keeps both D-register results in SIMD",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf3b20181,  // VZIP.8 D0, D1
+        0xf3f6e1af,  // VZIP.16 D30, D31
+        0xeafffffe,  // B .
+        0xeafffffe,
+        0xeafffffe,
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.ExtRegs() = {};
+    jit.ExtRegs()[0] = 0x33221100;
+    jit.ExtRegs()[1] = 0x77665544;
+    jit.ExtRegs()[2] = 0xb3a29180;
+    jit.ExtRegs()[3] = 0xf7e6d5c4;
+    jit.ExtRegs()[60] = 0x22330001;
+    jit.ExtRegs()[61] = 0x66774455;
+    jit.ExtRegs()[62] = 0xaabb8899;
+    jit.ExtRegs()[63] = 0xeeffccdd;
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 3;
+    jit.Run();
+
+    CHECK(jit.ExtRegs()[0] == 0x91118000);
+    CHECK(jit.ExtRegs()[1] == 0xb333a222);
+    CHECK(jit.ExtRegs()[2] == 0xd555c444);
+    CHECK(jit.ExtRegs()[3] == 0xf777e666);
+    CHECK(jit.ExtRegs()[60] == 0x88990001);
+    CHECK(jit.ExtRegs()[61] == 0xaabb2233);
+    CHECK(jit.ExtRegs()[62] == 0xccdd4455);
+    CHECK(jit.ExtRegs()[63] == 0xeeff6677);
+}
+
 TEST_CASE("Dynarmic A32 SEL preserves per-byte GE selection", "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
     callbacks.code = {

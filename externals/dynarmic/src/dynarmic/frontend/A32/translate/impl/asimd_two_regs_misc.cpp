@@ -568,8 +568,8 @@ bool TranslatorVisitor::asimd_VZIP(bool D, size_t sz, size_t Vd, bool Q, bool M,
     } else {
         const auto result = ir.VectorInterleaveLower(esize, reg_d, reg_m);
 
-        ir.SetExtendedRegister(d, ir.VectorGetElement(64, result, 0));
-        ir.SetExtendedRegister(m, ir.VectorGetElement(64, result, 1));
+        ir.SetVector(d, result);
+        ir.SetVector(m, ir.VectorRotateWholeVectorRight(result, 64));
     }
     return true;
 }
