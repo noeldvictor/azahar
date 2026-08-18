@@ -603,6 +603,21 @@ or any other rate keeps the unchanged `SQDMULH` path. Final ThinLTO keeps None a
 changes Linear from 408 to 448 bytes for the two-gate dispatch. These are sustained DSP bookkeeping
 and instruction reductions, not yet measured whole-game FPS or battery-power gains.
 
+## Dynarmic Signed Dual Multiply-Long Update
+
+ARM and Thumb-2 `SMLALD`/`SMLALDX`/`SMLSLD`/`SMLSLDX` now preserve their widening
+multiply-accumulate semantics in Dynarmic IR. The ARM64 backend emits four signed-halfword extracts
+and two native `SMADDL`/`SMSUBL` operations instead of two `MUL`, two `SXTW`, and two separate
+64-bit add/subtract operations after the same extracts. The result stays in general-purpose
+registers and retains exact 64-bit wrap, exchange, source/destination alias, and unchanged-flag
+behavior for both guest instruction sets.
+
+An exact Thor microbenchmark measured this affected host sequence at 1.95x-2.18x on A510 CPU 0,
+1.38x-1.40x on A715 CPUs 3-4, and 1.28x-1.29x on A710 CPU 5. A packed AdvSIMD alternative was
+correct but slower and was rejected. The complete focused ARM/Dynarmic suite passes 685 assertions
+in 18 cases, and the ARM64 release build passes. This is optimization 93 in the overlapping work
+tally; it is not a whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

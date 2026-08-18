@@ -3992,6 +3992,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
   cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Signed Dual Multiply-Long
+
+- ARM and Thumb-2 `SMLALD`/`SMLALDX`/`SMLSLD`/`SMLSLDX` previously expanded each guest operation
+  into four signed-halfword extracts, two 32-bit `MUL`, two `SXTW`, a product add/subtract, and a
+  separate 64-bit accumulator add. The recurring arithmetic path was ten AArch64 instructions.
+  Dynarmic now retains signed multiply-add-long and multiply-subtract-long in IR. ARM64 emits the
+  same four extracts followed by two `SMADDL`/`SMSUBL` operations: six instructions, no SIMD/GPR
+  transfers, and no intermediate product materialization. The portable x64 lowering keeps the
+  exact modular semantics with signed extension, multiply, and add/subtract.
+- A packed AdvSIMD candidate was implemented in a temporary benchmark and rejected. `FMOV`,
+  `SMULL`, `SADDLV` or `REV64`/`SUB`, and the result transfer passed 400,128 edge/random comparisons,
+  but measured only 0.184x-0.840x the existing scalar speed across accessible Thor cores. The SIMD
+  register crossing and horizontal reduction cost more than the removed scalar instructions.
+- The complete relevant manual pages were extracted, rendered, and visually checked. Cortex-X3
+  issue 4.0 page 16, Cortex-A715 issue 5.0 page 18, Cortex-A710 issue 4.0 page 21, and Cortex-A510
+  issue 6.0 page 18 all list scalar `SMADDL`/`SMSUBL` at latency 2 and throughput 1. The X3/A715/A710
+  tables show accumulator latency 1 in parentheses, and the notes describe late forwarding; A510
+  also documents a dedicated accumulator-forwarding path. This supports two dependent widening
+  MACs while avoiding the non-free general/SIMD transfers documented elsewhere in the same guides.
+- The retained benchmark compared the exact old ten-instruction arithmetic sequence with the new
+  six-instruction sequence. It kept four independent 64-bit accumulator chains, ran 8,000,000
+  operations per sample over nine alternating-order rounds, selected the best samples, required
+  equal nonzero checksums, and passed 1,001,536 signed-edge and random candidate comparisons:
+
+  | Thor core | SMLALD | SMLALDX | SMLSLD | SMLSLDX |
+  | --- | --- | --- | --- | --- |
+  | A510 CPU 0 | 5.143698 -> 2.635684 ns/op; 1.952x | 4.629154 -> 2.127480; 2.176x | 5.147044 -> 2.632943; 1.955x | 4.636250 -> 2.125957; 2.181x |
+  | A715 CPU 3 | 1.168119 -> 0.837760; 1.394x | 1.162038 -> 0.833157; 1.395x | 1.167949 -> 0.840397; 1.390x | 1.162246 -> 0.844349; 1.376x |
+  | A715 CPU 4 | 1.165501 -> 0.839030; 1.389x | 1.158522 -> 0.840540; 1.378x | 1.167936 -> 0.837031; 1.395x | 1.162383 -> 0.838600; 1.386x |
+  | A710 CPU 5 | 0.918275 -> 0.714225; 1.286x | 0.916009 -> 0.714245; 1.282x | 0.916348 -> 0.714245; 1.283x | 0.916465 -> 0.715606; 1.281x |
+
+  CPUs 6 and 7 rejected the harmless single-bit affinity request, so no timing is claimed for
+  those cores. The source/test commit is `e78d99f8c`, pushed directly to `origin/master` over
+  command-line Git SSH.
+- Thor passed all 685 assertions in 18 focused `[core][arm][dynarmic]` cases. The new permanent test
+  contributes 384 assertions across ARM and Thumb add/subtract/exchange forms, six signed-extreme
+  and 64-bit-wrap inputs, unchanged NZCV/Q/GE state, and source/destination accumulator aliasing.
+  The exact committed JDK 17 ARM64 release build passed in 3 minutes 34 seconds.
+- The ARM64-only APK is 28,987,612 bytes, reports `e78d99f8c-vanilla-thor`, and has SHA-256
+  `3E88E73E9E93C557DB00C97F89E4886F38D6496435BA7B943291971FAF3FD307`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and remained stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and
+  20.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Cleanup retained only the hash-verified APK and its 476-byte metadata in `app/build`, retained the
+  3,242,288,561-byte active ARM64 `.cxx` cache, removed 2,018,871,738 logical bytes of reproducible
+  Gradle/JNI staging plus the 447,574,992-byte test ELF and 55,154,008 bytes of temporary host
+  benchmarks/manual renders, and deleted all temporary benchmark/test binaries from Thor. Windows
+  recovered 2,079,604,736 physical bytes and reported 82,166,231,040 bytes free on C: afterward.
+- This is optimization 93 in the Thor work tally. Its 1.281x-2.181x result applies only to the
+  affected signed dual multiply-long host sequence and cannot be added to the other 92 items.
+  Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
+  cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
