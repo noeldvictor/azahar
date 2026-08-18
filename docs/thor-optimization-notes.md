@@ -4303,6 +4303,63 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   other 97 items. Whole-game FPS, sustained watts, frametimes, and thermals still require a matched
   title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Vector Widening Shift
+
+- A32 NEON `VSHLL.S/U8`, `.S/U16`, and `.S/U32` previously became a signed or unsigned vector
+  extension followed by a generic logical left shift. ARM64 therefore emitted `SXTL`/`UXTL`
+  (the zero-shift `SSHLL`/`USHLL` aliases) and then `SHL`, even though AArch64 directly encodes the
+  complete operation as one `SSHLL`/`USHLL` with the guest immediate.
+- The recorded Cortex manuals support the candidate without substituting manual tables for device
+  evidence. The X3 guide lists the basic AdvSIMD immediate-shift family, including `SHL`, `SHLL`,
+  `SSHLL`, `SXTL`, `USHLL`, and `UXTL`, at latency 2 and throughput 2. A715 and A710 list latency 2
+  and throughput 1; A510 lists latency 3 with its dual throughput notation. This made instruction
+  fusion plausible on every Thor core class, but the exact sequences were still benchmarked on the
+  physical device before source changed.
+- The ARM64 backend now aliases an extension to its narrow source only when it has exactly one use,
+  the immediately following matching-width logical shift consumes it as argument zero, and the
+  immediate is smaller than the original narrow element width. The shift consumer then emits one
+  signed or unsigned native widening shift. The extension-side and consumer-side predicates are
+  deliberately symmetrical: shared, non-adjacent, mismatched-width, non-immediate, or out-of-range
+  IR retains `SXTL`/`UXTL` plus `SHL`, so a rejected fusion can never feed raw narrow data into the
+  generic wide-shift fallback.
+- `llvm-objdump` verified twelve exact loop bodies: signed/unsigned 8-to-16 at shift 3,
+  signed/unsigned 16-to-32 at shift 11, and signed/unsigned 32-to-64 at shift 19. Each timed sample
+  ran four independent operations for 5,000,000 iterations, or 20,000,000 affected operations,
+  across nine alternating-order rounds. Warmup and every timed baseline/candidate checksum matched;
+  the final checksum lock was nonzero for all three widths. Median speedups were:
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VSHLL.S8` | 4.020344x | 2.004667x | 2.003952x | 2.804748x |
+  | `VSHLL.U8` | 4.136257x | 1.999144x | 1.997490x | 2.802131x |
+  | `VSHLL.S16` | 4.011369x | 1.999516x | 2.000597x | 2.805524x |
+  | `VSHLL.U16` | 4.026792x | 2.001173x | 2.000801x | 2.795824x |
+  | `VSHLL.S32` | 4.015906x | 2.002867x | 2.000681x | 2.805015x |
+  | `VSHLL.U32` | 4.034313x | 2.001538x | 2.000752x | 2.804717x |
+
+- The permanent A32 regression covers all six signed/unsigned widths, shifts 1 through the maximum
+  legal immediate, low and high D/Q registers, complete destination/source overlap, partial overlap,
+  preserved non-overlapping sources, untouched unrelated SIMD state, and unchanged CPSR N/C/Q/GE.
+  Thor passed all 1,760 assertions in 23 focused `[core][arm][dynarmic]` cases. The source/test
+  commit is `5a538cee2`, pushed directly to `origin/master` over command-line Git SSH. The first
+  release-style source/test build passed in 3 minutes; the final refined native build passed in 1
+  minute 21 seconds; and the exact post-commit release rebuild passed in 1 minute 41 seconds.
+- The installed ARM64 APK is 28,986,288 bytes, reports `5a538cee2-vanilla-thor`, and has SHA-256
+  `EEB75684F0F965AFDAE95C7043CD7CAD09298DA6A828D2AB628713964440A01F`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was empty,
+  and no app UI or game was launched. Thor reported USB power, no AC/wireless power, 79% battery,
+  4.150 V, and 23.0 C. That charging context is not a battery-discharge watt measurement.
+- Cleanup deleted the local benchmark/encoding/stripped-test artifacts, four rendered manual pages,
+  both temporary device binaries, the 447,734,920-byte native test ELF, `.cxx` tool metadata, and
+  reproducible Gradle/JNI/R8/native-symbol staging. It retained the 28,986,288-byte APK plus its
+  476-byte metadata and the 2,791,133,813-byte active ARM64 CMake/Ninja cache. Total logical host
+  removal was 2,499,799,755 bytes; C: recovered 2,051,805,184 physical bytes and reported
+  81,704,198,144 bytes free afterward.
+- This is optimization 99 in the Thor work tally, not 78. Its 1.997x-4.136x figures apply only when
+  the guest executes these widening-shift forms and cannot be added to the other 98 items. Whole-game
+  FPS, sustained watts, frametimes, and thermals still require a matched title/scene/cache/renderer/
+  driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

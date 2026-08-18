@@ -674,6 +674,25 @@ on-device ARM/Dynarmic suite passes 1,364 assertions in 20 cases, and the exact 
 passes. This is optimization 96 in the overlapping work tally; these figures apply only when the
 guest executes `SMULL`, not to whole-game FPS or battery watts.
 
+## Recent Dynarmic Multiply and Widening-Shift Updates
+
+The next signed DSP passes keep `SMMUL{R}`/`SMMLA{R}`/`SMMLS{R}` and `SMULWB`/`SMULWT` in
+native-width Dynarmic IR. ARM64 consequently uses `SMULL`, `SMADDL`/`SMSUBL`, and the required
+halfword select/shift operations instead of redundant long extensions around X-form `MUL`.
+Exact-sequence Thor measurements were **1.57x-2.13x** for the signed high-word forms and
+**1.46x-2.24x** for the signed word-by-halfword forms. A proposed `SMLAWB`/`SMLAWT` conversion was
+rejected because it slightly regressed A715 and X3, so those accumulate forms keep their established
+lowering. These are optimizations 97 and 98 in the overlapping work tally.
+
+A32 NEON `VSHLL.S/U8`, `.S/U16`, and `.S/U32` now keep their immediately adjacent, sole-use
+widen-and-shift shape through the ARM64 backend. The previous `SXTL`/`UXTL` plus `SHL` pair becomes
+one native `SSHLL`/`USHLL`. Shared, non-adjacent, mismatched, and out-of-range IR keeps the original
+two-instruction path. A disassembly-checked, nonzero-checksum Thor benchmark measured the exact
+affected sequence at **4.01x-4.14x on A510**, **2.00x on A715/A710**, and **2.80x on X3**. All
+1,760 assertions in 23 focused ARM/Dynarmic cases pass on Thor, including maximum shifts, high
+registers, and source/destination overlap. This is optimization 99; none of these path-local figures
+can be added together or treated as a whole-game FPS or battery-watt result.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
