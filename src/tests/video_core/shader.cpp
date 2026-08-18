@@ -478,6 +478,7 @@ SHADER_TEST_CASE("RSQ", "[video_core][shader]") {
 
     // REQUIRE(shader.Run({-0.0f}).x == INFINITY); // Violates IEEE
     REQUIRE(std::isnan(shader.Run({-2.0f}).x));
+    REQUIRE(shader.Run({0.0f}).x == INFINITY);
     REQUIRE(shader.Run({INFINITY}).x == 0.0f);
     REQUIRE(std::isnan(shader.Run({-INFINITY}).x));
     REQUIRE(std::isnan(shader.Run({NAN}).x));
@@ -491,6 +492,20 @@ SHADER_TEST_CASE("RSQ", "[video_core][shader]") {
     REQUIRE(shader.Run({0.25f}).x == Catch::Approx(2.0f).margin(0.001f));
     REQUIRE(shader.Run({0.125f}).x == Catch::Approx(1.0 / std::sqrt(0.125)).margin(0.002f));
     REQUIRE(shader.Run({0.0625f}).x == Catch::Approx(4.0f).margin(0.004f));
+
+#if CITRA_ARCH(arm64)
+    // Cover the complete useful f24 exponent range densely enough to catch an omitted or malformed
+    // Newton step. The refined AArch64 estimate measured at <= 1.62e-5 relative error over one
+    // million normal inputs on the Thor; allow a small margin above that measured bound.
+    for (int exponent = -62; exponent <= 62; ++exponent) {
+        for (int mantissa = 0; mantissa < 64; ++mantissa) {
+            const float input = std::ldexp(1.0f + static_cast<float>(mantissa) / 64.0f, exponent);
+            const float expected = 1.0f / std::sqrt(input);
+            CAPTURE(input, expected);
+            REQUIRE(shader.Run({input}).x == Catch::Approx(expected).epsilon(0.00002f));
+        }
+    }
+#endif
 }
 
 SHADER_TEST_CASE("SETEMIT", "[video_core][shader]") {

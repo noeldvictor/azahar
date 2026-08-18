@@ -906,15 +906,16 @@ void JitShader::Compile_RCP(Instruction instr) {
 void JitShader::Compile_RSQ(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
 
-    // FRSQRTE can be pretty inaccurate
-    // FRSQRTE(8.0f) = 0.35254f != 0.3535533845
-    // FRSQRTE(SRC1.S4(), SRC1.S4());
-    // Just do an exact 1.0f / sqrt(N)
-    FSQRT(SRC1.toS(), SRC1.toS());
-    FDIV(SRC1.toS(), ONE.toS(), SRC1.toS());
+    // One Newton-Raphson step raises the hardware estimate past the precision used by the x64 JIT
+    // while avoiding the iterative square-root and divide pipelines. Squaring the estimate before
+    // FRSQRTS also preserves the architecture's special handling for infinity times zero.
+    FRSQRTE(VSCRATCH0.toS(), SRC1.toS());
+    FMUL(VSCRATCH1.toS(), VSCRATCH0.toS(), VSCRATCH0.toS());
+    FRSQRTS(VSCRATCH1.toS(), VSCRATCH1.toS(), SRC1.toS());
+    FMUL(VSCRATCH0.toS(), VSCRATCH0.toS(), VSCRATCH1.toS());
 
-    DUP(SRC1.S4(), SRC1.Selem()[0]); // XYWZ -> XXXX
-    Compile_DestEnable(instr, SRC1);
+    DUP(VSCRATCH0.S4(), VSCRATCH0.Selem()[0]); // XYWZ -> XXXX
+    Compile_DestEnable(instr, VSCRATCH0);
 }
 
 void JitShader::Compile_NOP(Instruction instr) {}
