@@ -3447,6 +3447,57 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness A/B runs remain necessary
   for whole-game FPS, sustained watts, frametime, or thermal claims.
 
+## 2026-08-18 Dynarmic ARM64 Register-Shift Mask Elision
+
+- A32 register-controlled data processing constructs its shift count with
+  `LeastSignificantByte(GetRegister(...))` at 21 ARM/Thumb translation sites. On ARM64 that
+  producer emits `UXTB`, but the no-carry LSL, LSR, and ASR lowerings immediately masked the same
+  host register again with `AND #0xff`. The second operation could not change the value.
+- The emitter now recognizes only a shift argument that resolves through identities to
+  `LeastSignificantByte` and uses that register directly for the variable shift and range compare.
+  This is deliberately not a general U8 invariant: callback-returned bytes and future producers
+  retain the old mask. Carry-producing shift paths also remain unchanged. A shift consumer cannot
+  trigger the adjacent signed-extension fusion, so the recognized producer necessarily emitted
+  its canonicalizing `UXTB`.
+- The checked Cortex tables put the removed logical operation and surviving variable shift on the
+  same integer resources. `AND` has latency/throughput 1/6 on X3 page 15, 1/4 on A715/A710 page 17,
+  and 1/3 on A510 page 14. `LSLV`/`LSRV`/`ASRV` have 1/6 on X3 page 18, 1/4 on A715 page 20 and A710
+  page 27, and 1/3 on A510 page 22. Removing the duplicate therefore saves one dependency and one
+  integer issue without assuming an optional extension.
+- A disassembly-checked benchmark retained the frontend `UXTB` and compared the exact old and new
+  LSL and clamped-ASR sequences over four independent chains and 16,777,216 iterations. Nine
+  rounds alternated old/new order, selected each best sample, and required equal nonzero checksums:
+
+  | Thor core | LSL old -> new | ASR old -> new |
+  | --- | --- | --- |
+  | A510 CPU 0 | 2.136812 -> 1.510237 ns/op; 1.415x; 29.32% less time | 2.640345 -> 2.135542; 1.236x; 19.12% |
+  | A710 CPU 3 | 0.535285 -> 0.417087; 1.283x; 22.08% | 0.499109 -> 0.388098; 1.286x; 22.24% |
+  | A715 CPU 5 | 0.501662 -> 0.422252; 1.188x; 15.83% | 0.485471 -> 0.390124; 1.244x; 19.64% |
+
+  CPU 6 and CPU 7 reported online but rejected harmless single-bit affinity probes during the
+  final run, so no second-A715 or X3 measurement is claimed.
+- Permanent guest coverage executes non-flags LSL, LSR, ASR, and ROR plus carry-producing LSLS for
+  dirty-upper-bit shift registers whose low bytes are 0, 1, 31, 32, 33, and 255. It verifies the
+  complete result and carry semantics at every ARM edge. Thor passed 106 assertions in six focused
+  Dynarmic cases and 2,973 assertions in 21 broader core cases. The ARM64 native build passed in
+  85.49 seconds. Temporary opcode, test, benchmark, disassembly, and rendered-manual files were
+  removed from host and device. Source/test commit `169306159` was pushed directly to
+  `origin/master` through command-line Git SSH.
+- JDK 17 release packaging passed in 2 minutes 33 seconds. The ARM64-only, v2-signed APK is
+  28,977,464 bytes, reports `169306159-vanilla-thor`, and has SHA-256
+  `EBD13F4D4493F8415BF4358242B413CBC733AA0B0221EA0367EBA04D24851619`. It installed over
+  `org.azahar_emu.azahar.debug`; Android reports `primaryCpuAbi=arm64-v8a`, `stopped=true`, and no
+  process ID. No UI or game was launched. Thor reported USB power, no AC/wireless power, 80%
+  battery, 4.155 V, and 21.0 C, so this is not battery-discharge watt evidence.
+- Cleanup removed 2,017,617,383 logical bytes from `app/build` and raised C: free space by
+  1,576,497,152 bytes. Only the APK and 476-byte metadata remain there; the 3,244,522,777-byte
+  active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
+- This is optimization 83 in the Thor work tally. Its 1.19x-1.42x LSL and 1.24x-1.29x ASR results
+  apply only to these exact generated sequences. The 83 items overlap, trigger in different title
+  workloads, and cannot be added. Whole-game FPS, sustained watts, frametime, and thermal claims
+  still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness
+  A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

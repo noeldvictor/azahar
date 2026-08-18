@@ -204,7 +204,12 @@ include:
 - signed narrow fusion that recognizes an immediately adjacent, single-use byte/halfword sign
   extension and emits only `SXTB`/`SXTH`, instead of first canonicalizing with `UXTB`/`UXTH`.
   Exact-sequence Thor measurements were **1.67x-4.50x faster** on A510/A710/A715; register shifts,
-  zero extensions, stores, shared values, and non-adjacent uses retain the original narrowing; and
+  zero extensions, stores, shared values, and non-adjacent uses retain the original narrowing;
+- register-shift byte-mask elision for ordinary no-flags A32 `LSL`, `LSR`, and `ASR`. When the
+  shift amount is already the result of `LeastSignificantByte`, its required `UXTB` is reused
+  directly instead of emitting a second `AND #0xff`. Generic U8 producers and carry-producing
+  shifts keep the conservative mask. Exact-sequence Thor measurements were **1.19x-1.42x for
+  LSL** and **1.24x-1.29x for ASR** across the measured A510/A710/A715 cores; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.

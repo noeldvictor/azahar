@@ -40,6 +40,10 @@ Dynarmic remote.
   by its matching signed extension. The narrow IR result aliases its source and the surviving
   `SXTB`/`SXTH` supplies the required truncation and sign extension in one instruction. Other
   consumers retain `UXTB`/`UXTH`; no per-block scan, table, or JIT-time allocation is added.
+- Reuse a proven `LeastSignificantByte` result directly in no-carry 32-bit logical-left,
+  logical-right, and arithmetic-right variable shifts. The producer has already emitted `UXTB`, so
+  the following `AND #0xff` was a duplicate. Other U8 producers and carry-producing shift paths
+  keep their original masks rather than relying on a backend-wide physical-canonicalization rule.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -74,6 +78,14 @@ checking equal results. Best samples were 2.50x/4.50x faster for byte/halfword o
 on A710, and 1.75x/1.81x on A715 CPU 5; A715 CPU 6 independently measured 1.86x/1.78x. CPU 7
 rejected even a harmless single-bit affinity probe with `EINVAL` during this run, so no X3 number
 is claimed. These are exact generated-sequence measurements, not whole-emulator FPS or watts.
+
+The register-shift benchmark retained the frontend `UXTB` and compared the old duplicate-mask
+sequence with direct use of that canonical result. Four independent chains, 16,777,216 iterations,
+nine alternating-order rounds, disassembly inspection, and equal nonzero checksums measured LSL at
+1.415x on A510, 1.283x on A710, and 1.188x on A715; clamped ASR measured 1.236x, 1.286x, and 1.244x.
+CPU 6 and CPU 7 rejected harmless single-bit affinity probes for the final run, so no result is
+claimed for those cores. These 15.8%-29.3% exact-sequence time reductions do not predict whole-game
+FPS or battery watts.
 
 The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was

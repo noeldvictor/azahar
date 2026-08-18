@@ -219,6 +219,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   removing a dependency and an integer-pipeline operation. Do not apply this to shift counts or
   other U8/U16 consumers that require canonical zero extension; preserve a dirty-upper-bits guest
   regression alongside the fused signed cases.
+- Reuse that canonical `UXTB` result in a following no-carry variable shift instead of masking it
+  a second time. The logical-instruction tables list the removed `AND` at latency/throughput 1/6
+  on X3 page 15, 1/4 on A715 and A710 page 17, and 1/3 on A510 page 14. The variable-shift rows list
+  the surviving `LSLV`/`LSRV`/`ASRV` at 1/6 on X3 page 18, 1/4 on A715 page 20 and A710 page 27,
+  and 1/3 on A510 page 22. Both consume the same integer/ALU resources on each core, so removing
+  the proven duplicate reduces issue work and the shift-count dependency. Do not generalize this
+  to callback-returned or otherwise unknown U8 values; retain their mask and all carry paths.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The
