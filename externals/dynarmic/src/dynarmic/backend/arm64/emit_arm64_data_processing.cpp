@@ -58,6 +58,12 @@ static bool IsImmediatelySignExtended(const IR::Inst* value, IR::Opcode word_opc
     return consumer->GetArg(0).GetInst() == value;
 }
 
+static bool IsAlreadyZeroExtendedByte(const IR::Value& value) {
+    // Shifts cannot trigger the narrow-sign-extension alias, so this producer emitted UXTB.
+    return !value.IsImmediate() &&
+           value.GetInstRecursive()->GetOpcode() == IR::Opcode::LeastSignificantByte;
+}
+
 template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -268,6 +274,7 @@ void EmitIR<IR::Opcode::ConditionalSelectNZCV>(oaknut::CodeGenerator& code, Emit
 template<>
 void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
+    const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     auto& operand_arg = args[0];
@@ -293,9 +300,12 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            code.AND(Wscratch0, Wshift, 0xff);
-            code.LSL(Wresult, Woperand, Wscratch0);
-            code.CMP(Wscratch0, 32);
+            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+            if (!shift_is_zero_extended_byte) {
+                code.AND(Wscratch0, Wshift, 0xff);
+            }
+            code.LSL(Wresult, Woperand, Wcanonical_shift);
+            code.CMP(Wcanonical_shift, 32);
             code.CSEL(Wresult, Wresult, WZR, LT);
         }
     } else {
@@ -405,6 +415,7 @@ void EmitIR<IR::Opcode::LogicalShiftLeft64>(oaknut::CodeGenerator& code, EmitCon
 template<>
 void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
+    const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     auto& operand_arg = args[0];
@@ -430,9 +441,12 @@ void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitCo
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            code.AND(Wscratch0, Wshift, 0xff);
-            code.LSR(Wresult, Woperand, Wscratch0);
-            code.CMP(Wscratch0, 32);
+            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+            if (!shift_is_zero_extended_byte) {
+                code.AND(Wscratch0, Wshift, 0xff);
+            }
+            code.LSR(Wresult, Woperand, Wcanonical_shift);
+            code.CMP(Wcanonical_shift, 32);
             code.CSEL(Wresult, Wresult, WZR, LT);
         }
     } else {
@@ -543,6 +557,7 @@ void EmitIR<IR::Opcode::LogicalShiftRight64>(oaknut::CodeGenerator& code, EmitCo
 template<>
 void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
+    const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     auto& operand_arg = args[0];
@@ -564,10 +579,13 @@ void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, Emi
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            code.AND(Wscratch0, Wshift, 0xff);
+            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+            if (!shift_is_zero_extended_byte) {
+                code.AND(Wscratch0, Wshift, 0xff);
+            }
             code.MOV(Wscratch1, 31);
-            code.CMP(Wscratch0, 31);
-            code.CSEL(Wscratch0, Wscratch0, Wscratch1, LS);
+            code.CMP(Wcanonical_shift, 31);
+            code.CSEL(Wscratch0, Wcanonical_shift, Wscratch1, LS);
             code.ASR(Wresult, Woperand, Wscratch0);
         }
     } else {

@@ -246,3 +246,58 @@ TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics
     CHECK(jit.Regs()[3] == 0xffff8081);
     CHECK(jit.Regs()[5] == 0x24690102);
 }
+
+TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe1a05410,  // LSL R5, R0, R4
+        0xe1a06430,  // LSR R6, R0, R4
+        0xe1a07450,  // ASR R7, R0, R4
+        0xe1a08470,  // ROR R8, R0, R4
+        0xe1b09410,  // LSLS R9, R0, R4
+        0xeafffffe,  // B .
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    constexpr std::uint32_t operand = 0x81234567;
+    constexpr std::array shift_registers{
+        0xabcdef00u,
+        0xabcdef01u,
+        0xabcdef1fu,
+        0xabcdef20u,
+        0xabcdef21u,
+        0xabcdefffu,
+    };
+
+    for (const std::uint32_t shift_register : shift_registers) {
+        const auto shift = static_cast<std::uint8_t>(shift_register);
+        const std::uint32_t expected_lsl = shift == 0 ? operand : shift < 32 ? operand << shift : 0;
+        const std::uint32_t expected_lsr = shift == 0 ? operand : shift < 32 ? operand >> shift : 0;
+        const std::uint32_t expected_asr =
+            shift == 0 ? operand
+                       : shift < 32 ? (operand >> shift) | (~0u << (32 - shift)) : ~0u;
+        const auto rotate = static_cast<std::uint8_t>(shift & 31);
+        const std::uint32_t expected_ror =
+            rotate == 0 ? operand : (operand >> rotate) | (operand << (32 - rotate));
+        const std::uint32_t expected_carry =
+            shift == 0 ? 1 : shift <= 32 ? (operand >> (32 - shift)) & 1 : 0;
+
+        CAPTURE(shift_register, shift);
+        jit.Regs() = {};
+        jit.Regs()[0] = operand;
+        jit.Regs()[4] = shift_register;
+        jit.SetCpsr(0x200001d0);  // User mode plus carry set
+        callbacks.ticks_left = 6;
+        jit.Run();
+
+        CHECK(jit.Regs()[5] == expected_lsl);
+        CHECK(jit.Regs()[6] == expected_lsr);
+        CHECK(jit.Regs()[7] == expected_asr);
+        CHECK(jit.Regs()[8] == expected_ror);
+        CHECK(jit.Regs()[9] == expected_lsl);
+        CHECK(((jit.Cpsr() >> 29) & 1) == expected_carry);
+    }
+}
