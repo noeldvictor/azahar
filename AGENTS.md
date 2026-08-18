@@ -575,6 +575,14 @@
   A715, 2.71x-2.72x on A710, and 3.52x-4.77x on X3; `VRSRA` measured 5.08x-5.65x, 2.99x-3.01x,
   3.39x-3.50x, and 2.54x-3.37x respectively. Keep these claims path-local until a matched title and
   battery-power A/B exists.
+- A32/A64 vector `VSLI`/`SLI` and `VSRI`/`SRI` must retain first-class shift-insert IR. ARM64 must
+  emit one native `SLI` or `SRI`; x64 and RISC-V must use the exact polyfill that preserves the
+  destination bits outside the insertion field. Keep each 8/16/32/64-bit lane's legal immediate
+  range, D/Q forms, low/high registers, source/destination overlap, unrelated SIMD state, and
+  unchanged CPSR/FPSCR under permanent tests. Do not restore ARM64's five-instruction
+  shift/immediate/broadcast/bit-clear/OR expansion: the exact native path measured 6.94x-8.32x on
+  Thor A510, 1.99x-2.01x on A715, 2.17x-2.21x on A710, and 2.42x-2.43x on X3. Keep these claims
+  path-local until a matched title and battery-power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

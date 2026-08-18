@@ -733,6 +733,15 @@ non-rounding `VSRA` fusion was deliberately rejected: it was neutral on A715/A71
 by **5.7%-22.3%**. All 1,928 assertions in 25 focused cases pass on Thor. This is optimization 103;
 these results apply only to the affected instructions and are not a whole-game FPS or watt claim.
 
+A32/A64 vector shift-inserts now remain first-class operations as well. `VSLI`/`SLI` and
+`VSRI`/`SRI` previously expanded on ARM64 to a shift, scalar immediate materialization, vector
+broadcast, bit clear, and OR; the backend now emits the matching single native instruction. x64 and
+RISC-V retain exact portable polyfills. This removes four of five host instructions on the affected
+path. Thor measurements across every lane width were **6.94x-8.32x on A510, 1.99x-2.01x on A715,
+2.17x-2.21x on A710, and 2.42x-2.43x on X3**. All 1,976 assertions in 26 focused cases pass on
+Thor. This is optimization 104 in the overlapping tally, not a 104x emulator result; title FPS and
+battery watts still require a matched gameplay A/B.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

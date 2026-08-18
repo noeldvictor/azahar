@@ -4596,6 +4596,62 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   watt, frametime, or thermal result. Those still require a matched title/scene/cache/renderer/
   driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## ARM64 Vector Shift-Insert Fusion (2026-08-18)
+
+- A32/A64 `VSLI`/`SLI` and `VSRI`/`SRI` previously expanded on ARM64 to five host instructions: a
+  vector shift, scalar immediate materialization, `DUP`, `BIC`, and `ORR`. AArch64 expresses the
+  exact destination-preserving operation in one native `SLI` or `SRI`, reducing this affected path
+  by four instructions, or 80%.
+- The complete Arm guide pages were rendered and visually checked before measurement. A510 lists
+  A64 `SLI`/`SRI` and A32 `VSLI`/`VSRI` at latency 3 and throughput `2,1` on VALU; A710 lists both
+  forms at latency 2 and throughput 1 on V1; A715 lists the A64 forms at latency 2 and throughput 1
+  on V1; X3 lists the A64 forms at latency 2 and throughput 2 on V13. These tables supported testing
+  every Thor core class rather than assuming the five-to-one instruction reduction scaled equally.
+- `llvm-objdump` verified the intended five-instruction baseline and one-instruction candidate for
+  every lane width and direction, with identical loop control. Each sample used four independent
+  vector chains for 1,000,000 iterations, or 4,000,000 affected operations, over nine alternating-
+  order rounds. Warmup and timed checksums matched and remained nonzero.
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VSLI.8` | 6.939407x | 2.005499x | 2.203525x | 2.420771x |
+  | `VSLI.16` | 7.102336x | 2.007047x | 2.210151x | 2.421235x |
+  | `VSLI.32` | 7.011041x | 2.006873x | 2.191220x | 2.426934x |
+  | `VSLI.64` | 8.322861x | 1.998352x | 2.174261x | 2.421775x |
+  | `VSRI.8` | 7.838822x | 1.993065x | 2.204195x | 2.419850x |
+  | `VSRI.16` | 7.043788x | 2.006766x | 2.195724x | 2.420463x |
+  | `VSRI.32` | 7.107420x | 2.009022x | 2.195096x | 2.422545x |
+  | `VSRI.64` | 7.040607x | 2.005004x | 2.202777x | 2.425394x |
+
+- Dynarmic now carries left and right vector shift-insert as first-class IR. ARM64 emits the native
+  instruction, while x64 and RISC-V request an exact polyfill, preserving their established output.
+  Permanent A32 coverage executes all 16 min/max-immediate operations across 8/16/32/64-bit lanes.
+  It covers D/Q forms, low/high registers, source/destination overlap, preserved destination bits,
+  unrelated SIMD state, and unchanged CPSR/FPSCR.
+- The full native ARM64 build completed successfully in 13 minutes 33 seconds, including the
+  production emitter and library. Thor then passed all 1,976 assertions in 26 focused
+  `[core][arm][dynarmic]` cases. Source/test commit `ce1500209` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 3 minutes 6 seconds. Its ARM64-only APK is 28,998,432 bytes, reports
+  `ce1500209-vanilla-thor`, and has SHA-256
+  `2E66A94B4F804ED795BAA0CF360158C6E4AB8E51BCB276B688079D53A186C444`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the corrected process-ID
+  check was empty, and no app UI or game was launched. Thor was USB-powered at 49%, 3.828 V, and
+  22.0 C, so this is not battery-discharge watt evidence. Both temporary device binaries were
+  removed.
+- Cleanup removed 2,498,961,084 logical bytes: the 447,340,912-byte native test ELF, stripped test
+  copy, benchmark/encoding scratch, six rendered manual pages, copied JNI dependencies, and
+  reproducible Gradle/JNI/R8/native-symbol staging. It retained the 28,998,432-byte APK plus
+  476-byte metadata and the 2,784,158,328-byte active ARM64 CMake/Ninja cache. C: recovered about
+  2,057,101,312 physical bytes and reported 81,502,978,048 bytes free immediately afterward. No
+  PDF or rendered manual artifact was committed.
+- This is optimization 104 in the overlapping Thor work tally. The 1.99x-8.32x measurements apply
+  only while executing these exact vector shift-insert forms. They cannot be added to the other 103
+  items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result. Those
+  still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
