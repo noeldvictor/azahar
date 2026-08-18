@@ -218,10 +218,10 @@ static void EmitPackedAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
     auto Vresult = ctx.reg_alloc.WriteD(inst);
     auto Va = ctx.reg_alloc.ReadD(args[0]);
     auto Vb = ctx.reg_alloc.ReadD(args[1]);
-    RegAlloc::Realize(Vresult, Va, Vb);
 
     if constexpr (is_halving) {
         ASSERT(!ge_inst);
+        RegAlloc::Realize(Vresult, Va, Vb);
 
         // ASX/SAX exchange the two source halfwords before applying opposite operations. Native
         // halving add/sub already has the exact signed rounding and unsigned underflow behavior;
@@ -249,36 +249,60 @@ static void EmitPackedAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
         return;
     }
 
-    if (is_signed) {
-        code.SXTL(V0.S4(), Va->H4());
-        code.SXTL(V1.S4(), Vb->H4());
-    } else {
-        code.UXTL(V0.S4(), Va->H4());
-        code.UXTL(V1.S4(), Vb->H4());
-    }
-    code.EXT(V1.B8(), V1.B8(), V1.B8(), 4);
+    if (!ge_inst) {
+        RegAlloc::Realize(Vresult, Va, Vb);
 
-    code.MOVI(D2, oaknut::RepImm{add_is_hi ? 0b11110000 : 0b00001111});
-
-    code.EOR(V1.B8(), V1.B8(), V2.B8());
-    code.SUB(V1.S2(), V1.S2(), V2.S2());
-    code.SUB(Vresult->S2(), V0.S2(), V1.S2());
-
-    if (ge_inst) {
-        auto Vge = ctx.reg_alloc.WriteD(ge_inst);
-        RegAlloc::Realize(Vge);
-
-        if (is_signed) {
-            code.CMGE(Vge->S2(), Vresult->S2(), 0);
-            code.XTN(Vge->H4(), Vge->toQ().S4());
+        code.REV32(V0.H4(), Vb->H4());
+        if constexpr (add_is_hi) {
+            code.SUB(V1.H4(), Va->H4(), V0.H4());
+            code.ADD(Vresult->H4(), Va->H4(), V0.H4());
         } else {
-            code.CMEQ(Vge->H4(), Vresult->H4(), 0);
-            code.EOR(Vge->B8(), Vge->B8(), V2.B8());
-            code.SHRN(Vge->H4(), Vge->toQ().S4(), 16);
+            code.ADD(V1.H4(), Va->H4(), V0.H4());
+            code.SUB(Vresult->H4(), Va->H4(), V0.H4());
         }
+        code.MOV(Vresult->Helem()[0], V1.H()[0]);
+        return;
     }
 
-    code.XTN(Vresult->H4(), Vresult->toQ().S4());
+    auto Vge = ctx.reg_alloc.WriteD(ge_inst);
+    RegAlloc::Realize(Vresult, Va, Vb, Vge);
+
+    // Compute the wrapped result directly in halfword lanes. Signed GE uses the sign of native
+    // halving add/sub, which exactly matches the sign of the full-width result. Unsigned addition
+    // detects carry by comparing the first operand with the wrapped result, while UHSUB's sign bit
+    // distinguishes subtraction no-borrow. This keeps the recurring result path free of widening
+    // and narrowing while preserving all four GE bits.
+    code.REV32(V0.H4(), Vb->H4());
+    if constexpr (add_is_hi) {
+        code.SUB(V1.H4(), Va->H4(), V0.H4());
+        code.ADD(Vresult->H4(), Va->H4(), V0.H4());
+    } else {
+        code.ADD(V1.H4(), Va->H4(), V0.H4());
+        code.SUB(Vresult->H4(), Va->H4(), V0.H4());
+    }
+    code.MOV(Vresult->Helem()[0], V1.H()[0]);
+
+    if constexpr (is_signed) {
+        if constexpr (add_is_hi) {
+            code.SHSUB(V1.H4(), Va->H4(), V0.H4());
+            code.SHADD(Vge->H4(), Va->H4(), V0.H4());
+        } else {
+            code.SHADD(V1.H4(), Va->H4(), V0.H4());
+            code.SHSUB(Vge->H4(), Va->H4(), V0.H4());
+        }
+        code.MOV(Vge->Helem()[0], V1.H()[0]);
+        code.CMGE(Vge->H4(), Vge->H4(), 0);
+    } else if constexpr (add_is_hi) {
+        code.CMHI(Vge->H4(), Va->H4(), Vresult->H4());
+        code.UHSUB(V1.H4(), Va->H4(), V0.H4());
+        code.CMGE(V1.H4(), V1.H4(), 0);
+        code.MOV(Vge->Helem()[0], V1.H()[0]);
+    } else {
+        code.CMHI(V1.H4(), Va->H4(), V1.H4());
+        code.UHSUB(Vge->H4(), Va->H4(), V0.H4());
+        code.CMGE(Vge->H4(), Vge->H4(), 0);
+        code.MOV(Vge->Helem()[0], V1.H()[0]);
+    }
 }
 
 template<>

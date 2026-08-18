@@ -694,6 +694,87 @@ TEST_CASE("Dynarmic A32 mixed halving add-sub preserves rounding and underflow",
     CHECK(jit.Regs()[9] == 0x80007fff);
 }
 
+TEST_CASE("Dynarmic A32 mixed add-sub preserves wrapping lanes and GE flags",
+          "[core][arm][dynarmic]") {
+    struct MixedInstruction {
+        std::uint32_t instruction;
+        bool add_is_hi;
+        bool is_signed;
+    };
+    constexpr std::array mixed_instructions{
+        MixedInstruction{0xe6110f32, true, true},    // SASX R0, R1, R2
+        MixedInstruction{0xe6110f52, false, true},   // SSAX R0, R1, R2
+        MixedInstruction{0xe6510f32, true, false},   // UASX R0, R1, R2
+        MixedInstruction{0xe6510f52, false, false},  // USAX R0, R1, R2
+    };
+    constexpr std::array input_cases{
+        std::pair{0x00000000u, 0x00000000u},
+        std::pair{0xffffffffu, 0x00010001u},
+        std::pair{0x7fff8000u, 0x7fff7fffu},
+        std::pair{0x80007fffu, 0x80000001u},
+        std::pair{0x0000ffffu, 0xffff0000u},
+        std::pair{0xffff0000u, 0x0000ffffu},
+        std::pair{0x1234abcdu, 0xfedc5678u},
+        std::pair{0x80008000u, 0x80008000u},
+    };
+
+    for (const auto& mixed_instruction : mixed_instructions) {
+        for (const auto& [rn, rm] : input_cases) {
+            const auto evaluate_lane = [&](std::uint16_t a, std::uint16_t b, bool add) {
+                std::int32_t full_result;
+                bool ge;
+                if (mixed_instruction.is_signed) {
+                    full_result = add ? static_cast<std::int16_t>(a) + static_cast<std::int16_t>(b)
+                                      : static_cast<std::int16_t>(a) - static_cast<std::int16_t>(b);
+                    ge = full_result >= 0;
+                } else if (add) {
+                    const std::uint32_t unsigned_result =
+                        static_cast<std::uint32_t>(a) + static_cast<std::uint32_t>(b);
+                    full_result = static_cast<std::int32_t>(unsigned_result);
+                    ge = unsigned_result >= 0x10000;
+                } else {
+                    full_result = static_cast<std::int32_t>(a) - static_cast<std::int32_t>(b);
+                    ge = a >= b;
+                }
+                return std::pair{static_cast<std::uint16_t>(full_result), ge};
+            };
+
+            const auto [low_result, low_ge] =
+                evaluate_lane(static_cast<std::uint16_t>(rn), static_cast<std::uint16_t>(rm >> 16),
+                              !mixed_instruction.add_is_hi);
+            const auto [high_result, high_ge] =
+                evaluate_lane(static_cast<std::uint16_t>(rn >> 16), static_cast<std::uint16_t>(rm),
+                              mixed_instruction.add_is_hi);
+            const std::uint32_t expected_result =
+                low_result | static_cast<std::uint32_t>(high_result) << 16;
+            const std::uint32_t expected_ge = (low_ge ? 0b0011 : 0) | (high_ge ? 0b1100 : 0);
+
+            CAPTURE(mixed_instruction.instruction, rn, rm, expected_result, expected_ge);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                mixed_instruction.instruction,
+                0xeafffffe,  // B .
+                0xeafffffe,
+                0xeafffffe,
+                0xeafffffe,
+                0xeafffffe,
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+
+            jit.Regs() = {};
+            jit.Regs()[1] = rn;
+            jit.Regs()[2] = rm;
+            jit.SetCpsr(0xf80f01d0);  // NZCV/Q/GE plus User mode
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == expected_result);
+            CHECK((jit.Cpsr() & 0xf80f0000) == (0xf8000000 | expected_ge << 16));
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 mixed saturated add-sub preserves lanes and flags",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
