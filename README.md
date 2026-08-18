@@ -723,6 +723,16 @@ on-device suite passes 1,880 assertions in 24 cases. This is optimization 102, n
 13x result: whole-game FPS and watts depend on each title's dynamic instruction mix and still need
 a matched gameplay A/B.
 
+A32/A64 vector rounding right shifts and rounding right-shift-accumulates now stay first-class too.
+The previous overflow-safe shift/broadcast/AND/compare/subtract expansion becomes one native ARM64
+`SRSHR`/`URSHR`; its following add becomes one `SRSRA`/`URSRA`. x64 and RISC-V reconstruct the
+established exact sequence through a polyfill. Thor exact-path medians measured **9.88x-10.61x on
+A510, 2.50x-2.51x on A715, 2.71x-2.72x on A710, and 3.52x-4.77x on X3** for `VRSHR`, and
+**5.08x-5.65x, 2.99x-3.01x, 3.39x-3.50x, and 2.54x-3.37x** respectively for `VRSRA`. A plain
+non-rounding `VSRA` fusion was deliberately rejected: it was neutral on A715/A710 but regressed X3
+by **5.7%-22.3%**. All 1,928 assertions in 25 focused cases pass on Thor. This is optimization 103;
+these results apply only to the affected instructions and are not a whole-game FPS or watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

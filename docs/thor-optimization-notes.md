@@ -4531,6 +4531,71 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   other 101 items or treated as a whole-game FPS, battery-watt, or thermal result; those require a
   matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B.
 
+## ARM64 Vector Rounding Shift-Right Fusion (2026-08-18)
+
+- A32/A64 vector `VRSHR`/`SRSHR`/`URSHR` previously became an overflow-safe right shift, rounding-
+  bit broadcast, AND, equality mask, and subtract-as-add. `VRSRA`/`SRSRA`/`URSRA` then appended a
+  separate modular vector add. ARM64 can express the exact operations as one `SRSHR`/`URSHR` or
+  `SRSRA`/`URSRA`, without touching FPSR.
+- The Cortex guides made this a per-core measurement question rather than an automatic fusion.
+  A510 lists A64 `SRSHR`/`URSHR` at latency 4 and A32 `VRSRA` at latency 7, while A710/A715 list
+  basic immediate shifts at latency 2, rounding immediate shifts and shift-accumulates at latency
+  4, and X3 lists the same latency classes at higher throughput. `llvm-objdump` verified all 24
+  baseline/candidate bodies. Each sample ran four independent vector operations for 1,000,000
+  iterations, or 4,000,000 affected operations, across nine alternating-order rounds. Warmup and
+  timed checksums matched and remained nonzero.
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VRSHR.S8` | 10.168814x | 2.503628x | 2.717059x | 3.644689x |
+  | `VRSHR.S16` | 10.113846x | 2.504299x | 2.708425x | 4.464165x |
+  | `VRSHR.S32` | 9.983189x | 2.504528x | 2.714135x | 4.767936x |
+  | `VRSHR.S64` | 10.595018x | 2.512617x | 2.713818x | 4.721130x |
+  | `VRSHR.U8` | 10.433867x | 2.505041x | 2.710081x | 3.758589x |
+  | `VRSHR.U16` | 10.605283x | 2.510857x | 2.714629x | 3.518261x |
+  | `VRSHR.U32` | 10.049815x | 2.505534x | 2.718222x | 3.793438x |
+  | `VRSHR.U64` | 9.879887x | 2.504598x | 2.713218x | 3.624434x |
+  | `VRSRA.S8` | 5.579025x | 2.991158x | 3.440428x | 3.327763x |
+  | `VRSRA.S16` | 5.311777x | 3.005532x | 3.491094x | 3.342980x |
+  | `VRSRA.S32` | 5.076427x | 3.004477x | 3.486183x | 3.354109x |
+  | `VRSRA.S64` | 5.183191x | 3.005112x | 3.496335x | 2.543372x |
+  | `VRSRA.U8` | 5.149252x | 3.008707x | 3.471114x | 3.372724x |
+  | `VRSRA.U16` | 5.646550x | 3.004865x | 3.481740x | 3.176134x |
+  | `VRSRA.U32` | 5.412307x | 2.991859x | 3.503312x | 3.304029x |
+  | `VRSRA.U64` | 5.173864x | 3.004616x | 3.386183x | 3.285604x |
+
+- Plain non-rounding `VSRA` was measured in the same harness and rejected. Native `SSRA`/`USRA`
+  improved A510 by 3.94x-4.10x and was effectively neutral on A715 (0.996033x-1.000846x) and A710
+  (0.996907x-1.003349x), but X3 fell to 0.777230x-0.942683x, a 5.7%-22.3% regression. The frontend
+  deliberately retains its existing shift plus add for this family.
+- Dynarmic now carries signed/unsigned, 8/16/32/64-bit rounding right shift and rounding right-
+  shift-accumulate operations in first-class IR. ARM64 emits the matching native instruction.
+  x64 and RISC-V request a polyfill that reconstructs the prior overflow-safe DAG plus optional
+  modular add, so non-ARM64 behavior is unchanged.
+- Permanent A32 coverage executes all 16 signed/unsigned forms across every lane width. It includes
+  D/Q widths, low and high registers, maximum legal shifts, full source/destination overlap, exact
+  signed and unsigned rounding, accumulator wraparound, unrelated SIMD state, and unchanged
+  CPSR/FPSCR. The release-style ARM64 test binary built successfully and Thor passed all 1,928
+  assertions in 25 focused `[core][arm][dynarmic]` cases. Source/test commit `f8dfcb115` was pushed
+  directly to `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 2 minutes 42 seconds. Its ARM64-only APK is 28,997,240 bytes, reports
+  `f8dfcb115-vanilla-thor`, and has SHA-256
+  `8B3649C5E6E5F0CC1AA57CD9E2424D9C672C1800B0BE61EABB074402658F246A`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 52%, 3.754 V, and 25.0 C, so
+  this is not battery-discharge watt evidence. Both temporary device binaries were removed.
+- Cleanup removed 2,503,006,450 logical bytes: the 448,224,232-byte native test ELF, stripped test
+  copy, benchmark/encoding scratch, eight rendered manual pages, copied validation layers, tool
+  metadata, and reproducible Gradle/JNI/R8/native-symbol staging. It retained the 28,997,240-byte
+  APK plus 476-byte metadata and the 2,797,637,092-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,059,730,944 physical bytes and reported 81,490,550,784 bytes free afterward.
+- This is optimization 103 in the overlapping Thor work tally. The 2.50x-10.61x measurements apply
+  only while executing these exact rounding shift-right or rounding shift-right-accumulate forms;
+  they cannot be added to the other 102 items or treated as a whole-game FPS, sustained battery-
+  watt, frametime, or thermal result. Those still require a matched title/scene/cache/renderer/
+  driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

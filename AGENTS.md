@@ -563,6 +563,18 @@
   legal shifts, high registers, source/destination overlap, exact negative rounding, saturation,
   unrelated SIMD state, CPSR/FPSCR state, and QC behavior in permanent tests. Keep the claim
   path-local until a matched title and power A/B exists.
+- A32/A64 vector `VRSHR`/`SRSHR`/`URSHR` and `VRSRA`/`SRSRA`/`URSRA` must retain the first-class
+  signed/unsigned rounding shift-right or rounding shift-right-accumulate IR operations. ARM64 must
+  emit one `SRSHR`/`URSHR` or `SRSRA`/`URSRA`; x64 and RISC-V must polyfill back to the established
+  overflow-safe shift/broadcast/AND/equal/subtract sequence plus the optional modular add. Preserve
+  8/16/32/64-bit lanes, legal immediate shifts including the element width, D/Q forms, high
+  registers, source/destination overlap, exact negative rounding, modular accumulator wrap,
+  unrelated SIMD state, and unchanged CPSR/FPSCR. Do not fuse plain non-rounding `VSRA` into
+  `SSRA`/`USRA`: although it improved A510 and was neutral on A715/A710, the exact sequence regressed
+  Thor X3 by 5.7%-22.3%. The accepted `VRSHR` path measured 9.88x-10.61x on A510, 2.50x-2.51x on
+  A715, 2.71x-2.72x on A710, and 3.52x-4.77x on X3; `VRSRA` measured 5.08x-5.65x, 2.99x-3.01x,
+  3.39x-3.50x, and 2.54x-3.37x respectively. Keep these claims path-local until a matched title and
+  battery-power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
