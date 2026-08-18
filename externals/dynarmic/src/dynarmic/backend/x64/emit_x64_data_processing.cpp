@@ -1132,6 +1132,18 @@ void EmitX64::EmitMul64(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitSignedMultiplyLong(EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    const Xbyak::Reg64 result = ctx.reg_alloc.UseScratchGpr(args[0]);
+    const Xbyak::Reg64 factor = ctx.reg_alloc.UseScratchGpr(args[1]);
+    code.movsxd(result, result.cvt32());
+    code.movsxd(factor, factor.cvt32());
+    code.imul(result, factor);
+
+    ctx.reg_alloc.DefineValue(inst, result);
+}
+
 void EmitX64::EmitUnsignedMultiplyLong(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 

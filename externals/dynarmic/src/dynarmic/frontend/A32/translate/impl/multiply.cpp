@@ -107,9 +107,7 @@ bool TranslatorVisitor::arm_SMULL(Cond cond, bool S, Reg dHi, Reg dLo, Reg m, Re
         return true;
     }
 
-    const auto n64 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.SignExtendWordToLong(ir.GetRegister(m));
-    const auto result = ir.Mul(n64, m64);
+    const auto result = ir.SignedMultiplyLong(ir.GetRegister(n), ir.GetRegister(m));
     const auto lo = ir.LeastSignificantWord(result);
     const auto hi = ir.MostSignificantWord(result).result;
 

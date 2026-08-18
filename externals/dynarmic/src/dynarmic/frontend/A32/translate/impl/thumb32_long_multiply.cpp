@@ -137,9 +137,7 @@ bool TranslatorVisitor::thumb32_SMULL(Reg n, Reg dLo, Reg dHi, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.SignExtendWordToLong(ir.GetRegister(m));
-    const auto result = ir.Mul(n64, m64);
+    const auto result = ir.SignedMultiplyLong(ir.GetRegister(n), ir.GetRegister(m));
     const auto lo = ir.LeastSignificantWord(result);
     const auto hi = ir.MostSignificantWord(result).result;
 
