@@ -244,6 +244,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   A510, A710, and X3. Preserve semantic bitfield-insert IR, a copy-free self-alias lowering,
   portable polyfills, actual-JIT disassembly, and repeated all-core measurements. Leave A32 `BFC`
   on its one-instruction ARM64 logical-immediate clear path.
+- Those same scalar data-processing tables list the AArch64 move-wide family containing `MOVK` at
+  latency/throughput 1/3 on A510 page 22, 1/4 on A710 page 27, 1/4 on A715 page 20, and 1/6 on X3
+  page 18. A32 ARM/Thumb-2 `MOVT` is an exact semantic match for `MOVK Wd,#imm,LSL#16`: both retain
+  the low halfword and replace the high halfword without touching flags. Keep the semantic
+  operation first-class until ARM64 emits one MOVK, retain the mask/OR polyfill for other hosts,
+  and preserve the one-instruction `AND #0xffff` path for immediate zero because physical A510
+  measurements rejected MOVK there. Require actual-JIT disassembly, dirty-input and flags/FPSCR
+  coverage, and repeated measurements on every Thor core class.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,

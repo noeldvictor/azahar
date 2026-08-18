@@ -859,6 +859,18 @@ assertions separately on every Thor CPU class, and the final full focused suite 
 assertions in 37 cases. This is optimization 115; it is an exact instruction-path result, not a
 whole-game FPS or battery-watt claim.
 
+A32 ARM/Thumb-2 `MOVT` now remains first-class through Dynarmic IR as `MoveTopHalf32`. ARM64 emits
+one native `MOVK` instead of the usual `AND; MOVZ; ORR` sequence, while x64 and RISC-V expand the
+semantic operation back to the established portable graph. An actual JIT word decoded as exactly
+`movk w19,#0x1234,lsl #16`. Three repeated, alternating-order, 32-million-operation Thor runs
+measured cross-run-median normal-immediate independent/dependency speedups of **2.62x/2.01x on
+A510, 2.88x/2.00x on A715, 2.90x/2.00x on A710, and 2.71x/2.00x on X3**. Even an immediate whose
+old OR was directly encodable measured 1.85x-2.09x independent and about 2.00x dependent. The
+initial zero-immediate MOVK candidate exposed an A510 regression, so `MOVT #0` deliberately keeps
+the old one-`AND` path. The permanent ARM/Thumb test passed 12,241 assertions on every Thor core
+class, and the final full suite passed 87,460 assertions in 38 cases. This is optimization 116; it
+reduces work only where guest code executes MOVT and is not a whole-game FPS or wattage claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

@@ -5305,6 +5305,68 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   is the next scalar JIT candidate, but it needs the same alias, disassembly, correctness, and
   all-core measurement gates before implementation.
 
+## ARM64 A32 Native Move Top Half (2026-08-18)
+
+- A32 ARM and Thumb-2 `MOVT` previously built a generic low-half `AND` plus shifted-immediate `OR`
+  graph. Dynarmic now retains nonzero forms as `MoveTopHalf32`. ARM64 reads and writes the same
+  allocation and emits the exact architectural match, `MOVK Wd,#imm,LSL#16`; x64 and RISC-V
+  polyfill back to the established graph. The central emitter retains immediate zero as
+  `AND Wd,Wd,#0xffff`, because identity removal already made that old path one instruction.
+- The complete local Cortex optimization-guide pages were used, not instruction-count intuition.
+  The move-wide family containing `MOVN`/`MOVZ`/`MOVK` is latency/throughput 1/3 on A510 page 22,
+  1/4 on A710 page 27, 1/4 on A715 page 20, and 1/6 on X3 page 18. The Arm architecture semantics
+  also match exactly: MOVK retains every destination bit outside the selected 16-bit halfword and
+  does not update flags. No PDF or rendered manual page entered Git.
+- A temporary emitter trace captured raw JIT word `72a24693`; host `llvm-objdump` decoded it as
+  exactly `movk w19,#0x1234,lsl #16`, proving a one-instruction span with no hidden register copy.
+  The diagnostic was removed. The final stripped test binary contains no `THOR_MOVT116` marker,
+  is 26,128,600 bytes, and has SHA-256
+  `179AA28540897777CAA0EC5D3C4D332300FF3843944CD824E7B7B512F81EAD0B`.
+- The standalone old/new bodies were disassembly-checked. The representative `0x1234` old body is
+  `AND; MOVZ; ORR`, an OR-encodable `0xffff` old body is `AND; ORR`, and the identity-reduced zero
+  body is one `AND`; each candidate is one MOVK. Each invocation used 15 samples, alternated
+  old/new order, and executed 32,000,000 affected guest operations per sample. Three complete
+  invocations ran on each Thor core class; the table reports the median of those three per-run
+  medians.
+
+  | Immediate/dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 6 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `0x1234`, independent chains | 2.6231x | 2.8808x | 2.9015x | 2.7145x |
+  | `0x1234`, sequential chain | 2.0075x | 2.0001x | 1.9990x | 1.9993x |
+  | `0xffff`, independent chains | 2.0936x | 1.9489x | 1.9424x | 1.8513x |
+  | `0xffff`, sequential chain | 2.0037x | 2.0000x | 1.9996x | 2.0001x |
+
+- The initial `MOVT #0` candidate was not accepted blindly. Its independent A510 result repeatedly
+  regressed by 7.1%-9.0%, while A715/A710 were effectively tied and X3 was DVFS-sensitive. The
+  final zero guard emits the identical old one-AND path, so it cannot take that regression while
+  every nonzero immediate keeps native MOVK.
+- Permanent coverage checks ARM and Thumb-2 encodings; destination registers 0/4/8/12; zero, one,
+  boundary, alternating, and dirty immediates; ten boundary/dirty register inputs; every unrelated
+  GPR; NZCV/Q/GE; and FPSCR. The final 12,241-assertion case passed on CPU 0/A510, CPU 3/A715,
+  CPU 6/A710, and CPU 7/X3. The complete `[core][arm][dynarmic]` suite passed 87,460 assertions in
+  38 cases on CPU 3/A715. The diagnostic-free Android ARM64 native build passed in 1 minute 33
+  seconds. Source/test commit `31968b954` was pushed directly to `origin/master` with command-line
+  Git SSH.
+- Exact source-commit packaging with JDK 17, ordinary Gradle caching,
+  `:app:assembleVanillaRelWithDebInfoLite`, and `--no-configuration-cache` passed in 3 minutes 10
+  seconds. The retained ARM64-only APK is 29,003,004 bytes, reports
+  `31968b954-vanilla-thor`, and has SHA-256
+  `3948DEE4659E8C91DF1E077604E0493DF1C259C3077B2EBC38066438CABFFAF4`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; a final force-stop left no process, and no app UI or game was
+  launched. Thor reported AC power at 59%, 4.226 V, and 35.0 C, so the timing results are not
+  battery-discharge watt evidence.
+- Cleanup removed 2,549,786,788 logical host bytes of stripped/unstripped tests, trace/benchmark
+  helpers, and reproducible Gradle/JNI/R8/native-symbol/mapping staging. C: recovered
+  2,108,264,448 physical bytes and reported 75,939,856,384 bytes free. The retained active ARM64
+  CMake/Ninja cache is 2,790,551,470 bytes; retained build output is only the 29,003,004-byte APK
+  and its 476-byte metadata. Four exact device helpers totaling 79,132,088 bytes were removed from
+  `/data/local/tmp`; no PDF, rendered manual page, benchmark binary, or scratch note was committed.
+- This is optimization 116 in the overlapping Thor work tally. The accepted 1.85x-2.90x
+  independent and about 2.00x dependency results apply only while executing nonzero MOVT paths.
+  They cannot be added to the other 115 items or treated as whole-game FPS, sustained battery-
+  watt, frametime, or thermal results. Those still require a matched title/scene/cache/renderer/
+  driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

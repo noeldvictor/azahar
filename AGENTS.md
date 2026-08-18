@@ -692,6 +692,16 @@
   2.0028x-3.8745x throughput gains, neutral distinct dependency chains on A510/A710/X3, a 2.0011x
   distinct dependency gain on A715, and 1.5004x-3.1851x self dependency gains. Keep all claims
   path-local until a matched title and battery-power A/B exists.
+- A32 ARM/Thumb-2 `MOVT` must retain the first-class `MoveTopHalf32` IR operation for nonzero
+  immediates. ARM64 must use one read/write operand and emit one native `MOVK Wd,#imm,LSL#16`;
+  x64 and RISC-V must polyfill it back to the exact low-half `AND` plus shifted-immediate `OR` DAG.
+  Keep immediate zero on the established one-`AND #0xffff` identity-reduced path: the otherwise
+  equivalent MOVK candidate repeatedly regressed independent A510 measurements by 7.1%-9.0%.
+  Preserve ARM and Thumb-2 encodings, low/high destination registers, zero/boundary/dirty values,
+  every unrelated GPR, NZCV/Q/GE, and FPSCR in permanent tests. Exact accepted-path measurements
+  were 2.6231x/2.0075x independent/dependent on A510, 2.8808x/2.0001x on A715,
+  2.9015x/1.9990x on A710, and 2.7145x/1.9993x on X3 for a representative nonzero immediate.
+  Keep these claims path-local until a matched title and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the
