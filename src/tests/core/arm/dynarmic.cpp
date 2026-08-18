@@ -108,3 +108,41 @@ TEST_CASE("Dynarmic preserves arithmetic NZCV across linked A32 blocks", "[core]
         CHECK((jit.Cpsr() & 0xf0000000) == test.nzcv);
     }
 }
+
+TEST_CASE("Dynarmic preserves VTBX defaults through ARM64 read-write coalescing",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf3f408e0,  // VTBX.8 D16, {D20}, D16
+        0xf3f419e1,  // VTBX.8 D17, {D20, D21}, D17
+        0xf3f42ae2,  // VTBX.8 D18, {D20, D21, D22}, D18
+        0xf3f43be3,  // VTBX.8 D19, {D20, D21, D22, D23}, D19
+        0xeafffffe,  // B .
+        0xeafffffe,  // B .
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    for (std::size_t reg = 16; reg <= 19; ++reg) {
+        jit.ExtRegs()[reg * 2 + 0] = 0x05'02'01'00;
+        jit.ExtRegs()[reg * 2 + 1] = 0x20'1F'10'0F;
+    }
+    for (std::size_t reg = 20; reg <= 23; ++reg) {
+        const auto first_byte = static_cast<std::uint32_t>((reg - 20) * 8);
+        jit.ExtRegs()[reg * 2 + 0] = (first_byte + 3) << 24 | (first_byte + 2) << 16 |
+                                      (first_byte + 1) << 8 | first_byte;
+        jit.ExtRegs()[reg * 2 + 1] = (first_byte + 7) << 24 | (first_byte + 6) << 16 |
+                                      (first_byte + 5) << 8 | (first_byte + 4);
+    }
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    for (std::size_t reg = 16; reg <= 19; ++reg) {
+        CAPTURE(reg);
+        CHECK(jit.ExtRegs()[reg * 2 + 0] == 0x05'02'01'00);
+        CHECK(jit.ExtRegs()[reg * 2 + 1] == 0x20'1F'10'0F);
+    }
+}
