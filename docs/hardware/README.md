@@ -187,6 +187,18 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   `CMN`, and `TST` on Cortex-X3 page 15, Cortex-A715 page 17, Cortex-A710 page 17, and Cortex-A510
   page 14. These are baseline operations across every Thor core class. Prove all sixteen reference/
   input combinations and every branch consumer because the true condition is not always EQ/NE.
+- Treat instruction tables as candidate guidance rather than proof across the heterogeneous SoC.
+  X3 page 15, A715/A710 page 16, and A510 pages 12-13 make `CBZ`/`CBNZ` look attractive, but a
+  disassembly-checked Thor benchmark rejected replacing the PICA uniform `CMP` plus conditional
+  branch. Taken branches regressed 22.7%-24.2% on A510 and 38.9%-46.0% on A710; A715/X3 mostly tied,
+  and only the A510 fallthrough case won. Preserve the current sequence until a real shader route
+  provides a different measured branch distribution.
+- Eliminate a fixed-register relocation when the destination is already reserved architectural
+  state. The A710 page 86, A715 page 63, and X3 page 60 special-register tables say NZCV reads are
+  fully renamed and have no non-speculative, in-order, or flush constraint. Dynarmic can therefore
+  read arithmetic flags directly with `MRS X23, NZCV` instead of `MRS Xtemp, NZCV` plus `MOV`.
+  The A510 guide has no comparable special-register table, so its measured 16.2% sequence win is
+  the controlling evidence there; the A710/A715/X3 wins were 20.1%, 19.3%, and 2.3% respectively.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

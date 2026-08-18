@@ -3258,6 +3258,56 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   whole-game FPS or wattage claim. A matched title/scene/cache/renderer/driver/resolution/layout/
   mode/fan/brightness/duration A/B remains required before attributing sustained system-level gain.
 
+## 2026-08-17 Dynarmic Direct A32 NZCV Capture
+
+- Command-line Git over SSH refreshed Azahar `upstream/master` to `fb1c1a710` and found the fork
+  133 commits ahead with no upstream-only commit. The official Azahar Dynarmic `master` was fetched
+  directly into this repository's object store and still resolves to
+  `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516` from 2026-06-24. It retains six ARM64 `RMIF` TODOs;
+  the vendored Oaknut has no `RMIF` mnemonic and Dynarmic exposes no FlagM host capability gate, so
+  emitting that optional instruction globally would be incorrect.
+- `A32SetCpsrNZCV` previously asked the allocator for a temporary GPR. For a flags-backed arithmetic
+  result this generated `MRS Xtemp, NZCV` followed by `MOV W23, Wtemp`, even though the fork already
+  reserves callee-saved `W23` for guest NZCV. `ReadIntoFixedRegister()` now copies an IR argument
+  directly into a fixed register through the existing immediate/GPR/FPR/spill/flags loader. It
+  asserts that the destination is absent from the allocator order; the A32 call site targets only
+  reserved `X23`. Normal argument-use accounting and `SpillFlags()` behavior remain intact.
+- The A710, A715, and X3 special-purpose-register tables on pages 86, 63, and 60 say NZCV is fully
+  renamed and its read is neither non-speculative, in-order, nor flush-producing. The A510 guide
+  does not publish the comparable table, so all four real core classes were measured. A
+  disassembly-checked ARM64 benchmark evaluated 16,777,216 flag results per case, consumed each with
+  `TBZ`, alternated current/direct order across nine rounds, and took the best result:
+  - A510 CPU 0: 3.087629 -> 2.586969 ns/evaluation, 16.22% faster.
+  - A710 CPU 3: 0.504820 -> 0.403201 ns/evaluation, 20.13% faster.
+  - A715 CPU 5: 0.516344 -> 0.416782 ns/evaluation, 19.28% faster.
+  - X3 CPU 7: 0.389681 -> 0.380737 ns/evaluation, 2.30% faster.
+- A nearby two-instruction idea was deliberately rejected. Replacing uniform `LDRB; CMP; B.cond`
+  with `LDRB; CBZ/CBNZ` removed an instruction but made the two taken patterns 24.18%/22.71% slower
+  on A510 and 45.99%/38.93% slower on A710. A510 fallthrough improved about 44%; A710 fallthrough
+  tied, and A715/X3 tied or moved only within noise. The manual throughput rows did not capture the
+  branch-direction cost, so the production PICA sequence remains unchanged.
+- Permanent `[core][arm][dynarmic]` coverage runs real guest `ADDS R0, R0, #1` followed by MI, VS,
+  CS, and EQ conditional moves across linked A32 blocks. N/V, Z/C, no-flags, and N-only inputs passed
+  all 24 assertions. The broader `[core]~[file_sys]` device run passed 2,891 assertions in 16 cases;
+  the excluded Android path-parser case is a pre-existing host-filesystem fixture that expects a
+  generated `get_build_flavor` file. Native ARM64 builds linked the test ELF and
+  `libcitra-android.so`; source commit `2d39584f4` was pushed to `origin/master` before packaging.
+- A complete 2,200-action ARM64 native rebuild and release-style package passed in 14 minutes 3
+  seconds. The ARM64-only, v2-signed APK is 28,976,840 bytes, reports
+  `2d39584f4-vanilla-thor`, and has SHA-256
+  `141F9311E5B9910031674508F4A1BE1269A8F54EEBC28837F9E6FB08969683E6`. It installed over
+  `org.azahar_emu.azahar.debug` by wireless ADB, reports `primaryCpuAbi=arm64-v8a`, and remains
+  force-stopped; no UI or game was launched. The Thor reported USB power, no AC/wireless power,
+  78% battery, 4.154 V, and 23.0 C, so this is not battery-discharge watt evidence.
+- Post-verification cleanup removed 2,056,113,736 logical bytes of Gradle/JNI/native staging, the
+  repo-local Gradle cache, benchmark/test helpers, and rendered manual pages. C: free space rose by
+  1,608,404,992 bytes. `app/build` retains only the 28,976,840-byte APK and 476-byte metadata; the
+  3,230,823,924-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
+- This is optimization 79 in the current Thor work tally and a 2.3%-20.1% win for one recurring
+  generated sequence, not the whole emulator. The 79 changes overlap, trigger in different games,
+  and include rejected/UX/power-oriented work; their percentages must not be added. Whole-game FPS,
+  sustained power, frametime, and thermal gains still require a matched title/scene A/B.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

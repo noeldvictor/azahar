@@ -27,6 +27,8 @@ Dynarmic remote.
 - Keep A32 guest NZCV in callee-saved `W23` throughout a JIT run. Generated callback
   boundaries synchronize the cached value with `A32JitState`, while A64 retains its
   upstream state-memory path and full register-allocation set.
+- Load `A32SetCpsrNZCV` inputs directly into reserved `X23`. A flags-backed value now emits
+  `MRS X23, NZCV` instead of materializing an allocator temporary and moving it to `W23`.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -38,15 +40,19 @@ CPU7-pinned reverse-order sample (4.015 ms to 2.128 ms per million indirect disp
 with 1.69x to 1.95x observed across all sample groups. This number applies only to the
 dispatcher-saturated loop; it is not an emulator-wide FPS or power result.
 
-The imported upstream `master` was checked again on 2026-08-16 and still resolved to
+The direct NZCV benchmark ran 16,777,216 flag evaluations per case, alternated order for nine
+rounds, and measured 16.22% faster on A510, 20.13% on A710, 19.28% on A715, and 2.30% on X3.
+This is the exact generated transfer followed by a flag consumer, not a whole-game result.
+
+The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was
 available to replace these local A32 ARM64 changes.
 
 ## Updating
 
-Use command-line Git to clone the desired upstream revision recursively into a temporary
-directory, compare it with this vendored tree, and import only an intentionally reviewed
-update. Preserve the Thor changes or replace them with equivalent upstream code, run the
-ARM64 Dynarmic tests, build the release-style Android APK, and test it on the Thor before
-committing directly to `master`. Delete the temporary clone and generated build trees
-after verification.
+Use command-line Git to fetch the desired upstream revision into the current repository's object
+store and compare it with this vendored tree; do not create another repository. Import only an
+intentionally reviewed update. Preserve the Thor changes or replace them with equivalent upstream
+code, run the ARM64 Dynarmic tests, build the release-style Android APK, and test it on the Thor
+before committing directly to `master`. Delete temporary refs and generated build trees after
+verification.

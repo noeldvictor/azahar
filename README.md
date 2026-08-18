@@ -188,7 +188,10 @@ include:
 - absolute-offset page-table entries that remove one address-add instruction from ordinary mapped
   guest loads and stores;
 - a callee-saved A32 NZCV register cache that removes repeated guest-flag state loads/stores across
-  linked blocks while preserving callback-visible CPSR behavior; and
+  linked blocks while preserving callback-visible CPSR behavior;
+- direct capture of arithmetic NZCV into that reserved register, eliminating the temporary GPR and
+  `MOV` from the recurring flag-transfer sequence. The exact sequence measured **2.3%-20.1%
+  faster** across the Thor's four CPU core classes; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
