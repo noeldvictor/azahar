@@ -4045,6 +4045,56 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
   cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Signed Multiply-Accumulate-Long
+
+- ARM and Thumb-2 plain `SMLAL` previously expanded its signed 32x32-bit accumulation into two
+  `SXTW`, one 64-bit `MUL`, and one 64-bit `ADD`. Dynarmic now retains the operation as generic
+  signed multiply-add-long IR, which ARM64 emits as one `SMADDL`. ARM and Thumb-2
+  `SMLALBB`/`SMLALBT`/`SMLALTB`/`SMLALTT` retain their two required signed-halfword extracts but
+  replace `MUL`, product `SXTW`, and accumulator `ADD` with `SMADDL`: five arithmetic instructions
+  become three. The generic backend continues to preserve exact modulo-64-bit accumulation.
+- The complete relevant manual pages were text-extracted, rendered, and visually checked.
+  Cortex-X3 issue 4.0 page 16, Cortex-A715 issue 5.0 page 18, Cortex-A710 issue 4.0 page 21, and
+  Cortex-A510 issue 6.0 page 18 all list `SMADDL` at latency 2 and throughput 1. X3/A715/A710 show
+  accumulator latency 1 and describe late forwarding. A510 documents a dedicated MAC accumulator
+  forwarding path; its table also lists X-form `MUL` at latency 4 and throughput 1/2, making removal
+  of the old 64-bit multiply especially valuable on the efficiency cluster.
+- `llvm-objdump` verified the temporary benchmark's exact repeated bodies: plain baseline had
+  `SXTW`, `SXTW`, `MUL`, `ADD`, while the candidate had one `SMADDL`; halfword baseline had `SXTH`,
+  `SXTH`, `MUL`, `SXTW`, `ADD`, while the candidate had `SXTH`, `SXTH`, `SMADDL`. Each sample used
+  four independent accumulators and 5,000,000 loop iterations, or 20,000,000 affected guest
+  operations, over nine alternating-order rounds. Baseline and fused checksums matched before
+  timing. Median results were:
+
+  | Thor core | Plain `SMLAL` | Halfword `SMLALxy` |
+  | --- | --- | --- |
+  | A510 CPU 0 | 2.648721 -> 0.505107 ns/op; 5.244x | 3.146227 -> 1.509789 ns/op; 2.084x |
+  | A715 CPU 3 | 0.449122 -> 0.358919 ns/op; 1.251x | 0.554815 -> 0.358698 ns/op; 1.547x |
+  | A715 CPU 4 | 0.448365 -> 0.358456 ns/op; 1.251x | 0.558607 -> 0.358576 ns/op; 1.558x |
+  | A710 CPU 5 | 0.381510 -> 0.358453 ns/op; 1.064x | 0.471432 -> 0.358344 ns/op; 1.316x |
+
+  CPUs 6 and 7 rejected the single-bit affinity request with `EINVAL`, so no X3 timing is claimed.
+  Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and 20.0 C; this is not a
+  battery-discharge watt measurement.
+- A permanent regression covers ARM and Thumb plain and BB/TT halfword forms, ARM flag-setting,
+  source/destination aliases, six signed-extreme and accumulator-wrap inputs, and unchanged
+  C/V/Q/GE state. It passed 282 assertions on Thor. The complete focused `[core][arm][dynarmic]`
+  run passed 967 assertions in 19 cases. The source/test commit is `5afbf2dc6`, pushed directly to
+  `origin/master` over command-line Git SSH. The exact JDK 17 ARM64 release build passed in 1 minute
+  32 seconds.
+- The installed ARM64 APK is 28,986,836 bytes, reports `5afbf2dc6-vanilla-thor`, and has SHA-256
+  `4D72233FA3DB0BBD04D0639049556E843BC6F76D6C44E5A95E4A78CF45314D58`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; the app remained stopped and no game was launched.
+- Cleanup removed the temporary manual renders, benchmark source/binary, stripped Thor test copy,
+  device copies, 447,592,144-byte native test ELF, and reproducible Gradle/JNI/R8/native-symbol
+  staging. It retained the APK plus its 476-byte metadata and the 2,788,792,017-byte active ARM64
+  CMake/Ninja cache. Total logical removal was 2,493,334,236 bytes; C: recovered 2,051,178,496
+  physical bytes and reported 82,094,518,272 bytes free afterward.
+- This is optimization 94 in the Thor work tally. Its 1.064x-5.244x figures apply only to the
+  affected signed multiply-accumulate-long host sequence and cannot be added to the other 93 items.
+  Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
+  cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

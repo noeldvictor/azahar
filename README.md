@@ -618,6 +618,23 @@ correct but slower and was rejected. The complete focused ARM/Dynarmic suite pas
 in 18 cases, and the ARM64 release build passes. This is optimization 93 in the overlapping work
 tally; it is not a whole-game FPS or battery-watt claim.
 
+## Dynarmic Signed Multiply-Accumulate-Long Update
+
+ARM and Thumb-2 plain `SMLAL` now lower through Dynarmic's signed multiply-add-long IR. On ARM64,
+the old `SXTW` + `SXTW` + 64-bit `MUL` + `ADD` arithmetic sequence becomes one native `SMADDL`.
+The `SMLALBB`/`SMLALBT`/`SMLALTB`/`SMLALTT` halfword forms keep their two required signed
+halfword extracts, but replace `MUL` + `SXTW` + `ADD` with the same fused instruction. Exact 64-bit
+wrap, ARM `S`-bit N/Z updates, unchanged C/V/Q/GE state, Thumb behavior, and accumulator/source
+aliasing are preserved.
+
+An alternating-order Thor microbenchmark measured the exact plain path at 5.244x on A510 CPU 0,
+1.251x on both A715 CPUs 3-4, and 1.064x on A710 CPU 5. The halfword path measured 2.084x,
+1.547x-1.558x, and 1.316x respectively. CPUs 6-7 rejected shell affinity, so no X3 device result is
+claimed. The new focused test passes 282 assertions; the complete ARM/Dynarmic suite passes 967
+assertions in 19 cases, and the exact ARM64 release build passes. This is optimization 94 in the
+overlapping work tally; these figures describe only affected guest multiply-accumulate-long
+instructions, not whole-game FPS or battery watts.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
