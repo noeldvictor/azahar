@@ -5236,6 +5236,75 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
   brightness/duration A/B run.
 
+## ARM64 A32 Native Bitfield Insertion (2026-08-18)
+
+- A32 ARM and Thumb-2 `BFI` previously expanded into four recurring ARM64 instructions: clear the
+  destination field with `AND`, shift the source with `LSL`, mask the inserted field with another
+  `AND`, and combine with `ORR`. Dynarmic now retains the operation as `BitFieldInsert32` or the
+  single-input `BitFieldInsertSelf32` form. ARM64 emits one native `BFI`; x64 and RISC-V polyfill
+  the operations back to the exact established graph. A full-width `lsb=0,width=32` replacement
+  aliases the source without code, and a self insertion at `lsb=0` is also an identity. `BFC`
+  deliberately remains unchanged because its ARM64 logical-immediate clear is already one
+  instruction.
+- The self opcode is a code-generation requirement, not just an IR naming distinction. The
+  distinct lowering consumes a read/write destination and a separate source. The self lowering
+  consumes one read/write value and emits `BFI` with the same physical register twice, preventing
+  the allocator from materializing a hidden copy before the instruction.
+- Visual inspection of the complete local Cortex manual pages found AArch64 `BFM` at
+  latency/throughput 2/3 on A510 page 22, 2/2 on A710 page 27, 1/4 on A715 page 20, and 2/2 on X3
+  page 18. That predicts large issue-throughput savings everywhere, a true distinct dependency win
+  on A715, and possible distinct dependency ties on A510/A710/X3 because the old destination
+  `AND` to `ORR` critical path can overlap the source shift/mask work. The rendered pages were
+  deleted after review; no PDF or rendered manual page entered the repository.
+- A temporary emitter-span trace captured raw words `331b3293` and `331b3273`. Host
+  `llvm-objdump` decoded the complete spans as exactly `bfi w19,w20,#5,#13` and
+  `bfi w19,w19,#5,#13`, proving both distinct and self forms are one instruction with no hidden
+  copy. The diagnostic was removed. The final stripped binary contained no `BFI115` marker and
+  was byte-identical to the earlier clean binary: 26,122,328 bytes with SHA-256
+  `7244AB37E03937C440C0D75070A74DFE21A36E189AFD737DF3C088DE1B559309`.
+- The standalone benchmark's old and new bodies were disassembly-checked. Each invocation used 15
+  samples, alternated old/new order, and executed 32,000,000 affected operations per sample.
+  Four complete all-core invocations were run; every old/new checksum matched and was nonzero.
+  The table reports the median of the four per-invocation medians so one X3 DVFS outlier cannot
+  inflate the accepted result.
+
+  | Operand/dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | Distinct, independent chains | 2.8367x | 2.5211x | 2.0470x | 2.0028x |
+  | Self alias, independent chains | 2.8142x | 3.8745x | 2.6386x | 2.1808x |
+  | Distinct, sequential chain | 0.9979x | 2.0011x | 1.0000x | 1.0002x |
+  | Self alias, sequential chain | 1.5152x | 3.1851x | 1.5004x | 1.5037x |
+
+- Permanent coverage checks ARM and Thumb-2 encodings; fields `{0,1}`, `{0,32}`, `{31,1}`,
+  `{8,8}`, `{5,13}`, and `{16,16}`; ten boundary/dirty input pairs; distinct and destination/
+  source-alias operands; every unrelated GPR; NZCV/Q/GE; and FPSCR. The 4,081-assertion case
+  passed separately on CPU 0/A510, CPU 3/A715, CPU 5/A710, and CPU 7/X3. The final clean focused
+  case again passed 4,081 assertions, and the complete `[core][arm][dynarmic]` suite passed 75,219
+  assertions in 37 cases on CPU 3/A715. Source/test commit `f13065b0f` was pushed directly to
+  `origin/master` using command-line Git SSH.
+- Exact source-commit packaging with JDK 17, `:app:assembleVanillaRelWithDebInfoLite`, ordinary
+  Gradle caching, and `--no-configuration-cache` passed in 3 minutes 43 seconds. The retained
+  ARM64-only APK is 29,001,628 bytes, reports `f13065b0f-vanilla-thor`, and has SHA-256
+  `9C84256BFF6FBC7CBAA91C504944CC8C07B9D75A33BB9884B6DC887F6764E6AB`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported no process after a final force-stop, and no
+  app UI or game was launched. Thor reported AC power at 27%, 4.031 V, and 30.0 C, so the timing
+  results are not battery-discharge watt evidence.
+- Cleanup removed 2,575,854,404 logical host bytes of the native test ELF, benchmark/test/manual-
+  render helpers, and reproducible Gradle/JNI/R8/native-symbol/mapping staging. C: recovered
+  2,130,010,112 physical bytes and reported 77,687,324,672 bytes free. The retained active ARM64
+  CMake/Ninja cache is 2,795,713,152 bytes; retained build output is only the 29,001,628-byte APK
+  and its 476-byte metadata. Five exact device helpers totaling 104,500,104 bytes were removed
+  from `/data/local/tmp`; no PDF, rendered manual page, benchmark binary, or scratch note was
+  committed.
+- This is optimization 115 in the overlapping Thor work tally. The 0.9979x-3.8745x measurements
+  apply only while executing these exact bitfield-insert patterns; the 0.9979x A510 distinct-chain
+  median is an effectively neutral 0.21% difference consistent with the manual-predicted tie. The
+  values cannot be added to the other 114 items or treated as whole-game FPS, sustained battery-
+  watt, frametime, or thermal results. Those still require a matched title/scene/cache/renderer/
+  driver/resolution/layout/mode/fan/brightness/duration A/B run. A32 `MOVT` to native ARM64 `MOVK`
+  is the next scalar JIT candidate, but it needs the same alias, disassembly, correctness, and
+  all-core measurement gates before implementation.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

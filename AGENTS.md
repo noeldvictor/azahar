@@ -680,6 +680,18 @@
   chains were about 2.00x on A715/A710/X3 but only 1.02x-1.03x on A510, consistent with the A510
   manual's latency table. Keep these claims path-local until a matched title and battery-power A/B
   exists.
+- A32 ARM/Thumb-2 `BFI` must retain first-class `BitFieldInsert32` and
+  `BitFieldInsertSelf32` IR. ARM64 must lower the distinct form with one read/write destination,
+  one source read, and one native `BFI`; the self form must use one read/write operand so register
+  allocation cannot insert a hidden `MOV`. Preserve the zero-code full-width replacement and
+  `lsb=0` self identity. x64 and RISC-V must polyfill both operations back to the exact
+  destination-mask/source-shift/source-mask/OR graph. Keep ARM and Thumb encodings, boundary
+  fields, distinct and destination/source-alias operands, unrelated registers, NZCV/Q/GE, and
+  FPSCR under permanent tests. Do not route `BFC` through this operation: its established ARM64
+  logical-immediate clear already costs one instruction. Repeated exact Thor measurements found
+  2.0028x-3.8745x throughput gains, neutral distinct dependency chains on A510/A710/X3, a 2.0011x
+  distinct dependency gain on A715, and 1.5004x-3.1851x self dependency gains. Keep all claims
+  path-local until a matched title and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

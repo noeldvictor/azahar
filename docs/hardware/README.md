@@ -236,6 +236,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   improving on the larger cores. Require actual-JIT disassembly, independent and dependent
   all-core measurements, full-width identity coverage, portable host polyfills, and exact guest
   signedness/flags/FPSCR tests before accepting the lowering.
+- The insert row is distinct from the basic `SBFM`/`UBFM` row. AArch64 `BFM`, which provides the
+  `BFI` alias, is latency/throughput 2/3 on A510 page 22, 2/2 on the M pipeline on A710 page 27,
+  1/4 on the I pipeline on A715 page 20, and 2/2 on the M pipeline on X3 page 18. This predicts
+  that replacing A32 `BFI`'s four-operation mask/shift/OR graph removes issue work on every core,
+  while a distinct dependency chain can still tie its old destination-AND-to-OR critical path on
+  A510, A710, and X3. Preserve semantic bitfield-insert IR, a copy-free self-alias lowering,
+  portable polyfills, actual-JIT disassembly, and repeated all-core measurements. Leave A32 `BFC`
+  on its one-instruction ARM64 logical-immediate clear path.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,

@@ -845,6 +845,20 @@ latency distinction. The new test passed 8,161 assertions separately on every Th
 the full focused suite passed 71,138 assertions in 36 cases. This is optimization 114; it is an
 exact instruction-path result, not a whole-game FPS or battery-watt claim.
 
+A32 ARM/Thumb-2 `BFI` now remains first-class through Dynarmic IR as `BitFieldInsert32` or the
+single-input `BitFieldInsertSelf32` alias form. ARM64 emits one native `BFI` instead of the old
+`AND; LSL; AND; ORR` graph; the self form uses one read/write allocation so it does not hide a
+register copy. Full-width replacement and self insertion at bit zero collapse to zero code, while
+x64 and RISC-V expand the semantic operations back to the exact portable graph. Actual JIT spans
+decoded as one `bfi w19,w20,#5,#13` for distinct operands and one `bfi w19,w19,#5,#13` for the
+self form. Four repeated 15-sample Thor runs measured cross-run-median distinct/self throughput
+speedups of **2.84x/2.81x on A510, 2.52x/3.87x on A715, 2.05x/2.64x on A710, and 2.00x/2.18x on
+X3**. Distinct dependency chains were neutral on A510/A710/X3 and 2.00x on A715; self dependency
+chains improved 1.50x-1.52x on A510/A710/X3 and 3.19x on A715. The new test passed 4,081
+assertions separately on every Thor CPU class, and the final full focused suite passed 75,219
+assertions in 37 cases. This is optimization 115; it is an exact instruction-path result, not a
+whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
