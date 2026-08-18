@@ -1448,6 +1448,42 @@ void EmitIR<IR::Opcode::Not64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR
         [&](auto& Xresult, auto& Xoperand) { code.MVN(Xresult, Xoperand); });
 }
 
+template<bool is_signed>
+static void EmitExtendAndAdd(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const u8 esize = inst->GetArg(2).GetU8();
+    ASSERT(esize == 8 || esize == 16);
+
+    auto Wresult = ctx.reg_alloc.WriteW(inst);
+    auto Waddend = ctx.reg_alloc.ReadW(args[0]);
+    auto Wvalue = ctx.reg_alloc.ReadW(args[1]);
+    RegAlloc::Realize(Wresult, Waddend, Wvalue);
+
+    if constexpr (is_signed) {
+        if (esize == 8) {
+            code.ADD(*Wresult, *Waddend, *Wvalue, SXTB);
+        } else {
+            code.ADD(*Wresult, *Waddend, *Wvalue, SXTH);
+        }
+    } else {
+        if (esize == 8) {
+            code.ADD(*Wresult, *Waddend, *Wvalue, UXTB);
+        } else {
+            code.ADD(*Wresult, *Waddend, *Wvalue, UXTH);
+        }
+    }
+}
+
+template<>
+void EmitIR<IR::Opcode::SignedExtendAndAdd32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitExtendAndAdd<true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::UnsignedExtendAndAdd32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitExtendAndAdd<false>(code, ctx, inst);
+}
+
 template<>
 void EmitIR<IR::Opcode::SignExtendByteToWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitTwoOp<32>(

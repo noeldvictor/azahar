@@ -450,6 +450,16 @@ void EmitIR<IR::Opcode::Not64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
 }
 
 template<>
+void EmitIR<IR::Opcode::SignedExtendAndAdd32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::UnsignedExtendAndAdd32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::SignExtendByteToWord>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

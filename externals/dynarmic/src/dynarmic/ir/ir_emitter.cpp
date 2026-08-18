@@ -265,6 +265,18 @@ U32U64 IREmitter::Add(const U32U64& a, const U32U64& b) {
     }
 }
 
+U32 IREmitter::SignedExtendAndAdd(const U32& addend, const U32& value, size_t esize) {
+    ASSERT(esize == 8 || esize == 16);
+    return Inst<U32>(Opcode::SignedExtendAndAdd32, addend, value,
+                     Imm8(static_cast<u8>(esize)));
+}
+
+U32 IREmitter::UnsignedExtendAndAdd(const U32& addend, const U32& value, size_t esize) {
+    ASSERT(esize == 8 || esize == 16);
+    return Inst<U32>(Opcode::UnsignedExtendAndAdd32, addend, value,
+                     Imm8(static_cast<u8>(esize)));
+}
+
 U32U64 IREmitter::SubWithCarry(const U32U64& a, const U32U64& b, const U1& carry_in) {
     ASSERT(a.GetType() == b.GetType());
     if (a.GetType() == Type::U32) {

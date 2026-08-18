@@ -601,6 +601,16 @@
   measured 1.196462x-3.014697x on Thor A510, 1.750912x-2.460514x on A715,
   1.344066x-2.163796x on A710, and 1.489624x-2.232581x on X3. Keep these claims path-local until a
   matched title and battery-power A/B exists.
+- A32 ARM/Thumb-2 `SXTAB`/`SXTAH`/`UXTAB`/`UXTAH` with rotation zero must retain the first-class
+  `SignedExtendAndAdd32`/`UnsignedExtendAndAdd32` IR. ARM64 must emit one extended-register `ADD`
+  using `SXTB`, `SXTH`, `UXTB`, or `UXTH`; x64 and RISC-V must polyfill back to the established
+  narrow/extend plus modular-add DAG. Preserve destination/addend/value aliases, high registers,
+  unrelated registers, and unchanged NZCV/Q/GE flags in permanent ARM and Thumb tests. Do not send
+  nonzero rotations through this path: the required `ROR` plus extended `ADD` was neutral on A510
+  and one representative form repeated a 0.50% regression. Exact rotation-zero paths measured
+  1.329924x-1.340523x on A510, 1.165637x-1.204479x on A715, and 1.126133x-1.135539x on A710.
+  The X3 was parked by `core_ctl` during this run, so its optimization-guide evidence is not a
+  physical Thor benchmark. Keep all speed claims path-local until a matched title and power A/B.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

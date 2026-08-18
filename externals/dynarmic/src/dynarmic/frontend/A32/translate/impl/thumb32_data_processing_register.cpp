@@ -79,6 +79,12 @@ bool TranslatorVisitor::thumb32_SXTAB(Reg n, Reg d, SignExtendRotation rotate, R
         return UnpredictableInstruction();
     }
 
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.SignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 8);
+        ir.SetRegister(d, result);
+        return true;
+    }
+
     const auto rotated = Rotate(ir, m, rotate);
     const auto reg_n = ir.GetRegister(n);
     const auto result = ir.Add(reg_n, ir.SignExtendByteToWord(ir.LeastSignificantByte(rotated)));
@@ -119,6 +125,12 @@ bool TranslatorVisitor::thumb32_SXTAH(Reg n, Reg d, SignExtendRotation rotate, R
         return UnpredictableInstruction();
     }
 
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.SignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 16);
+        ir.SetRegister(d, result);
+        return true;
+    }
+
     const auto rotated = Rotate(ir, m, rotate);
     const auto reg_n = ir.GetRegister(n);
     const auto result = ir.Add(reg_n, ir.SignExtendHalfToWord(ir.LeastSignificantHalf(rotated)));
@@ -154,6 +166,12 @@ bool TranslatorVisitor::thumb32_UXTB16(Reg d, SignExtendRotation rotate, Reg m) 
 bool TranslatorVisitor::thumb32_UXTAB(Reg n, Reg d, SignExtendRotation rotate, Reg m) {
     if (d == Reg::PC || m == Reg::PC) {
         return UnpredictableInstruction();
+    }
+
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.UnsignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 8);
+        ir.SetRegister(d, result);
+        return true;
     }
 
     const auto rotated = Rotate(ir, m, rotate);
@@ -193,6 +211,12 @@ bool TranslatorVisitor::thumb32_UXTH(Reg d, SignExtendRotation rotate, Reg m) {
 bool TranslatorVisitor::thumb32_UXTAH(Reg n, Reg d, SignExtendRotation rotate, Reg m) {
     if (d == Reg::PC || m == Reg::PC) {
         return UnpredictableInstruction();
+    }
+
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.UnsignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 16);
+        ir.SetRegister(d, result);
+        return true;
     }
 
     const auto rotated = Rotate(ir, m, rotate);

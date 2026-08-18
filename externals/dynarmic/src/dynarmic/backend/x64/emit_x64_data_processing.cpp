@@ -1506,6 +1506,14 @@ void EmitX64::EmitNot64(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitSignedExtendAndAdd32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected SignedExtendAndAdd32");
+}
+
+void EmitX64::EmitUnsignedExtendAndAdd32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected UnsignedExtendAndAdd32");
+}
+
 void EmitX64::EmitSignExtendByteToWord(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     const Xbyak::Reg64 result = ctx.reg_alloc.UseScratchGpr(args[0]);

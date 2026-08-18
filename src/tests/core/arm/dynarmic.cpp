@@ -1605,6 +1605,142 @@ TEST_CASE("Dynarmic A32 halfword packs preserve shifts, aliases, and flags",
     }
 }
 
+TEST_CASE("Dynarmic A32 extend-and-add preserves widths, aliases, rotations, and flags",
+          "[core][arm][dynarmic]") {
+    enum class ExtensionKind {
+        SignedByte,
+        SignedHalf,
+        UnsignedByte,
+        UnsignedHalf,
+    };
+    struct Operation {
+        std::uint32_t instruction;
+        ExtensionKind kind;
+        std::uint8_t rotation;
+        std::uint8_t d_reg;
+        std::uint8_t n_reg;
+        std::uint8_t m_reg;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe6a20073, ExtensionKind::SignedByte, 0, 0, 2, 3, false},
+        Operation{0xe6b20073, ExtensionKind::SignedHalf, 0, 0, 2, 3, false},
+        Operation{0xe6e20073, ExtensionKind::UnsignedByte, 0, 0, 2, 3, false},
+        Operation{0xe6f20073, ExtensionKind::UnsignedHalf, 0, 0, 2, 3, false},
+        Operation{0xe6a00071, ExtensionKind::SignedByte, 0, 0, 0, 1, false},
+        Operation{0xe6b00071, ExtensionKind::SignedHalf, 0, 0, 0, 1, false},
+        Operation{0xe6e00071, ExtensionKind::UnsignedByte, 0, 0, 0, 1, false},
+        Operation{0xe6f00071, ExtensionKind::UnsignedHalf, 0, 0, 0, 1, false},
+        Operation{0xe6a10070, ExtensionKind::SignedByte, 0, 0, 1, 0, false},
+        Operation{0xe6b10070, ExtensionKind::SignedHalf, 0, 0, 1, 0, false},
+        Operation{0xe6e10070, ExtensionKind::UnsignedByte, 0, 0, 1, 0, false},
+        Operation{0xe6f10070, ExtensionKind::UnsignedHalf, 0, 0, 1, 0, false},
+        Operation{0xe6aac07b, ExtensionKind::SignedByte, 0, 12, 10, 11, false},
+        Operation{0xe6bac07b, ExtensionKind::SignedHalf, 0, 12, 10, 11, false},
+        Operation{0xe6eac07b, ExtensionKind::UnsignedByte, 0, 12, 10, 11, false},
+        Operation{0xe6fac07b, ExtensionKind::UnsignedHalf, 0, 12, 10, 11, false},
+        Operation{0xe6a20473, ExtensionKind::SignedByte, 8, 0, 2, 3, false},
+        Operation{0xe6b20873, ExtensionKind::SignedHalf, 16, 0, 2, 3, false},
+        Operation{0xe6e20c73, ExtensionKind::UnsignedByte, 24, 0, 2, 3, false},
+        Operation{0xe6f20473, ExtensionKind::UnsignedHalf, 8, 0, 2, 3, false},
+        Operation{0xf083fa42, ExtensionKind::SignedByte, 0, 0, 2, 3, true},
+        Operation{0xf083fa02, ExtensionKind::SignedHalf, 0, 0, 2, 3, true},
+        Operation{0xf083fa52, ExtensionKind::UnsignedByte, 0, 0, 2, 3, true},
+        Operation{0xf083fa12, ExtensionKind::UnsignedHalf, 0, 0, 2, 3, true},
+        Operation{0xf081fa40, ExtensionKind::SignedByte, 0, 0, 0, 1, true},
+        Operation{0xf081fa00, ExtensionKind::SignedHalf, 0, 0, 0, 1, true},
+        Operation{0xf081fa50, ExtensionKind::UnsignedByte, 0, 0, 0, 1, true},
+        Operation{0xf081fa10, ExtensionKind::UnsignedHalf, 0, 0, 0, 1, true},
+        Operation{0xf080fa41, ExtensionKind::SignedByte, 0, 0, 1, 0, true},
+        Operation{0xf080fa01, ExtensionKind::SignedHalf, 0, 0, 1, 0, true},
+        Operation{0xf080fa51, ExtensionKind::UnsignedByte, 0, 0, 1, 0, true},
+        Operation{0xf080fa11, ExtensionKind::UnsignedHalf, 0, 0, 1, 0, true},
+        Operation{0xfc8bfa4a, ExtensionKind::SignedByte, 0, 12, 10, 11, true},
+        Operation{0xfc8bfa0a, ExtensionKind::SignedHalf, 0, 12, 10, 11, true},
+        Operation{0xfc8bfa5a, ExtensionKind::UnsignedByte, 0, 12, 10, 11, true},
+        Operation{0xfc8bfa1a, ExtensionKind::UnsignedHalf, 0, 12, 10, 11, true},
+        Operation{0xf093fa42, ExtensionKind::SignedByte, 8, 0, 2, 3, true},
+        Operation{0xf0a3fa02, ExtensionKind::SignedHalf, 16, 0, 2, 3, true},
+        Operation{0xf0b3fa52, ExtensionKind::UnsignedByte, 24, 0, 2, 3, true},
+        Operation{0xf093fa12, ExtensionKind::UnsignedHalf, 8, 0, 2, 3, true},
+    };
+    struct Inputs {
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x00000000, 0x00008081}, Inputs{0xffffffff, 0xffff7f7f},
+        Inputs{0x7fffffff, 0x80000001}, Inputs{0x80000000, 0x7ffffffe},
+        Inputs{0x12345678, 0x89abcdef}, Inputs{0xfedcba98, 0x76543210},
+    };
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, operation.rotation, input.n, input.m);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+
+            std::array<std::uint32_t, 16> initial_regs{
+                0xa5a55a5a, 0x13579bdf, 0x2468ace0, 0x55aa55aa, 0x10203040, 0x50607080,
+                0x90a0b0c0, 0xd0e0f001, 0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xdeadbeef, 0,
+            };
+            initial_regs[operation.n_reg] = input.n;
+            initial_regs[operation.m_reg] = input.m;
+            const std::uint32_t n = initial_regs[operation.n_reg];
+            const std::uint32_t m = initial_regs[operation.m_reg];
+            const std::uint32_t rotated =
+                operation.rotation == 0
+                    ? m
+                    : (m >> operation.rotation) | (m << (32 - operation.rotation));
+
+            std::uint32_t extension{};
+            switch (operation.kind) {
+            case ExtensionKind::SignedByte:
+                extension = rotated & 0xff;
+                if ((extension & 0x80) != 0) {
+                    extension |= 0xffffff00;
+                }
+                break;
+            case ExtensionKind::SignedHalf:
+                extension = rotated & 0xffff;
+                if ((extension & 0x8000) != 0) {
+                    extension |= 0xffff0000;
+                }
+                break;
+            case ExtensionKind::UnsignedByte:
+                extension = rotated & 0xff;
+                break;
+            case ExtensionKind::UnsignedHalf:
+                extension = rotated & 0xffff;
+                break;
+            }
+            const std::uint32_t expected = n + extension;
+
+            jit.Regs() = initial_regs;
+            constexpr std::uint32_t initial_flags = 0xf80f0000; // NZCV/Q/GE
+            jit.SetCpsr(initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[operation.d_reg] == expected);
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.d_reg) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == initial_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

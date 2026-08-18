@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: 0BSD
  */
 
+#include <mcl/assert.hpp>
+
 #include "dynarmic/ir/basic_block.h"
 #include "dynarmic/ir/ir_emitter.h"
 #include "dynarmic/ir/microinstruction.h"
@@ -320,6 +322,34 @@ void PolyfillPackHalfword(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(ir.Or(upper, lower));
 }
 
+template<bool is_signed>
+void PolyfillExtendAndAdd(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U32 addend = (IR::U32)inst.GetArg(0);
+    const IR::U32 value = (IR::U32)inst.GetArg(1);
+    const u8 esize = inst.GetArg(2).GetU8();
+    ASSERT(esize == 8 || esize == 16);
+
+    const IR::U32 extended = [&] {
+        if (esize == 8) {
+            const IR::U8 narrowed = ir.LeastSignificantByte(value);
+            if constexpr (is_signed) {
+                return ir.SignExtendByteToWord(narrowed);
+            } else {
+                return ir.ZeroExtendByteToWord(narrowed);
+            }
+        }
+
+        const IR::U16 narrowed = ir.LeastSignificantHalf(value);
+        if constexpr (is_signed) {
+            return ir.SignExtendHalfToWord(narrowed);
+        } else {
+            return ir.ZeroExtendHalfToWord(narrowed);
+        }
+    }();
+
+    inst.ReplaceUsesWith(ir.Add(addend, extended));
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -333,6 +363,16 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         ir.SetInsertionPointBefore(&inst);
 
         switch (inst.GetOpcode()) {
+        case IR::Opcode::SignedExtendAndAdd32:
+            if (polyfill.extend_and_add) {
+                PolyfillExtendAndAdd<true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::UnsignedExtendAndAdd32:
+            if (polyfill.extend_and_add) {
+                PolyfillExtendAndAdd<false>(ir, inst);
+            }
+            break;
         case IR::Opcode::PackHalfwordBottom:
             if (polyfill.pack_halfword) {
                 PolyfillPackHalfword<false>(ir, inst);

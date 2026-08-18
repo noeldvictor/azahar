@@ -760,6 +760,16 @@ seven representative bottom/top and shift-boundary forms. All 3,646 assertions i
 pass on Thor, including ARM/Thumb encodings and destination/source aliases. This is optimization
 106; the results cover only these guest instructions, not whole-game FPS or battery watts.
 
+A32 ARM/Thumb-2 scalar `SXTAB`/`SXTAH`/`UXTAB`/`UXTAH` with no rotation now remain first-class
+through Dynarmic IR. ARM64 emits the matching extended-register `ADD`, collapsing the affected
+path from a separate byte/halfword extension plus add into one host instruction; x64 and RISC-V
+retain the exact portable expansion. Thor rotation-zero medians were **1.33x-1.34x on A510,
+1.17x-1.20x on A715, and 1.13x-1.14x on A710**. Nonzero rotations deliberately keep the old path
+because their required `ROR` plus extended `ADD` was neutral on A510 and one form regressed 0.50%.
+The X3 was parked by Android `core_ctl` during this run, so no physical X3 result is claimed. All
+7,486 assertions in 29 focused cases pass on Thor. This is optimization 107; these exact-path
+figures do not predict whole-game FPS or battery watts.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

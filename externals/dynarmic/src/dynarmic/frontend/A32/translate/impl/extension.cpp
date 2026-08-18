@@ -22,6 +22,12 @@ bool TranslatorVisitor::arm_SXTAB(Cond cond, Reg n, Reg d, SignExtendRotation ro
         return true;
     }
 
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.SignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 8);
+        ir.SetRegister(d, result);
+        return true;
+    }
+
     const auto rotated = Rotate(ir, m, rotate);
     const auto reg_n = ir.GetRegister(n);
     const auto result = ir.Add(reg_n, ir.SignExtendByteToWord(ir.LeastSignificantByte(rotated)));
@@ -57,6 +63,12 @@ bool TranslatorVisitor::arm_SXTAH(Cond cond, Reg n, Reg d, SignExtendRotation ro
     }
 
     if (!ArmConditionPassed(cond)) {
+        return true;
+    }
+
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.SignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 16);
+        ir.SetRegister(d, result);
         return true;
     }
 
@@ -131,6 +143,12 @@ bool TranslatorVisitor::arm_UXTAB(Cond cond, Reg n, Reg d, SignExtendRotation ro
         return true;
     }
 
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.UnsignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 8);
+        ir.SetRegister(d, result);
+        return true;
+    }
+
     const auto rotated = Rotate(ir, m, rotate);
     const auto reg_n = ir.GetRegister(n);
     const auto result = ir.Add(reg_n, ir.ZeroExtendByteToWord(ir.LeastSignificantByte(rotated)));
@@ -165,6 +183,12 @@ bool TranslatorVisitor::arm_UXTAH(Cond cond, Reg n, Reg d, SignExtendRotation ro
     }
 
     if (!ArmConditionPassed(cond)) {
+        return true;
+    }
+
+    if (rotate == SignExtendRotation::ROR_0) {
+        const auto result = ir.UnsignedExtendAndAdd(ir.GetRegister(n), ir.GetRegister(m), 16);
+        ir.SetRegister(d, result);
         return true;
     }
 
