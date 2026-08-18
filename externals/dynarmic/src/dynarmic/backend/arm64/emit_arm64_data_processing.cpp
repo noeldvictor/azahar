@@ -58,10 +58,55 @@ static bool IsImmediatelySignExtended(const IR::Inst* value, IR::Opcode word_opc
     return consumer->GetArg(0).GetInst() == value;
 }
 
+static const IR::Inst* FindSoleConsumer(const IR::Inst* value) {
+    if (value->UseCount() != 1) {
+        return nullptr;
+    }
+
+    for (const IR::Inst* consumer = value->GetNextInstruction(); consumer;
+         consumer = consumer->GetNextInstruction()) {
+        for (size_t i = 0; i < consumer->NumArgs(); ++i) {
+            const IR::Value arg = consumer->GetArg(i);
+            if (!arg.IsImmediate() && arg.GetInst() == value) {
+                return consumer;
+            }
+        }
+    }
+    return nullptr;
+}
+
+static bool IsSoleVariableShiftConsumer(const IR::Inst* value) {
+    const IR::Inst* consumer = FindSoleConsumer(value);
+    if (!consumer) {
+        return false;
+    }
+
+    switch (consumer->GetOpcode()) {
+    case IR::Opcode::LogicalShiftLeft32:
+    case IR::Opcode::LogicalShiftRight32:
+    case IR::Opcode::RotateRight32:
+        return consumer->GetArg(1).GetInst() == value;
+    default:
+        return false;
+    }
+}
+
+static bool IsUnmaterializedByteShift(const IR::Value& value) {
+    if (value.IsImmediate()) {
+        return false;
+    }
+    const IR::Inst* producer = value.GetInstRecursive();
+    return producer->GetOpcode() == IR::Opcode::LeastSignificantByte &&
+           IsSoleVariableShiftConsumer(producer);
+}
+
 static bool IsAlreadyZeroExtendedByte(const IR::Value& value) {
-    // Shifts cannot trigger the narrow-sign-extension alias, so this producer emitted UXTB.
-    return !value.IsImmediate() &&
-           value.GetInstRecursive()->GetOpcode() == IR::Opcode::LeastSignificantByte;
+    if (value.IsImmediate()) {
+        return false;
+    }
+    const IR::Inst* producer = value.GetInstRecursive();
+    return producer->GetOpcode() == IR::Opcode::LeastSignificantByte &&
+           !IsSoleVariableShiftConsumer(producer);
 }
 
 template<>
@@ -142,7 +187,8 @@ void EmitIR<IR::Opcode::LeastSignificantByte>(oaknut::CodeGenerator& code, EmitC
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
     if (IsImmediatelySignExtended(inst, IR::Opcode::SignExtendByteToWord,
-                                  IR::Opcode::SignExtendByteToLong)) {
+                                  IR::Opcode::SignExtendByteToLong) ||
+        IsSoleVariableShiftConsumer(inst)) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -274,6 +320,7 @@ void EmitIR<IR::Opcode::ConditionalSelectNZCV>(oaknut::CodeGenerator& code, Emit
 template<>
 void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
+    const bool shift_is_unmaterialized_byte = IsUnmaterializedByteShift(inst->GetArg(1));
     const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -300,13 +347,22 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
-            if (!shift_is_zero_extended_byte) {
-                code.AND(Wscratch0, Wshift, 0xff);
+            if (shift_is_unmaterialized_byte) {
+                // AArch64 variable shifts consume only bits[4:0]. Test bits[7:5] to retain
+                // A32's zero result for byte-sized amounts at least 32 without materializing UXTB.
+                code.TST(Wshift, 0xe0);
+                code.LSL(Wresult, Woperand, Wshift);
+                code.CSEL(Wresult, Wresult, WZR, EQ);
+            } else {
+                const oaknut::WReg Wcanonical_shift =
+                    shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+                if (!shift_is_zero_extended_byte) {
+                    code.AND(Wscratch0, Wshift, 0xff);
+                }
+                code.LSL(Wresult, Woperand, Wcanonical_shift);
+                code.CMP(Wcanonical_shift, 32);
+                code.CSEL(Wresult, Wresult, WZR, LT);
             }
-            code.LSL(Wresult, Woperand, Wcanonical_shift);
-            code.CMP(Wcanonical_shift, 32);
-            code.CSEL(Wresult, Wresult, WZR, LT);
         }
     } else {
         if (shift_arg.IsImmediate() && shift_arg.GetImmediateU8() == 0) {
@@ -415,6 +471,7 @@ void EmitIR<IR::Opcode::LogicalShiftLeft64>(oaknut::CodeGenerator& code, EmitCon
 template<>
 void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
+    const bool shift_is_unmaterialized_byte = IsUnmaterializedByteShift(inst->GetArg(1));
     const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -441,13 +498,20 @@ void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitCo
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
-            if (!shift_is_zero_extended_byte) {
-                code.AND(Wscratch0, Wshift, 0xff);
+            if (shift_is_unmaterialized_byte) {
+                code.TST(Wshift, 0xe0);
+                code.LSR(Wresult, Woperand, Wshift);
+                code.CSEL(Wresult, Wresult, WZR, EQ);
+            } else {
+                const oaknut::WReg Wcanonical_shift =
+                    shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+                if (!shift_is_zero_extended_byte) {
+                    code.AND(Wscratch0, Wshift, 0xff);
+                }
+                code.LSR(Wresult, Woperand, Wcanonical_shift);
+                code.CMP(Wcanonical_shift, 32);
+                code.CSEL(Wresult, Wresult, WZR, LT);
             }
-            code.LSR(Wresult, Woperand, Wcanonical_shift);
-            code.CMP(Wcanonical_shift, 32);
-            code.CSEL(Wresult, Wresult, WZR, LT);
         }
     } else {
         if (shift_arg.IsImmediate() && shift_arg.GetImmediateU8() == 0) {
@@ -579,7 +643,8 @@ void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, Emi
             RegAlloc::Realize(Wresult, Woperand, Wshift);
             ctx.reg_alloc.SpillFlags();
 
-            const oaknut::WReg Wcanonical_shift = shift_is_zero_extended_byte ? *Wshift : Wscratch0;
+            const oaknut::WReg Wcanonical_shift =
+                shift_is_zero_extended_byte ? *Wshift : Wscratch0;
             if (!shift_is_zero_extended_byte) {
                 code.AND(Wscratch0, Wshift, 0xff);
             }

@@ -301,3 +301,87 @@ TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount"
         CHECK(((jit.Cpsr() >> 29) & 1) == expected_carry);
     }
 }
+
+TEST_CASE("Dynarmic A32 register shifts preserve carry for dirty upper amounts",
+          "[core][arm][dynarmic]") {
+    enum class ShiftKind {
+        Lsl,
+        Lsr,
+        Asr,
+        Ror,
+    };
+    struct ShiftCase {
+        std::uint32_t instruction;
+        ShiftKind kind;
+    };
+
+    constexpr std::array shift_cases{
+        ShiftCase{0xe1b05410, ShiftKind::Lsl},  // LSLS R5, R0, R4
+        ShiftCase{0xe1b05430, ShiftKind::Lsr},  // LSRS R5, R0, R4
+        ShiftCase{0xe1b05450, ShiftKind::Asr},  // ASRS R5, R0, R4
+        ShiftCase{0xe1b05470, ShiftKind::Ror},  // RORS R5, R0, R4
+    };
+    constexpr std::array shift_registers{
+        0xabcdef00u,
+        0xabcdef01u,
+        0xabcdef1fu,
+        0xabcdef20u,
+        0xabcdef21u,
+        0xabcdefffu,
+    };
+    constexpr std::uint32_t operand = 0x81234567;
+
+    for (const auto& test : shift_cases) {
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            test.instruction,
+            0xeafffffe,  // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const std::uint32_t shift_register : shift_registers) {
+            const auto shift = static_cast<std::uint8_t>(shift_register);
+            std::uint32_t expected_result{};
+            std::uint32_t expected_carry{};
+            switch (test.kind) {
+            case ShiftKind::Lsl:
+                expected_result = shift == 0 ? operand : shift < 32 ? operand << shift : 0;
+                expected_carry =
+                    shift == 0 ? 1 : shift <= 32 ? (operand >> (32 - shift)) & 1 : 0;
+                break;
+            case ShiftKind::Lsr:
+                expected_result = shift == 0 ? operand : shift < 32 ? operand >> shift : 0;
+                expected_carry =
+                    shift == 0 ? 1 : shift <= 32 ? (operand >> (shift - 1)) & 1 : 0;
+                break;
+            case ShiftKind::Asr:
+                expected_result =
+                    shift == 0 ? operand
+                               : shift < 32 ? (operand >> shift) | (~0u << (32 - shift)) : ~0u;
+                expected_carry =
+                    shift == 0 ? 1
+                               : shift <= 32 ? (operand >> (shift - 1)) & 1 : operand >> 31;
+                break;
+            case ShiftKind::Ror: {
+                const auto rotate = static_cast<std::uint8_t>(shift & 31);
+                expected_result =
+                    rotate == 0 ? operand : (operand >> rotate) | (operand << (32 - rotate));
+                expected_carry = shift == 0 ? 1 : expected_result >> 31;
+                break;
+            }
+            }
+
+            CAPTURE(test.instruction, shift_register, shift);
+            jit.Regs() = {};
+            jit.Regs()[0] = operand;
+            jit.Regs()[4] = shift_register;
+            jit.SetCpsr(0x200001d0);  // User mode plus carry set
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[5] == expected_result);
+            CHECK(((jit.Cpsr() >> 29) & 1) == expected_carry);
+        }
+    }
+}
