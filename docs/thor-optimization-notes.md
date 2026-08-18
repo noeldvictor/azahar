@@ -3115,6 +3115,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   A matched game A/B is still required with title, save, caches, renderer, driver, resolution,
   layout, performance/fan mode, brightness, and duration held constant.
 
+## 2026-08-17 AArch64 PICA DP3 and MOVA Narrowing
+
+- The remaining arithmetic audit found two x64-originated AArch64 costs. `MOVA` converted all four
+  float lanes with Q-form `FCVTZS` even though the PICA instruction can consume only X/Y. `DP3`
+  zeroed W through a general-register-to-vector lane insertion, then serialized two pairwise adds.
+  The x64 backend instead groups the live dot product as `(X + Y) + Z`.
+- The Cortex-X3 guide lists normal/pairwise FP add at two-cycle latency and D-form F32 versus Q-form
+  F32 conversion at three versus four cycles on pages 28-29. A715 lists normal `FADD` at two versus
+  pairwise `FADDP` at three and D/Q conversion at three/four on pages 30-31. A710 lists add forms at
+  two and D/Q conversion at three/four on pages 46-47. A510 lists add forms at four on page 39; its
+  conversion table spans pages 39-40. These are baseline AdvSIMD operations on every Thor core.
+- A self-contained ARM64 benchmark executed 67,108,864 independent conversions and 33,554,432
+  four-way interleaved DP3 reductions per sample, taking the best of five runs. Q-form versus D-form
+  `FCVTZS` measured 0.501534 versus 0.250587 ns/op on CPU 0, 0.741592 versus 0.370985 on CPU 3,
+  0.741922 versus 0.370354 on CPU 5, and 0.339053 versus 0.169341 on CPU 7: essentially 2.00x
+  throughput on every core class. Current versus dependency-shortened `DP3` measured 6.948113
+  versus 5.391890 ns/op on CPU 0 (22.4% faster), 1.112044 versus 0.926644 on CPU 3 (16.7%),
+  1.233326 versus 0.926003 on CPU 5 (24.9%), and 0.612165 versus 0.452924 on CPU 7 (26.0%). The
+  benchmark executable was removed from host and device, and rendered manual pages were removed
+  from the host.
+- AArch64 `MOVA` now emits D-form `.2S` `FCVTZS`, extracts the low 64-bit pair once, and preserves
+  the existing per-lane sign extension and destination masks. `DP3` keeps the four-lane sanitized
+  multiply, forms X+Y in a scratch scalar while broadcasting Z independently, performs one scalar
+  add, and broadcasts the result. W is never part of the reduction, and no FMA or reassociation is
+  introduced. New tests cover both MOVA lanes, negative/fractional truncation, ignored exceptional
+  Z/W inputs, untouched loop state, DP3 result broadcast, and NaN W inputs.
+- The complete ARM64 native target compiled and linked the test ELF plus production library in
+  1 minute 48 seconds. On the Wi-Fi Thor, `DP3*` passed 8 assertions in two interpreter/JIT cases,
+  `PICA State Access*` passed 96 assertions in two cases, and the full `[shader]` suite passed all
+  18,298 assertions in 50 cases. Every earlier zero-match filter invocation was explicitly discarded
+  rather than counted. Source commit `20687daae` was pushed to `master`.
+- Final release-style packaging passed in 3 minutes 19 seconds. The ARM64-only, v2-signed APK is
+  28,975,592 bytes, reports `20687daae-vanilla-thor`, and has SHA-256
+  `7F2FA912E6F4DAD6EFBC25417A0E858C2A5B8E956D9712FE9EA8C0B117315A3A`. It installed successfully
+  over `org.azahar_emu.azahar.debug`, reports `primaryCpuAbi=arm64-v8a`, and remained force-stopped;
+  no Azahar UI or game was launched. At final install the Thor reported USB power, no AC/wireless
+  power, 80% battery, 4.228 V, and 22.0 C, which is not a battery-discharge watt measurement.
+- Post-verification cleanup removed 2,023,799,217 logical bytes of Gradle/JNI/native staging, native
+  helper binaries, and the local Gradle cache. `app/build` retains only the 28,975,592-byte APK and
+  its 476-byte metadata; the 3,225,184,280-byte active ARM64 RelWithDebInfo CMake/Ninja cache
+  remains. C: reported 86,234,206,208 bytes free after cleanup.
+- These are isolated JIT-operation measurements, not whole-game FPS or wattage. A matched title,
+  scene, cache, renderer, driver, resolution, layout, mode, fan, brightness, and duration A/B is
+  still required before attributing a sustained system-level gain.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -264,6 +264,14 @@ on-device shader suite passes all 18,278 assertions. `RCP` deliberately remains 
 estimate-and-refine candidate was slower on every tested core. These are path-local measurements,
 not a whole-game FPS or battery-watt result.
 
+Two more PICA JIT operations now use lower-cost AArch64 forms. `MOVA` converts only the X/Y lanes
+that the instruction can consume, replacing Q-form `FCVTZS` with D-form; a 67.1-million-operation
+Thor benchmark measured essentially **2x throughput** on every core class. `DP3` now forms X+Y and
+broadcasts Z independently before the final scalar add, removing the GPR-to-vector zero insertion
+from its dependency chain while preserving sanitized multiplication, x64's `(X + Y) + Z` grouping,
+and ignored W. Its isolated 33.6-million-operation benchmark was 16.7% to 26.0% faster. The complete
+ARM64 shader suite passes all 18,298 assertions; whole-game and watt effects remain unmeasured.
+
 The command-list parser now deinterleaves four ordinary `[value, header]` pairs with one AArch64
 `LD2`. Consecutive register IDs use one vector load/blend/store and one dirty-word update;
 nonconsecutive or duplicate IDs retain ordered writes, while special, extended, invalid, and short

@@ -96,6 +96,17 @@
   architecture's infinity-times-zero special handling. Preserve zero, infinity, negative, and NaN
   behavior, keep one refinement only (two were slower than exact everywhere), and retain dense
   positive-normal exponent coverage on real ARM64.
+- AArch64 PICA `DP3` must retain sanitized four-lane multiplication but reduce only X/Y/Z. Form the
+  X+Y pair in a scratch scalar while broadcasting Z independently, then perform one scalar `FADD`
+  and final lane broadcast. Preserve x64's `(X + Y) + Z` grouping, ignore W even when it is NaN,
+  and do not reassociate or fuse the operations. Do not restore the W-zero insertion followed by
+  two dependent pairwise reductions; the shorter dependency graph measured 16.7-26.0% faster on
+  Thor core classes. Keep interpreter/JIT W-NaN and broadcast-result coverage.
+- AArch64 PICA `MOVA` consumes only X/Y. Keep its truncating conversion on D-form `.2S` `FCVTZS`,
+  extract the resulting low 64-bit pair once, and sign-extend only enabled address lanes. Do not
+  widen the conversion back to Q-form or write disabled address/loop registers. Preserve negative
+  truncation, partial masks, ignored exceptional Z/W inputs, and initial-state behavior; D-form
+  measured essentially twice the Q-form throughput on every Thor core class.
 - The AArch64 PICA `CMP` helper combines X/Y only when both lanes use the same operation. Preserve
   the ordered `FCMEQ`/`FCMGT`/`FCMGE` masks, inverted-equality implementation of `NotEqual` so NaN
   remains unordered/true, sign-bit extraction for lanes zero and one, and the unchanged scalar path
