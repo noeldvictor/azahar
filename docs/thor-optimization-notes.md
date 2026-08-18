@@ -4251,6 +4251,58 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   96 items. Whole-game FPS, sustained watts, frametimes, and thermals still require a matched
   title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Signed Word-by-Halfword Multiply
+
+- ARM and Thumb-2 `SMULWB`/`SMULWT` previously sign-extended the full-word operand and selected
+  signed halfword into 64-bit IR, multiplied them with generic `Mul64`, shifted right 16 bits, and
+  kept the low word. ARM64 emitted `SXTH`, two `SXTW`, X-form `MUL`, and `LSR` for the bottom form;
+  the top form also needed `LSR` plus `SXTH` to select its halfword. The frontend now keeps the
+  selected halfword as a signed `U32` and uses established `SignedMultiplyLong(U32, U32) -> U64`.
+  ARM64 emits `SXTH + SMULL + LSR` for `SMULWB` and `ASR + SMULL + LSR` for `SMULWT`, removing two
+  or three recurring host instructions without adding backend-specific semantics. The portable
+  x64 signed-extend/multiply polyfill remains exact.
+- The recorded Cortex manuals support testing this candidate rather than assuming it: X3 and A710
+  list multiply-long `SMULL` at latency 2 and throughput 2, A715 lists its zero-accumulator alias at
+  throughput 2, and A510 lists X-form `MUL` at latency 4/throughput 1/2 versus latency 2/throughput
+  1 for the long form. `llvm-objdump` then verified every exact baseline and candidate loop body.
+  Each sample ran four independent guest-equivalent operations for 10,000,000 iterations, or
+  40,000,000 affected operations, over nine alternating-order rounds. Warmup and timed checksums
+  matched. Median results were:
+
+  | Thor core | `SMULWB`: old -> native | `SMULWT`: old -> native |
+  | --- | --- | --- |
+  | A510 CPU 0 | 171,532,917 -> 105,741,511 ns; 1.622191x | 191,485,833 -> 85,609,896 ns; 2.236725x |
+  | A715 CPU 3 | 22,748,073 -> 15,600,573 ns; 1.458156x | 26,480,625 -> 15,606,146 ns; 1.696807x |
+  | A710 CPU 5 | 18,885,781 -> 12,078,125 ns; 1.563635x | 22,650,260 -> 12,087,500 ns; 1.873858x |
+  | X3 CPU 7 | 17,290,261 -> 10,059,115 ns; 1.718865x | 20,440,364 -> 10,067,187 ns; 2.030395x |
+
+- The same candidate was benchmarked but deliberately rejected for `SMLAWB`/`SMLAWT`. Its full
+  path included the architectural `ADDS`, overflow extraction, guest-Q load/OR/store, and the same
+  checksum lock. It improved A510 by 1.393200x/1.704470x but repeated high-sample medians were
+  0.997959x/0.998901x on A715 and 0.994340x/0.989918x on X3; A710 was effectively tied at
+  1.001064x/1.000844x. The accumulate forms therefore retain their existing generic lowering
+  instead of trading an efficiency-core win for a measurable larger-core regression.
+- The permanent regression covers ARM and Thumb-2 top/bottom forms, destination/source aliases,
+  six signed-extreme and distinct-halfword inputs, exact product bits 16-47, unchanged NZCV/Q/GE,
+  and untouched source registers. Thor passed all 1,748 assertions in 22 focused
+  `[core][arm][dynarmic]` cases. The source/test commit is `50e746101`, pushed directly to
+  `origin/master` over command-line Git SSH. The initial JDK 17 ARM64 release build passed in 2
+  minutes 50 seconds; the exact post-commit rebuild passed in 1 minute 39 seconds.
+- The installed ARM64 APK is 28,984,936 bytes, reports `50e746101-vanilla-thor`, and has SHA-256
+  `594854C8486FD4AF6A9CB8F9E8B8B96E880AC5442E854FA805926FE8E2449D31`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; the empty process-ID check confirmed that it remained stopped,
+  and no app UI or game was launched. Thor reported USB power, no AC/wireless power, 80% battery,
+  4.158 V, and 21.0 C. That charging context is not a battery-discharge watt measurement.
+- Cleanup deleted both device binaries, all local benchmark/encoding/stripped-test artifacts, the
+  447,676,816-byte native test ELF, and reproducible Gradle/JNI/R8/native-symbol staging. It
+  retained the APK plus its 476-byte metadata and the 2,796,808,993-byte active ARM64 CMake/Ninja
+  cache. Total logical host removal was 2,466,676,050 bytes; C: recovered 2,020,790,272 physical
+  bytes and reported 81,818,632,192 bytes free afterward.
+- This is optimization 98 in the Thor work tally. Its 1.458x-2.237x figures apply only when the
+  guest executes these signed word-by-halfword multiply instructions; they cannot be added to the
+  other 97 items. Whole-game FPS, sustained watts, frametimes, and thermals still require a matched
+  title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

@@ -520,6 +520,17 @@
   rounding from intermediate bit 31 with 32-bit wrap, unchanged NZCV/Q/GE, Thumb behavior, signed
   extremes, and source/destination aliases in permanent tests. Keep the claim path-local until a
   matched game/power A/B exists.
+- ARM and Thumb-2 `SMULWB`/`SMULWT` deliberately keep the signed halfword as `U32` and use
+  `SignedMultiplyLong(U32, U32)` before the 16-bit logical shift. ARM64 must emit
+  `SXTH + SMULL + LSR` for the bottom form or `ASR + SMULL + LSR` for the top form; do not restore
+  separate word-to-long extensions around X-form `MUL`. Exact Thor sequences measured
+  1.458x-2.237x across A510/A715/A710/X3. Do not apply the same lowering to `SMLAWB`/`SMLAWT`
+  without new all-core evidence: the full sticky-Q candidate improved A510 but repeated medians
+  regressed A715 slightly and X3 by up to 1.01%, so those accumulate forms intentionally retain
+  their established lowering. Preserve signed 32x16 multiplication, exact bits 16-47, unchanged
+  NZCV/Q/GE for `SMULW`, top/bottom selection, Thumb behavior, signed extremes, and source/
+  destination aliases in permanent tests. Keep the speed claim path-local until a matched game/
+  power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

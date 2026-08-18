@@ -259,7 +259,12 @@ include:
   ARM64 now uses `SMULL`, or `LSL` plus fused `SMADDL`/`SMSUBL`, instead of two sign extensions,
   X-form `MUL`, generic add/subtract, and zero-plus-`BFI` accumulator packing. Checksum-locked
   exact-sequence measurements were **1.586x-2.000x for SMMUL** and **1.573x-2.130x for the fused
-  accumulate/subtract forms** across the measured Cortex-A510/A715/A710 cores; and
+  accumulate/subtract forms** across the measured Cortex-A510/A715/A710 cores;
+- native signed word-by-halfword multiply for ARM and Thumb-2 `SMULWB`/`SMULWT`. The recurring
+  ARM64 path now uses `SXTH` or `ASR`, one `SMULL`, and `LSR` instead of separately extending both
+  operands around X-form `MUL`. Checksum-locked exact-sequence measurements were
+  **1.458x-2.237x** across every Snapdragon 8 Gen 2 core class. The similar `SMLAWB`/`SMLAWT`
+  candidate was rejected because its complete sticky-Q path regressed A715 and X3 slightly; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
