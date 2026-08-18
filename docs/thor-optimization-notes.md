@@ -4767,6 +4767,68 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
   duration A/B run.
 
+## ARM64 A32 Scalar Extend-And-Add (2026-08-18)
+
+- A32 ARM/Thumb-2 `SXTAB`, `SXTAH`, `UXTAB`, and `UXTAH` are part of the 3DS ARM11 guest ISA. With
+  rotation zero, Dynarmic previously built a narrow, sign/zero extension, and generic add. It now
+  retains `SignedExtendAndAdd32` or `UnsignedExtendAndAdd32` as first-class IR, and ARM64 emits one
+  extended-register `ADD` using `SXTB`, `SXTH`, `UXTB`, or `UXTH`. x64 and RISC-V polyfill the new
+  IR back into the established exact DAG. Nonzero guest rotations deliberately keep their previous
+  IR path.
+- The complete arithmetic/extend/shift pages in the Cortex-A510, A710, A715, and X3 software
+  optimization guides were rendered and visually checked before measurement. A510 lists extended
+  `ADD`/`SUB` at latency 1 and throughput 3, with latency 2 when the dependency is on `Rm`. A710,
+  A715, and X3 list latency 2 and throughput 2 on the M pipeline. This supported measuring each
+  accessible Thor core class instead of extrapolating from one core.
+- `llvm-objdump` verified the intended sequence change for every width and signedness: rotation-zero
+  forms changed from `SXTB`/`SXTH`/`UXTB`/`UXTH` plus `ADD` to one extended-register `ADD`.
+  Nonzero controls changed from `ROR` plus extension plus add to `ROR` plus extended add. The
+  standalone harness used four independent chains for 4,000,000 iterations, or 16,000,000 affected
+  operations per sample, over nine alternating-order rounds. Every warmup and timed checksum
+  matched and remained nonzero.
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `SXTAB`, ROR #0 | 1.330541x | 1.165637x | 1.129608x | not measurable |
+  | `SXTAH`, ROR #0 | 1.332116x | 1.171669x | 1.135539x | not measurable |
+  | `UXTAB`, ROR #0 | 1.329924x | 1.171331x | 1.126554x | not measurable |
+  | `UXTAH`, ROR #0 | 1.340523x | 1.204479x | 1.126133x | not measurable |
+
+- A510 rotation-zero medians changed from 0.504124 to 0.378887 ns/op for `SXTAB`, 0.502028 to
+  0.376865 for `SXTAH`, 0.503691 to 0.378737 for `UXTAB`, and 0.504987 to 0.376709 for `UXTAH`.
+  The nonzero controls measured 1.000410x, 1.000475x, 0.994994x, and 0.998904x respectively on
+  A510. Although those controls improved by 1.017667x-1.052110x on A715 and
+  1.469712x-1.474514x on A710, the A510 results were neutral and `UXTAB` ROR #24 repeated a 0.50%
+  regression. The optimization is therefore limited to rotation zero.
+- X3 is intentionally not reported as a physical result. Android exposed CPU 7 as online, but
+  `/sys/devices/system/cpu/cpu7/core_ctl/active_cpus` remained zero, single-bit CPU 6/7 affinity
+  masks returned `EINVAL`, and a short seven-load helper did not unpark it. The X3 guide informed
+  the implementation review only; it cannot substitute for a benchmark.
+- Permanent coverage executes 40 ARM/Thumb encodings over six input patterns. It covers all four
+  operations, rotation-zero optimized forms, nonzero fallback controls, destination/addend/value
+  aliases, high registers, signed and unsigned edge values, every unrelated GPR, and unchanged
+  NZCV/Q/GE flags. The final native ARM64 build passed with JDK 17 in 1 minute 32 seconds, and Thor
+  passed all 7,486 assertions in 29 focused `[core][arm][dynarmic]` cases. Source/test commit
+  `1741a60c2` was pushed directly to `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 3 minutes 4 seconds. Its ARM64-only APK is 28,999,604 bytes, reports
+  `1741a60c2-vanilla-thor`, and has SHA-256
+  `21F28D5C29BB3E26A5FD7B0FA4EE2CAA000272668080D1BC7EF39E6994C3DC56`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 55%, 3.880 V, and 21.0 C, so
+  this is not battery-discharge watt evidence. All temporary device helpers were removed.
+- Cleanup removed 2,469,674,954 logical bytes: the 448,479,264-byte native test ELF plus
+  reproducible Gradle/JNI/R8/native-symbol/mapping staging. It retained the 28,999,604-byte APK,
+  476-byte metadata, and 2,797,132,682-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,058,350,592 physical bytes and reported 81,383,247,872 bytes free immediately afterward.
+  Benchmark source/binaries, encoding scratch, stripped tests, helper scripts, and rendered manual
+  pages had already been removed; no PDF or rendered manual artifact was committed.
+- This is optimization 107 in the overlapping Thor work tally. The 1.13x-1.34x measurements apply
+  only while executing these exact rotation-zero extend-and-add forms. They cannot be added to the
+  other 106 items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal
+  result. Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/
+  fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
