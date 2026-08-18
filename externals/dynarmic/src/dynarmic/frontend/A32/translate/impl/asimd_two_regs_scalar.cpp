@@ -84,9 +84,8 @@ bool ScalarMultiplyLong(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t 
     const auto n = ToVector(false, Vn, N);
     const auto [m, index] = GetScalarLocation(esize, M, Vm);
 
-    const auto scalar = v.ir.VectorGetElement(esize, v.ir.GetVector(m), index);
     const auto reg_n = v.ir.GetVector(n);
-    const auto reg_m = v.ir.VectorBroadcast(esize, scalar);
+    const auto reg_m = v.ir.VectorBroadcastElement(esize, v.ir.GetVector(m), index);
     const auto addend = U ? v.ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m)
                           : v.ir.VectorMultiplySignedWiden(esize, reg_n, reg_m);
     const auto result = [&] {

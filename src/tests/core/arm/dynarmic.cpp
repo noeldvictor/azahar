@@ -183,6 +183,95 @@ TEST_CASE("Dynarmic A32 long multiply preserves packed low and high words",
     CHECK(jit.Regs()[2] == static_cast<std::uint32_t>(expected >> 32));
 }
 
+TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its lane",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf2920a4b,  // VMULL.S16 Q0, D2, D3[1]
+        0xf3968267,  // VMLAL.U16 Q4, D6, D7[2]
+        0xf2ea066b,  // VMLSL.S32 Q8, D10, D11[1]
+        0xf3ee8a4f,  // VMULL.U32 Q12, D14, D15[0]
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.ExtRegs() = {};
+
+    // D2: {-32768, -2, 3, 32767}; D3[1]: -7.
+    jit.ExtRegs()[4] = 0xfffe8000;
+    jit.ExtRegs()[5] = 0x7fff0003;
+    jit.ExtRegs()[6] = 0xfff90011;
+
+    // Q4 accumulator and D6 unsigned inputs; D7[2]: 0xfffd.
+    jit.ExtRegs()[16] = 0xffffff00;
+    jit.ExtRegs()[17] = 0x00000001;
+    jit.ExtRegs()[18] = 0x7fffffff;
+    jit.ExtRegs()[19] = 0x80000000;
+    jit.ExtRegs()[12] = 0x00020001;
+    jit.ExtRegs()[13] = 0xffff8000;
+    jit.ExtRegs()[15] = 0x1234fffd;
+
+    // Q8 accumulator, D10 signed inputs, and D11[1]: -3.
+    constexpr std::int64_t acc0 = 0x0123456789abcdef;
+    constexpr std::int64_t acc1 = -0x0123456789abcdf;
+    jit.ExtRegs()[32] = static_cast<std::uint32_t>(acc0);
+    jit.ExtRegs()[33] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(acc0) >> 32);
+    jit.ExtRegs()[34] = static_cast<std::uint32_t>(acc1);
+    jit.ExtRegs()[35] = static_cast<std::uint32_t>(static_cast<std::uint64_t>(acc1) >> 32);
+    jit.ExtRegs()[20] = 0x80000000;
+    jit.ExtRegs()[21] = 0x7fffffff;
+    jit.ExtRegs()[23] = 0xfffffffd;
+
+    // D14 unsigned inputs and D15[0].
+    jit.ExtRegs()[28] = 0xffffffff;
+    jit.ExtRegs()[29] = 0x80000001;
+    jit.ExtRegs()[30] = 0xfedcba98;
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    constexpr std::array<std::int16_t, 4> signed16{-32768, -2, 3, 32767};
+    for (std::size_t lane = 0; lane < signed16.size(); ++lane) {
+        CAPTURE(lane);
+        const auto expected = static_cast<std::int32_t>(signed16[lane]) * -7;
+        CHECK(jit.ExtRegs()[lane] == static_cast<std::uint32_t>(expected));
+    }
+
+    constexpr std::array<std::uint32_t, 4> acc16{
+        0xffffff00, 0x00000001, 0x7fffffff, 0x80000000};
+    constexpr std::array<std::uint16_t, 4> unsigned16{1, 2, 0x8000, 0xffff};
+    for (std::size_t lane = 0; lane < unsigned16.size(); ++lane) {
+        CAPTURE(lane);
+        const auto expected = acc16[lane] + unsigned16[lane] * 0xfffdu;
+        CHECK(jit.ExtRegs()[16 + lane] == expected);
+    }
+
+    constexpr std::array<std::int32_t, 2> signed32{
+        static_cast<std::int32_t>(0x80000000), 0x7fffffff};
+    constexpr std::array<std::int64_t, 2> acc32{acc0, acc1};
+    for (std::size_t lane = 0; lane < signed32.size(); ++lane) {
+        CAPTURE(lane);
+        const auto expected = static_cast<std::uint64_t>(
+            acc32[lane] - static_cast<std::int64_t>(signed32[lane]) * -3);
+        const auto actual = static_cast<std::uint64_t>(jit.ExtRegs()[32 + lane * 2]) |
+                            static_cast<std::uint64_t>(jit.ExtRegs()[33 + lane * 2]) << 32;
+        CHECK(actual == expected);
+    }
+
+    constexpr std::array<std::uint32_t, 2> unsigned32{0xffffffff, 0x80000001};
+    for (std::size_t lane = 0; lane < unsigned32.size(); ++lane) {
+        CAPTURE(lane);
+        const auto expected = static_cast<std::uint64_t>(unsigned32[lane]) * 0xfedcba98u;
+        const auto actual = static_cast<std::uint64_t>(jit.ExtRegs()[48 + lane * 2]) |
+                            static_cast<std::uint64_t>(jit.ExtRegs()[49 + lane * 2]) << 32;
+        CHECK(actual == expected);
+    }
+}
+
 TEST_CASE("Dynarmic A32 SEL preserves per-byte GE selection", "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
     callbacks.code = {
