@@ -220,6 +220,35 @@ static void EmitPackedAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
     auto Vb = ctx.reg_alloc.ReadD(args[1]);
     RegAlloc::Realize(Vresult, Va, Vb);
 
+    if constexpr (is_halving) {
+        ASSERT(!ge_inst);
+
+        // ASX/SAX exchange the two source halfwords before applying opposite operations. Native
+        // halving add/sub already has the exact signed rounding and unsigned underflow behavior;
+        // compute both two-lane candidates and replace only the low lane. The IR result is U32, so
+        // lanes 2-3 are deliberately irrelevant.
+        code.REV32(V0.H4(), Vb->H4());
+        if constexpr (add_is_hi) {
+            if constexpr (is_signed) {
+                code.SHADD(Vresult->H4(), Va->H4(), V0.H4());
+                code.SHSUB(V1.H4(), Va->H4(), V0.H4());
+            } else {
+                code.UHADD(Vresult->H4(), Va->H4(), V0.H4());
+                code.UHSUB(V1.H4(), Va->H4(), V0.H4());
+            }
+        } else {
+            if constexpr (is_signed) {
+                code.SHSUB(Vresult->H4(), Va->H4(), V0.H4());
+                code.SHADD(V1.H4(), Va->H4(), V0.H4());
+            } else {
+                code.UHSUB(Vresult->H4(), Va->H4(), V0.H4());
+                code.UHADD(V1.H4(), Va->H4(), V0.H4());
+            }
+        }
+        code.MOV(Vresult->Helem()[0], V1.H()[0]);
+        return;
+    }
+
     if (is_signed) {
         code.SXTL(V0.S4(), Va->H4());
         code.SXTL(V1.S4(), Vb->H4());
@@ -235,17 +264,7 @@ static void EmitPackedAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::
     code.SUB(V1.S2(), V1.S2(), V2.S2());
     code.SUB(Vresult->S2(), V0.S2(), V1.S2());
 
-    if (is_halving) {
-        if (is_signed) {
-            code.SSHR(Vresult->S2(), Vresult->S2(), 1);
-        } else {
-            code.USHR(Vresult->S2(), Vresult->S2(), 1);
-        }
-    }
-
     if (ge_inst) {
-        ASSERT(!is_halving);
-
         auto Vge = ctx.reg_alloc.WriteD(ge_inst);
         RegAlloc::Realize(Vge);
 

@@ -660,6 +660,40 @@ TEST_CASE("Dynarmic A32 SEL preserves per-byte GE selection", "[core][arm][dynar
     }
 }
 
+TEST_CASE("Dynarmic A32 mixed halving add-sub preserves rounding and underflow",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe6310f32,  // SHASX R0, R1, R2
+        0xe6343f55,  // SHSAX R3, R4, R5
+        0xe6776f38,  // UHASX R6, R7, R8
+        0xe67a9f5b,  // UHSAX R9, R10, R11
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.Regs() = {};
+    jit.Regs()[1] = 0x80007fff;   // {-32768, 32767}
+    jit.Regs()[2] = 0xffff0001;   // {-1, 1}
+    jit.Regs()[4] = 0x7fff8000;   // {32767, -32768}
+    jit.Regs()[5] = 0x0001ffff;   // {1, -1}
+    jit.Regs()[7] = 0x00000000;
+    jit.Regs()[8] = 0xffffffff;
+    jit.Regs()[10] = 0x00000000;
+    jit.Regs()[11] = 0xffffffff;
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    CHECK(jit.Regs()[0] == 0xc0004000);
+    CHECK(jit.Regs()[3] == 0x4000c000);
+    CHECK(jit.Regs()[6] == 0x7fff8000);
+    CHECK(jit.Regs()[9] == 0x80007fff);
+}
+
 TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
