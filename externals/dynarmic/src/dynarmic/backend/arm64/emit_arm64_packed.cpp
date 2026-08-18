@@ -502,4 +502,46 @@ void EmitIR<IR::Opcode::PackedSelect>(oaknut::CodeGenerator& code, EmitContext& 
     code.BSL(Vresult->B8(), Vb->B8(), Va->B8());
 }
 
+template<>
+void EmitIR<IR::Opcode::PackHalfwordBottom>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const u8 shift_amount = inst->GetArg(2).GetU8();
+
+    if (shift_amount == 16) {
+        auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+        auto Wm = ctx.reg_alloc.ReadW(args[1]);
+        RegAlloc::Realize(Wresult, Wm);
+
+        code.BFI(*Wresult, *Wm, 16, 16);
+        return;
+    }
+
+    auto Wn = ctx.reg_alloc.ReadW(args[0]);
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[1], inst);
+    RegAlloc::Realize(Wn, Wresult);
+
+    if (shift_amount != 0) {
+        code.LSL(*Wresult, *Wresult, shift_amount);
+    }
+    code.BFXIL(*Wresult, *Wn, 0, 16);
+}
+
+template<>
+void EmitIR<IR::Opcode::PackHalfwordTop>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const u8 shift_amount = inst->GetArg(2).GetU8();
+
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+    auto Wm = ctx.reg_alloc.ReadW(args[1]);
+    RegAlloc::Realize(Wresult, Wm);
+
+    if (shift_amount <= 16) {
+        code.BFXIL(*Wresult, *Wm, shift_amount, 16);
+        return;
+    }
+
+    code.ASR(Wscratch0, *Wm, shift_amount <= 31 ? shift_amount : 31);
+    code.BFXIL(*Wresult, Wscratch0, 0, 16);
+}
+
 }  // namespace Dynarmic::Backend::Arm64

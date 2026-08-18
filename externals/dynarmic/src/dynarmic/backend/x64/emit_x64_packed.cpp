@@ -745,4 +745,12 @@ void EmitX64::EmitPackedSelect(EmitContext& ctx, IR::Inst* inst) {
     }
 }
 
+void EmitX64::EmitPackHalfwordBottom(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected PackHalfwordBottom");
+}
+
+void EmitX64::EmitPackHalfwordTop(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected PackHalfwordTop");
+}
+
 }  // namespace Dynarmic::Backend::X64

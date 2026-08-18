@@ -138,16 +138,14 @@ bool TranslatorVisitor::thumb32_EOR_reg(bool S, Reg n, Imm<3> imm3, Reg d, Imm<2
 }
 
 bool TranslatorVisitor::thumb32_PKH(Reg n, Imm<3> imm3, Reg d, Imm<2> imm2, Imm<1> tb, Reg m) {
-    const ShiftType type = concatenate(tb, Imm<1>{0}).ZeroExtend<ShiftType>();
-
     if (d == Reg::PC || n == Reg::PC || m == Reg::PC) {
         return UnpredictableInstruction();
     }
 
-    const auto operand2 = EmitImmShift(ir.GetRegister(m), type, imm3, imm2, ir.GetCFlag()).result;
-    const auto lower = ir.And((tb == 1) ? operand2 : ir.GetRegister(n), ir.Imm32(0x0000FFFF));
-    const auto upper = ir.And((tb == 1) ? ir.GetRegister(n) : operand2, ir.Imm32(0xFFFF0000));
-    const auto result = ir.Or(upper, lower);
+    const u8 shift_amount = concatenate(imm3, imm2).ZeroExtend<u8>();
+    const auto result = tb == 0
+                          ? ir.PackHalfwordBottom(ir.GetRegister(n), ir.GetRegister(m), shift_amount)
+                          : ir.PackHalfwordTop(ir.GetRegister(n), ir.GetRegister(m), shift_amount == 0 ? 32 : shift_amount);
     ir.SetRegister(d, result);
     return true;
 }

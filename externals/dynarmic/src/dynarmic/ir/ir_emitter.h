@@ -208,6 +208,8 @@ public:
     U32 PackedSaturatedSubAddS16(const U32& a, const U32& b);
     U32 PackedAbsDiffSumU8(const U32& a, const U32& b);
     U32 PackedSelect(const U32& ge, const U32& a, const U32& b);
+    U32 PackHalfwordBottom(const U32& n, const U32& m, u8 shift_amount);
+    U32 PackHalfwordTop(const U32& n, const U32& m, u8 shift_amount);
 
     U32 CRC32Castagnoli8(const U32& a, const U32& b);
     U32 CRC32Castagnoli16(const U32& a, const U32& b);

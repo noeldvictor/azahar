@@ -21,6 +21,7 @@ class Block;
 namespace Dynarmic::Optimization {
 
 struct PolyfillOptions {
+    bool pack_halfword = false;
     bool sha256 = false;
     bool vector_absolute_difference_widen = false;
     bool vector_add_sub_widen = false;

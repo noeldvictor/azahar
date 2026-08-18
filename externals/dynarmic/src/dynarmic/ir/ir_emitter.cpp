@@ -896,6 +896,16 @@ U32 IREmitter::PackedSelect(const U32& ge, const U32& a, const U32& b) {
     return Inst<U32>(Opcode::PackedSelect, ge, a, b);
 }
 
+U32 IREmitter::PackHalfwordBottom(const U32& n, const U32& m, u8 shift_amount) {
+    ASSERT(shift_amount < 32);
+    return Inst<U32>(Opcode::PackHalfwordBottom, n, m, Imm8(shift_amount));
+}
+
+U32 IREmitter::PackHalfwordTop(const U32& n, const U32& m, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= 32);
+    return Inst<U32>(Opcode::PackHalfwordTop, n, m, Imm8(shift_amount));
+}
+
 U32 IREmitter::CRC32Castagnoli8(const U32& a, const U32& b) {
     return Inst<U32>(Opcode::CRC32Castagnoli8, a, b);
 }

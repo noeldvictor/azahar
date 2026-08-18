@@ -302,6 +302,24 @@ void PolyfillVectorShiftInsert(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(result);
 }
 
+template<bool top>
+void PolyfillPackHalfword(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U32 n = (IR::U32)inst.GetArg(0);
+    const IR::U32 m = (IR::U32)inst.GetArg(1);
+    const u8 shift_amount = inst.GetArg(2).GetU8();
+    const IR::U32 shifted = [&] {
+        if constexpr (top) {
+            return ir.ArithmeticShiftRight(m, ir.Imm8(shift_amount), ir.Imm1(0)).result;
+        } else {
+            return ir.LogicalShiftLeft(m, ir.Imm8(shift_amount), ir.Imm1(0)).result;
+        }
+    }();
+    const IR::U32 lower = ir.And(top ? shifted : n, ir.Imm32(0x0000FFFF));
+    const IR::U32 upper = ir.And(top ? n : shifted, ir.Imm32(0xFFFF0000));
+
+    inst.ReplaceUsesWith(ir.Or(upper, lower));
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -315,6 +333,16 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         ir.SetInsertionPointBefore(&inst);
 
         switch (inst.GetOpcode()) {
+        case IR::Opcode::PackHalfwordBottom:
+            if (polyfill.pack_halfword) {
+                PolyfillPackHalfword<false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::PackHalfwordTop:
+            if (polyfill.pack_halfword) {
+                PolyfillPackHalfword<true>(ir, inst);
+            }
+            break;
         case IR::Opcode::SHA256MessageSchedule0:
             if (polyfill.sha256) {
                 PolyfillSHA256MessageSchedule0(ir, inst);

@@ -1479,6 +1479,132 @@ TEST_CASE("Dynarmic A32 unsigned byte absolute-difference sums preserve four-lan
     }
 }
 
+TEST_CASE("Dynarmic A32 halfword packs preserve shifts, aliases, and flags",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t shift;
+        std::uint8_t n_reg;
+        std::uint8_t m_reg;
+        bool top;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe6820013, 0, 2, 3, false, false},  // ARM PKHBT R0, R2, R3
+        Operation{0xe6820093, 1, 2, 3, false, false},  // ARM PKHBT R0, R2, R3, LSL #1
+        Operation{0xe6820393, 7, 2, 3, false, false},  // ARM PKHBT R0, R2, R3, LSL #7
+        Operation{0xe6820793, 15, 2, 3, false, false}, // ARM PKHBT R0, R2, R3, LSL #15
+        Operation{0xe6820813, 16, 2, 3, false, false}, // ARM PKHBT R0, R2, R3, LSL #16
+        Operation{0xe6820893, 17, 2, 3, false, false}, // ARM PKHBT R0, R2, R3, LSL #17
+        Operation{0xe6820f93, 31, 2, 3, false, false}, // ARM PKHBT R0, R2, R3, LSL #31
+        Operation{0xe68200d3, 1, 2, 3, true, false},   // ARM PKHTB R0, R2, R3, ASR #1
+        Operation{0xe68203d3, 7, 2, 3, true, false},   // ARM PKHTB R0, R2, R3, ASR #7
+        Operation{0xe68207d3, 15, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #15
+        Operation{0xe6820853, 16, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #16
+        Operation{0xe68208d3, 17, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #17
+        Operation{0xe6820c53, 24, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #24
+        Operation{0xe6820fd3, 31, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #31
+        Operation{0xe6820053, 32, 2, 3, true, false},  // ARM PKHTB R0, R2, R3, ASR #32
+        Operation{0xe6800811, 16, 0, 1, false, false}, // ARM PKHBT R0, R0, R1, LSL #16
+        Operation{0xe6800851, 16, 0, 1, true, false},  // ARM PKHTB R0, R0, R1, ASR #16
+        Operation{0xe6810810, 16, 1, 0, false, false}, // ARM PKHBT R0, R1, R0, LSL #16
+        Operation{0xe6810850, 16, 1, 0, true, false},  // ARM PKHTB R0, R1, R0, ASR #16
+        Operation{0xe6800810, 16, 0, 0, false, false}, // ARM PKHBT R0, R0, R0, LSL #16
+        Operation{0xe6800850, 16, 0, 0, true, false},  // ARM PKHTB R0, R0, R0, ASR #16
+        Operation{0x0003eac2, 0, 2, 3, false, true},   // Thumb PKHBT R0, R2, R3
+        Operation{0x0043eac2, 1, 2, 3, false, true},   // Thumb PKHBT R0, R2, R3, LSL #1
+        Operation{0x10c3eac2, 7, 2, 3, false, true},   // Thumb PKHBT R0, R2, R3, LSL #7
+        Operation{0x30c3eac2, 15, 2, 3, false, true},  // Thumb PKHBT R0, R2, R3, LSL #15
+        Operation{0x4003eac2, 16, 2, 3, false, true},  // Thumb PKHBT R0, R2, R3, LSL #16
+        Operation{0x4043eac2, 17, 2, 3, false, true},  // Thumb PKHBT R0, R2, R3, LSL #17
+        Operation{0x70c3eac2, 31, 2, 3, false, true},  // Thumb PKHBT R0, R2, R3, LSL #31
+        Operation{0x0063eac2, 1, 2, 3, true, true},    // Thumb PKHTB R0, R2, R3, ASR #1
+        Operation{0x10e3eac2, 7, 2, 3, true, true},    // Thumb PKHTB R0, R2, R3, ASR #7
+        Operation{0x30e3eac2, 15, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #15
+        Operation{0x4023eac2, 16, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #16
+        Operation{0x4063eac2, 17, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #17
+        Operation{0x6023eac2, 24, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #24
+        Operation{0x70e3eac2, 31, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #31
+        Operation{0x0023eac2, 32, 2, 3, true, true},   // Thumb PKHTB R0, R2, R3, ASR #32
+        Operation{0x4001eac0, 16, 0, 1, false, true},  // Thumb PKHBT R0, R0, R1, LSL #16
+        Operation{0x4021eac0, 16, 0, 1, true, true},   // Thumb PKHTB R0, R0, R1, ASR #16
+        Operation{0x4000eac1, 16, 1, 0, false, true},  // Thumb PKHBT R0, R1, R0, LSL #16
+        Operation{0x4020eac1, 16, 1, 0, true, true},   // Thumb PKHTB R0, R1, R0, ASR #16
+        Operation{0x4000eac0, 16, 0, 0, false, true},  // Thumb PKHBT R0, R0, R0, LSL #16
+        Operation{0x4020eac0, 16, 0, 0, true, true},   // Thumb PKHTB R0, R0, R0, ASR #16
+    };
+    struct Inputs {
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x12345678, 0x89abcdef}, Inputs{0xffff0000, 0x0000ffff},
+        Inputs{0x0000ffff, 0x80000001}, Inputs{0xdeadbeef, 0x7fffffff},
+        Inputs{0x00000000, 0xffffffff},
+    };
+
+    for (const auto& operation : operations) {
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, operation.shift, input.n, input.m);
+            std::array<std::uint32_t, 16> initial_regs{};
+            initial_regs[0] = 0xa5a55a5a;
+            initial_regs[1] = 0x13579bdf;
+            initial_regs[2] = input.n;
+            initial_regs[3] = input.m;
+            initial_regs[4] = 0x2468ace0;
+            initial_regs[5] = 0x55aa55aa;
+            if (operation.n_reg == 0) {
+                initial_regs[0] = input.n;
+            } else if (operation.n_reg == 1) {
+                initial_regs[1] = input.n;
+            }
+            if (operation.m_reg == 0 && operation.n_reg != 0) {
+                initial_regs[0] = input.m;
+            } else if (operation.m_reg == 1) {
+                initial_regs[1] = input.m;
+            }
+
+            const std::uint32_t n = initial_regs[operation.n_reg];
+            const std::uint32_t m = initial_regs[operation.m_reg];
+            const std::uint32_t shifted = [&] {
+                if (!operation.top) {
+                    return m << operation.shift;
+                }
+                if (operation.shift == 32) {
+                    return (m & 0x80000000) != 0 ? 0xffffffffu : 0u;
+                }
+                const std::uint32_t sign_extension =
+                    (m & 0x80000000) != 0 ? ~0u << (32 - operation.shift) : 0;
+                return (m >> operation.shift) | sign_extension;
+            }();
+            const std::uint32_t expected = operation.top
+                                               ? (n & 0xffff0000) | (shifted & 0x0000ffff)
+                                               : (n & 0x0000ffff) | (shifted & 0xffff0000);
+
+            jit.Regs() = initial_regs;
+            constexpr std::uint32_t initial_flags = 0xf80f0000; // NZCV/Q/GE
+            jit.SetCpsr(initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == expected);
+            for (std::size_t reg = 1; reg <= 5; ++reg) {
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == initial_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

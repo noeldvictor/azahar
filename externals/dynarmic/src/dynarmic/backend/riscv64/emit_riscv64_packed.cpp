@@ -207,4 +207,14 @@ void EmitIR<IR::Opcode::PackedSelect>(biscuit::Assembler&, EmitContext&, IR::Ins
     UNIMPLEMENTED();
 }
 
+template<>
+void EmitIR<IR::Opcode::PackHalfwordBottom>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::PackHalfwordTop>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
 }  // namespace Dynarmic::Backend::RV64
