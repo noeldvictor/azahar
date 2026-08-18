@@ -872,17 +872,18 @@ void JitShader::Compile_MOVA(Instruction instr) {
     // twice the measured throughput of Q-form FCVTZS on every Snapdragon 8 Gen 2 core class.
     FCVTZS(SRC1.toD().S2(), SRC1.toD().S2());
 
-    // Get result
-    MOV(XSCRATCH0, SRC1.Delem()[0]);
-
-    // Handle destination enable
-    if (swiz.DestComponentEnabled(0)) {
-        // Move and sign-extend low 32 bits
+    const bool write_x = swiz.DestComponentEnabled(0);
+    const bool write_y = swiz.DestComponentEnabled(1);
+    if (write_x && write_y) {
+        // One packed transfer is faster than two element transfers when both lanes are live.
+        MOV(XSCRATCH0, SRC1.Delem()[0]);
         SXTW(ADDROFFS_REG_0, XSCRATCH0.toW());
-    }
-    if (swiz.DestComponentEnabled(1)) {
-        // Move and sign-extend high 32 bits
         ASR(ADDROFFS_REG_1, XSCRATCH0, 32);
+    } else if (write_x) {
+        // SMOV performs the transfer and signed 32-to-64-bit extension in one instruction.
+        SMOV(ADDROFFS_REG_0, SRC1.Selem()[0]);
+    } else {
+        SMOV(ADDROFFS_REG_1, SRC1.Selem()[1]);
     }
 }
 

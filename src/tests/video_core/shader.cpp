@@ -708,6 +708,24 @@ SHADER_TEST_CASE("PICA State Access", "[video_core][shader]") {
         REQUIRE(shader_unit.address_registers[2] == -37);
     }
 
+    SECTION("Y-only MOVA sign-extends its selected lane") {
+        auto shader = TestType({
+            {OpCode::Id::MOVA, DestRegister{}, "y", sh_input, "xy"},
+            {OpCode::Id::END},
+        });
+
+        const Common::Vec4f input{INFINITY, -9.75f, NAN, -INFINITY};
+        Pica::ShaderUnit shader_unit;
+        shader_unit.address_registers[0] = 17;
+        shader_unit.address_registers[1] = 23;
+        shader_unit.address_registers[2] = -37;
+        shader.RunShader(shader_unit, {&input, 1});
+
+        REQUIRE(shader_unit.address_registers[0] == 17);
+        REQUIRE(shader_unit.address_registers[1] == -9);
+        REQUIRE(shader_unit.address_registers[2] == -37);
+    }
+
     SECTION("MOVA truncates both consumed lanes and ignores Z/W") {
         auto shader = TestType({
             {OpCode::Id::MOVA, DestRegister{}, "xy", sh_input, "xy"},
