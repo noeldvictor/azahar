@@ -473,15 +473,158 @@ TEST_CASE("Dynarmic A32 VSHLL fuses widening shifts on ARM64", "[core][arm][dyna
     }
 }
 
+TEST_CASE("Dynarmic A32 shift-right narrowing preserves saturation on ARM64",
+          "[core][arm][dynarmic]") {
+    enum class NarrowKind {
+        Truncate,
+        SignedToSigned,
+        UnsignedToUnsigned,
+        SignedToUnsigned,
+    };
+    struct Operation {
+        std::uint32_t instruction;
+        std::size_t destination_s;
+        std::size_t source_s;
+        std::uint8_t source_bits;
+        std::uint8_t shift;
+        NarrowKind kind;
+    };
+    constexpr std::array operations{
+        Operation{0xf28b0812, 0, 4, 16, 5, NarrowKind::Truncate},       // VSHRN.I16 D0, Q1, #5
+        Operation{0xf2d50832, 32, 36, 32, 11, NarrowKind::Truncate},    // VSHRN.I32 D16, Q9, #11
+        Operation{0xf2edf83e, 62, 60, 64, 19, NarrowKind::Truncate},    // VSHRN.I64 D31, Q15, #19
+        Operation{0xf28b0912, 0, 4, 16, 5, NarrowKind::SignedToSigned}, // VQSHRN.S16 D0, Q1, #5
+        Operation{0xf2d50932, 32, 36, 32, 11,
+                  NarrowKind::SignedToSigned}, // VQSHRN.S32 D16, Q9, #11
+        Operation{0xf2edf93e, 62, 60, 64, 19,
+                  NarrowKind::SignedToSigned}, // VQSHRN.S64 D31, Q15, #19
+        Operation{0xf38b0912, 0, 4, 16, 5, NarrowKind::UnsignedToUnsigned}, // VQSHRN.U16 D0, Q1, #5
+        Operation{0xf3d50932, 32, 36, 32, 11,
+                  NarrowKind::UnsignedToUnsigned}, // VQSHRN.U32 D16, Q9, #11
+        Operation{0xf3edf93e, 62, 60, 64, 19,
+                  NarrowKind::UnsignedToUnsigned}, // VQSHRN.U64 D31, Q15, #19
+        Operation{0xf38b0812, 0, 4, 16, 5, NarrowKind::SignedToUnsigned}, // VQSHRUN.S16 D0, Q1, #5
+        Operation{0xf3d50832, 32, 36, 32, 11,
+                  NarrowKind::SignedToUnsigned}, // VQSHRUN.S32 D16, Q9, #11
+        Operation{0xf3edf83e, 62, 60, 64, 19,
+                  NarrowKind::SignedToUnsigned}, // VQSHRUN.S64 D31, Q15, #19
+    };
+
+    constexpr std::array<std::uint32_t, 4> source_words{
+        0xffffffff,
+        0x80808080,
+        0x7f7f7f7f,
+        0x55555555,
+    };
+    constexpr std::uint32_t initial_cpsr = 0xa80f01d0;  // N/C/Q/GE, user mode
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+    constexpr std::uint32_t fpscr_qc = 1U << 27;
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination_s, operation.source_s,
+                operation.source_bits, operation.shift, operation.kind);
+
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        jit.ExtRegs().fill(0xa5a5a5a5);
+        std::copy(source_words.begin(), source_words.end(),
+                  jit.ExtRegs().begin() + operation.source_s);
+
+        std::array<std::uint8_t, 16> source_bytes{};
+        std::memcpy(source_bytes.data(), source_words.data(), source_bytes.size());
+        std::array<std::uint8_t, 8> result_bytes{};
+        const std::uint8_t result_bits = operation.source_bits / 2;
+        const std::uint64_t result_mask =
+            result_bits == 32 ? 0xffffffffULL : (std::uint64_t{1} << result_bits) - 1;
+        const std::uint64_t signed_max = (std::uint64_t{1} << (result_bits - 1)) - 1;
+        const std::uint64_t signed_min = ~signed_max;
+        const std::size_t lane_count = 128 / operation.source_bits;
+        bool saturated = false;
+
+        for (std::size_t lane = 0; lane < lane_count; ++lane) {
+            std::uint64_t input = 0;
+            for (std::size_t byte = 0; byte < operation.source_bits / 8; ++byte) {
+                input |= static_cast<std::uint64_t>(
+                             source_bytes[lane * operation.source_bits / 8 + byte])
+                         << (byte * 8);
+            }
+
+            const bool signed_input = operation.kind == NarrowKind::SignedToSigned ||
+                                      operation.kind == NarrowKind::SignedToUnsigned;
+            std::uint64_t shifted = input >> operation.shift;
+            if (signed_input && (input & (std::uint64_t{1} << (operation.source_bits - 1))) != 0) {
+                shifted |= ~std::uint64_t{0} << (operation.source_bits - operation.shift);
+            }
+
+            std::uint64_t result = shifted & result_mask;
+            if (operation.kind == NarrowKind::SignedToSigned) {
+                if ((shifted >> 63) != 0 && shifted < signed_min) {
+                    result = signed_min & result_mask;
+                    saturated = true;
+                } else if ((shifted >> 63) == 0 && shifted > signed_max) {
+                    result = signed_max;
+                    saturated = true;
+                }
+            } else if (operation.kind == NarrowKind::UnsignedToUnsigned) {
+                if (shifted > result_mask) {
+                    result = result_mask;
+                    saturated = true;
+                }
+            } else if (operation.kind == NarrowKind::SignedToUnsigned) {
+                if ((shifted >> 63) != 0) {
+                    result = 0;
+                    saturated = true;
+                } else if (shifted > result_mask) {
+                    result = result_mask;
+                    saturated = true;
+                }
+            }
+
+            for (std::size_t byte = 0; byte < result_bits / 8; ++byte) {
+                result_bytes[lane * result_bits / 8 + byte] =
+                    static_cast<std::uint8_t>(result >> (byte * 8));
+            }
+        }
+
+        std::array<std::uint32_t, 2> expected_result{};
+        std::memcpy(expected_result.data(), result_bytes.data(), result_bytes.size());
+        auto expected_regs = jit.ExtRegs();
+        std::copy(expected_result.begin(), expected_result.end(),
+                  expected_regs.begin() + operation.destination_s);
+
+        jit.SetCpsr(initial_cpsr);
+        jit.SetFpscr(initial_fpscr);
+        callbacks.ticks_left = 2;
+        jit.Run();
+
+        CHECK(jit.ExtRegs() == expected_regs);
+        CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
+        if (operation.kind == NarrowKind::Truncate) {
+            CHECK_FALSE(saturated);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        } else {
+            CHECK(saturated);
+            CHECK((jit.Fpscr() & ~fpscr_qc) == initial_fpscr);
+            CHECK((jit.Fpscr() & fpscr_qc) != 0);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 VMLAL and VMLSL widen before modular accumulation",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
     callbacks.code = {
-        0xf2820803,  // VMLAL.S8 Q0, D2, D3
-        0xf3968807,  // VMLAL.U16 Q4, D6, D7
-        0xf2ea080b,  // VMLAL.S32 Q8, D10, D11
-        0xf3ce8a0f,  // VMLSL.U8 Q12, D14, D15
-        0xeafffffe,  // B .
+        0xf2820803, // VMLAL.S8 Q0, D2, D3
+        0xf3968807, // VMLAL.U16 Q4, D6, D7
+        0xf2ea080b, // VMLAL.S32 Q8, D10, D11
+        0xf3ce8a0f, // VMLSL.U8 Q12, D14, D15
+        0xeafffffe, // B .
         0xeafffffe,
     };
 
