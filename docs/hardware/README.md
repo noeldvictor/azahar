@@ -212,6 +212,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   `MOV`/`FMOV` therefore reduces dependency and issue work on every Thor core class without relying
   on an optional ISA feature. Preserve the original low word before `BFI`, exact per-byte GE
   selection through `BSL`, and the copy fallback whenever the mask or low operand is still shared.
+- Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
+  immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
+  of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,
+  and A510 pages 22-23. One `SXTB`/`SXTH` has the exact semantics of the consecutive pair, while
+  removing a dependency and an integer-pipeline operation. Do not apply this to shift counts or
+  other U8/U16 consumers that require canonical zero extension; preserve a dirty-upper-bits guest
+  regression alongside the fused signed cases.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

@@ -3400,6 +3400,53 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and include rejected, UX, and power-oriented work; their gains cannot be added. Whole-game FPS,
   sustained watts, frametimes, and thermals still require a matched title/scene A/B.
 
+## 2026-08-18 Dynarmic ARM64 Signed-Narrow Fusion
+
+- The A32 frontend contains 133 byte/halfword low-part construction sites and at least 59 direct
+  textual narrow-plus-sign-extension expressions. Guest `SXTB`, `SXTH`, signed DSP operations, and
+  halfword multiplies could therefore lower to `UXTB; SXTB` or `UXTH; SXTH`: the unsigned narrow
+  canonicalized a value whose sole next consumer immediately discarded the same upper bits again.
+- The ARM64 emitter now aliases the narrow result only when it has exactly one use, the immediately
+  following IR instruction is the matching byte/halfword signed extension, and argument zero points
+  directly to that producer. `SXTB`/`SXTH` then performs truncation and sign extension in one
+  instruction. This O(1) check adds no block scan or lookup allocation. Shared, non-adjacent, zero-
+  extension, store, shift, and unknown-consumer paths retain `UXTB`/`UXTH`.
+- The X3 page 18, A715 page 20, A710 pages 27-28, and A510 pages 22-23 tables cover the baseline
+  `UBFM`/`SBFM` family underlying these aliases. Removing one bitfield operation reduces a true
+  dependency and integer-pipeline work on every Thor core without an optional ISA assumption.
+- A disassembly-checked benchmark compared four independent old and fused chains over 16,777,216
+  iterations, alternated order for nine rounds, selected the best samples, and verified equal
+  checksums:
+
+  | Thor core | Byte `UXTB; SXTB` -> `SXTB` | Half `UXTH; SXTH` -> `SXTH` |
+  | --- | --- | --- |
+  | A510 CPU 0 | 0.627656 -> 0.250822 ns/op; 2.502x; 60.04% less time | 1.132231 -> 0.251382; 4.504x; 77.80% less time |
+  | A710 CPU 3 | 0.236033 -> 0.141632; 1.667x; 39.99% | 0.235977 -> 0.141353; 1.669x; 40.10% |
+  | A715 CPU 5 | 0.273183 -> 0.155802; 1.753x; 42.97% | 0.276155 -> 0.152790; 1.807x; 44.67% |
+
+  A715 CPU 6 independently measured 1.856x/1.778x for byte/halfword. CPU 7 reported online but
+  rejected both the benchmark and `/system/bin/true` with a single-bit affinity mask as `EINVAL`;
+  no X3 measurement is claimed for this run.
+- Permanent guest coverage executes A32 `SXTB`, `SXTH`, and `SMULBB` with dirty upper bits, plus a
+  register-controlled `LSL` whose shift register is `0xffff0001`. That last result proves narrowing
+  remains on the non-sign-extension path. Thor passed 70 assertions in five focused cases and 2,937
+  assertions in 20 broader core cases. The ARM64 native build passed in 1 minute 45 seconds;
+  temporary opcode-check, test, and benchmark files were removed from host and device. Source/test
+  commit `fc067c02f` was pushed directly to `origin/master` through command-line Git SSH.
+- JDK 17 release packaging passed in 2 minutes 28 seconds. The ARM64-only, v2-signed APK is
+  28,977,844 bytes, reports `fc067c02f-vanilla-thor`, and has SHA-256
+  `CBF8900D2E85268BA4AB19713C55F9E7D4FC08C5880986A493E754B95D9D9894`. It installed over
+  `org.azahar_emu.azahar.debug`; Android reports `primaryCpuAbi=arm64-v8a`, `stopped=true`, and no
+  process ID. No UI or game was launched. Thor reported USB power, no AC/wireless power, 80%
+  battery, 4.156 V, and 21.0 C, so this is not a matched battery-discharge watt measurement.
+- Cleanup removed 2,017,571,882 logical bytes from `app/build` and raised C: free space by
+  1,581,228,032 bytes. Only the APK and 476-byte metadata remain there; the 3,244,305,971-byte
+  active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
+- This is optimization 82 in the Thor work tally. The 1.67x-4.50x figures apply only to the exact
+  fused sequences when those IR patterns occur. The 82 items overlap and cannot be added; matched
+  title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness A/B runs remain necessary
+  for whole-game FPS, sustained watts, frametime, or thermal claims.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

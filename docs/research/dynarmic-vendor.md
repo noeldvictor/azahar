@@ -36,6 +36,10 @@ Dynarmic remote.
 - Reuse that final-use path for `Pack2x32To1x64` and `PackedSelect`, removing their preceding
   `MOV`/`FMOV`, and represent `LeastSignificantWord` as an alias of the source's low 32 bits. Real
   A32 `UMLAL` and all 16 A32 `SEL` GE masks provide permanent guest-level regression coverage.
+- Fuse an immediately adjacent, single-use `LeastSignificantByte`/`LeastSignificantHalf` followed
+  by its matching signed extension. The narrow IR result aliases its source and the surviving
+  `SXTB`/`SXTH` supplies the required truncation and sign extension in one instruction. Other
+  consumers retain `UXTB`/`UXTH`; no per-block scan, table, or JIT-time allocation is added.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -63,6 +67,13 @@ disassembly. Removing one move measured 1.05x-2.51x across the three exact seque
 core classes. The A510 results were 2.51x for 32-bit packing, 2.12x for low-word extraction, and
 1.38x for packed select; A710/A715/X3 results ranged from 1.05x to 1.50x. These are generated-code
 microbenchmarks rather than emulator-wide speed or power measurements.
+
+The signed-narrow benchmark compared four independent `UXTB; SXTB` or `UXTH; SXTH` chains with
+the fused `SXTB`/`SXTH` form over 16,777,216 iterations, alternating order for nine rounds and
+checking equal results. Best samples were 2.50x/4.50x faster for byte/halfword on A510, 1.67x/1.67x
+on A710, and 1.75x/1.81x on A715 CPU 5; A715 CPU 6 independently measured 1.86x/1.78x. CPU 7
+rejected even a harmless single-bit affinity probe with `EINVAL` during this run, so no X3 number
+is claimed. These are exact generated-sequence measurements, not whole-emulator FPS or watts.
 
 The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was

@@ -61,6 +61,12 @@
   `PackedSelect` must reuse the final-use GE mask as `BSL`'s destination. Keep the real A32 `UMLAL`
   packed-word regression and the A32 `SEL` regression over all 16 GE masks; shared values must
   continue through the allocator's conservative copy fallback.
+- Preserve ARM64 signed-narrow fusion only when `LeastSignificantByte`/`LeastSignificantHalf` has
+  exactly one use and the immediately following IR instruction is the matching word/long signed
+  extension. In that case the narrow value aliases its source and `SXTB`/`SXTH` performs both jobs.
+  Keep `UXTB`/`UXTH` for shifts, zero extensions, stores, shared/non-adjacent values, and every
+  unrecognized consumer. Retain the real A32 `SXTB`, `SXTH`, `SMULBB`, and dirty-high-byte `LSL`
+  regression so an over-broad alias cannot silently corrupt shift semantics.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

@@ -200,7 +200,11 @@ include:
   directly with `BFI`, `LeastSignificantWord` aliases the source's low 32 bits, and `PackedSelect`
   consumes its final-use GE mask in place with `BSL`. Disassembly-checked four-chain Thor
   microbenchmarks measured **1.05x-2.51x** for those exact sequences, with the largest improvement
-  on the Cortex-A510 efficiency core; and
+  on the Cortex-A510 efficiency core;
+- signed narrow fusion that recognizes an immediately adjacent, single-use byte/halfword sign
+  extension and emits only `SXTB`/`SXTH`, instead of first canonicalizing with `UXTB`/`UXTH`.
+  Exact-sequence Thor measurements were **1.67x-4.50x faster** on A510/A710/A715; register shifts,
+  zero extensions, stores, shared values, and non-adjacent uses retain the original narrowing; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
