@@ -392,8 +392,7 @@ TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its l
     }
 }
 
-TEST_CASE("Dynarmic A32 VSHLL fuses widening and immediate shift on ARM64",
-          "[core][arm][dynarmic]") {
+TEST_CASE("Dynarmic A32 VSHLL fuses widening shifts on ARM64", "[core][arm][dynarmic]") {
     struct Operation {
         std::uint32_t instruction;
         std::size_t destination_s;
@@ -409,6 +408,9 @@ TEST_CASE("Dynarmic A32 VSHLL fuses widening and immediate shift on ARM64",
         Operation{0xf3df8a3a, 48, 52, 16, 15, false}, // VSHLL.U16 Q12, D26, #15
         Operation{0xf2a12a12, 4, 4, 32, 1, true},     // VSHLL.S32 Q1, D2, #1 (overlap)
         Operation{0xf3ffea3f, 60, 62, 32, 31, false}, // VSHLL.U32 Q15, D31, #31 (overlap)
+        Operation{0xf3b20302, 0, 4, 8, 8, false},     // VSHLL.I8 Q0, D2, #8
+        Operation{0xf3f60322, 32, 36, 16, 16, false}, // VSHLL.I16 Q8, D18, #16
+        Operation{0xf3fae32f, 60, 62, 32, 32, false}, // VSHLL.I32 Q15, D31, #32 (overlap)
     };
 
     constexpr std::uint64_t source_bits = 0x800000017fff80ff;
