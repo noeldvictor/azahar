@@ -127,6 +127,92 @@ void EmitIR<IR::Opcode::UnsignedSaturation>(oaknut::CodeGenerator& code, EmitCon
 }
 
 template<>
+void EmitIR<IR::Opcode::PackedSignedSaturation16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    const auto overflow_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetOverflowFromOp);
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const size_t N = args[1].GetImmediateU8();
+    ASSERT(N >= 1 && N <= 16);
+
+    if (N == 16) {
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        if (overflow_inst) {
+            auto Woverflow = ctx.reg_alloc.WriteW(overflow_inst);
+            RegAlloc::Realize(Woverflow);
+            code.MOV(*Woverflow, WZR);
+        }
+        return;
+    }
+
+    auto Woperand = ctx.reg_alloc.ReadW(args[0]);
+    auto Wresult = ctx.reg_alloc.WriteW(inst);
+    RegAlloc::Realize(Woperand, Wresult);
+    ctx.reg_alloc.SpillFlags();
+
+    const u32 positive_saturated_value = (1u << (N - 1)) - 1;
+    const u32 negative_saturated_value = ~u32{0} << (N - 1);
+
+    code.SXTH(Wresult, *Woperand);
+    code.ASR(Wscratch0, *Woperand, 16);
+    code.MOV(Wscratch1, negative_saturated_value);
+    code.CMP(*Wresult, Wscratch1);
+    code.CSEL(Wresult, *Wresult, Wscratch1, GT);
+    code.CMP(Wscratch0, Wscratch1);
+    code.CSEL(Wscratch0, Wscratch0, Wscratch1, GT);
+    code.MOV(Wscratch1, positive_saturated_value);
+    code.CMP(*Wresult, Wscratch1);
+    code.CSEL(Wresult, *Wresult, Wscratch1, LT);
+    code.CMP(Wscratch0, Wscratch1);
+    code.CSEL(Wscratch0, Wscratch0, Wscratch1, LT);
+    code.BFI(Wresult, Wscratch0, 16, 16);
+
+    if (overflow_inst) {
+        auto Woverflow = ctx.reg_alloc.WriteW(overflow_inst);
+        RegAlloc::Realize(Woverflow);
+        code.CMP(*Wresult, Woperand);
+        code.CSET(Woverflow, NE);
+    }
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedUnsignedSaturation16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    const auto overflow_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetOverflowFromOp);
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const size_t N = args[1].GetImmediateU8();
+    ASSERT(N <= 15);
+
+    auto Woperand = ctx.reg_alloc.ReadW(args[0]);
+    auto Wresult = ctx.reg_alloc.WriteW(inst);
+    RegAlloc::Realize(Woperand, Wresult);
+    ctx.reg_alloc.SpillFlags();
+
+    if (N == 0) {
+        code.MOV(*Wresult, WZR);
+    } else {
+        const u32 saturated_value = (1u << N) - 1;
+
+        code.SXTH(Wresult, *Woperand);
+        code.ASR(Wscratch0, *Woperand, 16);
+        code.CMP(*Wresult, 0);
+        code.CSEL(Wresult, *Wresult, WZR, GT);
+        code.CMP(Wscratch0, 0);
+        code.CSEL(Wscratch0, Wscratch0, WZR, GT);
+        code.MOV(Wscratch1, saturated_value);
+        code.CMP(*Wresult, Wscratch1);
+        code.CSEL(Wresult, *Wresult, Wscratch1, LT);
+        code.CMP(Wscratch0, Wscratch1);
+        code.CSEL(Wscratch0, Wscratch0, Wscratch1, LT);
+        code.BFI(Wresult, Wscratch0, 16, 16);
+    }
+
+    if (overflow_inst) {
+        auto Woverflow = ctx.reg_alloc.WriteW(overflow_inst);
+        RegAlloc::Realize(Woverflow);
+        code.CMP(*Wresult, Woperand);
+        code.CSET(Woverflow, NE);
+    }
+}
+
+template<>
 void EmitIR<IR::Opcode::SignedSaturatedAdd8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     (void)code;
     (void)ctx;

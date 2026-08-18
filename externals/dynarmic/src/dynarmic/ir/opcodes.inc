@@ -183,6 +183,8 @@ OPCODE(SignedSaturatedAddWithFlag32,                        U32,            U32,
 OPCODE(SignedSaturatedSubWithFlag32,                        U32,            U32,            U32                                             )
 OPCODE(SignedSaturation,                                    U32,            U32,            U8                                              )
 OPCODE(UnsignedSaturation,                                  U32,            U32,            U8                                              )
+OPCODE(PackedSignedSaturation16,                            U32,            U32,            U8                                              )
+OPCODE(PackedUnsignedSaturation16,                          U32,            U32,            U8                                              )
 OPCODE(SignedSaturatedAdd8,                                 U8,             U8,             U8                                              )
 OPCODE(SignedSaturatedAdd16,                                U16,            U16,            U16                                             )
 OPCODE(SignedSaturatedAdd32,                                U32,            U32,            U32                                             )

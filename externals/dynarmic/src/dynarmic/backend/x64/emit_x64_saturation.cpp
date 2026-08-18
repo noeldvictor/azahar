@@ -188,6 +188,14 @@ void EmitX64::EmitUnsignedSaturation(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitPackedSignedSaturation16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected PackedSignedSaturation16");
+}
+
+void EmitX64::EmitPackedUnsignedSaturation16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected PackedUnsignedSaturation16");
+}
+
 void EmitX64::EmitSignedSaturatedAdd8(EmitContext& ctx, IR::Inst* inst) {
     EmitSignedSaturatedOp<Op::Add, 8>(code, ctx, inst);
 }

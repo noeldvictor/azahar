@@ -9,13 +9,6 @@
 #include "dynarmic/frontend/A32/translate/impl/a32_translate_impl.h"
 
 namespace Dynarmic::A32 {
-static IR::U32 Pack2x16To1x32(A32::IREmitter& ir, IR::U32 lo, IR::U32 hi) {
-    return ir.Or(ir.And(lo, ir.Imm32(0xFFFF)), ir.LogicalShiftLeft(hi, ir.Imm8(16), ir.Imm1(0)).result);
-}
-
-static IR::U16 MostSignificantHalf(A32::IREmitter& ir, IR::U32 value) {
-    return ir.LeastSignificantHalf(ir.LogicalShiftRight(value, ir.Imm8(16), ir.Imm1(0)).result);
-}
 
 using SaturationFunction = IR::ResultAndOverflow<IR::U32> (IREmitter::*)(const IR::U32&, size_t);
 
@@ -40,16 +33,10 @@ static bool Saturation16(TranslatorVisitor& v, Reg n, Reg d, size_t saturate_to,
         return v.UnpredictableInstruction();
     }
 
-    const auto reg_n = v.ir.GetRegister(n);
+    const auto result = (v.ir.*sat_fn)(v.ir.GetRegister(n), saturate_to);
 
-    const auto lo_operand = v.ir.SignExtendHalfToWord(v.ir.LeastSignificantHalf(reg_n));
-    const auto hi_operand = v.ir.SignExtendHalfToWord(MostSignificantHalf(v.ir, reg_n));
-    const auto lo_result = (v.ir.*sat_fn)(lo_operand, saturate_to);
-    const auto hi_result = (v.ir.*sat_fn)(hi_operand, saturate_to);
-
-    v.ir.SetRegister(d, Pack2x16To1x32(v.ir, lo_result.result, hi_result.result));
-    v.ir.OrQFlag(lo_result.overflow);
-    v.ir.OrQFlag(hi_result.overflow);
+    v.ir.SetRegister(d, result.result);
+    v.ir.OrQFlag(result.overflow);
     return true;
 }
 
@@ -185,7 +172,7 @@ bool TranslatorVisitor::thumb32_SSAT(bool sh, Reg n, Imm<3> imm3, Reg d, Imm<2> 
 }
 
 bool TranslatorVisitor::thumb32_SSAT16(Reg n, Reg d, Imm<4> sat_imm) {
-    return Saturation16(*this, n, d, sat_imm.ZeroExtend() + 1, &IREmitter::SignedSaturation);
+    return Saturation16(*this, n, d, sat_imm.ZeroExtend() + 1, &IREmitter::PackedSignedSaturation16);
 }
 
 bool TranslatorVisitor::thumb32_SUB_imm_2(Imm<1> imm1, Reg n, Imm<3> imm3, Reg d, Imm<8> imm8) {
@@ -226,7 +213,7 @@ bool TranslatorVisitor::thumb32_USAT(bool sh, Reg n, Imm<3> imm3, Reg d, Imm<2> 
 }
 
 bool TranslatorVisitor::thumb32_USAT16(Reg n, Reg d, Imm<4> sat_imm) {
-    return Saturation16(*this, n, d, sat_imm.ZeroExtend(), &IREmitter::UnsignedSaturation);
+    return Saturation16(*this, n, d, sat_imm.ZeroExtend(), &IREmitter::PackedUnsignedSaturation16);
 }
 
 }  // namespace Dynarmic::A32

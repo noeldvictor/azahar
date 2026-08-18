@@ -160,6 +160,8 @@ public:
     ResultAndOverflow<U32> SignedSaturatedSubWithFlag(const U32& a, const U32& b);
     ResultAndOverflow<U32> SignedSaturation(const U32& a, size_t bit_size_to_saturate_to);
     ResultAndOverflow<U32> UnsignedSaturation(const U32& a, size_t bit_size_to_saturate_to);
+    ResultAndOverflow<U32> PackedSignedSaturation16(const U32& a, size_t bit_size_to_saturate_to);
+    ResultAndOverflow<U32> PackedUnsignedSaturation16(const U32& a, size_t bit_size_to_saturate_to);
 
     UAny SignedSaturatedAdd(const UAny& a, const UAny& b);
     UAny SignedSaturatedDoublingMultiplyReturnHigh(const UAny& a, const UAny& b);

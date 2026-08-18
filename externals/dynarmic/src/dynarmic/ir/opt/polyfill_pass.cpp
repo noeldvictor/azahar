@@ -323,6 +323,31 @@ void PolyfillPackHalfword(IR::IREmitter& ir, IR::Inst& inst) {
 }
 
 template<bool is_signed>
+void PolyfillPackedSaturation16(IR::IREmitter& ir, IR::Inst& inst) {
+    IR::Inst* overflow_inst = inst.GetAssociatedPseudoOperation(IR::Opcode::GetOverflowFromOp);
+    const IR::U32 operand = (IR::U32)inst.GetArg(0);
+    const size_t saturate_to = inst.GetArg(1).GetU8();
+
+    const IR::U32 lo_operand = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(operand));
+    const IR::U32 hi_operand = ir.ArithmeticShiftRight(operand, ir.Imm8(16), ir.Imm1(false)).result;
+    const auto lo_result = is_signed ? ir.SignedSaturation(lo_operand, saturate_to)
+                                     : ir.UnsignedSaturation(lo_operand, saturate_to);
+    const auto hi_result = is_signed ? ir.SignedSaturation(hi_operand, saturate_to)
+                                     : ir.UnsignedSaturation(hi_operand, saturate_to);
+    const IR::U32 lower = ir.And(lo_result.result, ir.Imm32(0x0000FFFF));
+    const IR::U32 upper = ir.LogicalShiftLeft(hi_result.result, ir.Imm8(16), ir.Imm1(false)).result;
+    const IR::U32 result = ir.Or(lower, upper);
+
+    if (overflow_inst) {
+        const IR::U32 difference = ir.Eor(result, operand);
+        const IR::U32 negated = ir.Sub(ir.Imm32(0), difference);
+        const IR::U1 overflow = ir.MostSignificantBit(ir.Or(difference, negated));
+        overflow_inst->ReplaceUsesWith(overflow);
+    }
+    inst.ReplaceUsesWith(result);
+}
+
+template<bool is_signed>
 void PolyfillExtendAndAdd(IR::IREmitter& ir, IR::Inst& inst) {
     const IR::U32 addend = (IR::U32)inst.GetArg(0);
     const IR::U32 value = (IR::U32)inst.GetArg(1);
@@ -381,6 +406,16 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::PackHalfwordTop:
             if (polyfill.pack_halfword) {
                 PolyfillPackHalfword<true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::PackedSignedSaturation16:
+            if (polyfill.packed_saturation16) {
+                PolyfillPackedSaturation16<true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::PackedUnsignedSaturation16:
+            if (polyfill.packed_saturation16) {
+                PolyfillPackedSaturation16<false>(ir, inst);
             }
             break;
         case IR::Opcode::SHA256MessageSchedule0:

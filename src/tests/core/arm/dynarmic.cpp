@@ -2270,3 +2270,119 @@ TEST_CASE("Dynarmic A32 register shifts preserve carry for dirty upper amounts",
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 packed saturation preserves every immediate, sticky Q, and FPSCR",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t bits;
+        std::uint8_t destination;
+        std::uint8_t source;
+        bool is_signed;
+        bool thumb;
+    };
+
+    std::array<Operation, 128> operations{};
+    std::size_t operation_index = 0;
+    for (const bool is_signed : {true, false}) {
+        for (const bool thumb : {false, true}) {
+            for (const bool source_alias : {false, true}) {
+                const std::uint8_t destination = source_alias ? 4 : 0;
+                const std::uint8_t source = source_alias ? 4 : 2;
+                for (std::uint8_t immediate = 0; immediate < 16; ++immediate) {
+                    const std::uint8_t bits = is_signed ? immediate + 1 : immediate;
+                    const std::uint32_t instruction = [&] {
+                        if (!thumb) {
+                            const std::uint32_t base = is_signed ? 0xe6a00f30 : 0xe6e00f30;
+                            return base | (static_cast<std::uint32_t>(immediate) << 16) |
+                                   (static_cast<std::uint32_t>(destination) << 12) | source;
+                        }
+                        const std::uint32_t first_half = (is_signed ? 0xf320 : 0xf3a0) | source;
+                        const std::uint32_t second_half =
+                            (static_cast<std::uint32_t>(destination) << 8) | immediate;
+                        return (second_half << 16) | first_half;
+                    }();
+                    operations[operation_index++] = Operation{
+                        instruction, bits, destination, source, is_signed, thumb};
+                }
+            }
+        }
+    }
+    REQUIRE(operation_index == operations.size());
+
+    constexpr std::array inputs{
+        0x00000000u,
+        0x00010001u,
+        0xffff0001u,
+        0x7fff8000u,
+        0x0080ff7fu,
+        0x0100ff00u,
+        0x1234abcdu,
+        0x80007fffu,
+        0xffffffffu,
+        0x7f807f80u,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf00f0000; // NZCV/GE
+    constexpr std::uint32_t q_flag = 1U << 27;
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.bits, operation.destination, operation.source,
+                operation.is_signed, operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const std::uint32_t input : inputs) {
+            for (const bool initial_q : {false, true}) {
+                CAPTURE(input, initial_q);
+                std::uint32_t expected{};
+                bool saturated = false;
+                for (std::size_t lane = 0; lane < 2; ++lane) {
+                    const auto value = static_cast<std::int32_t>(
+                        static_cast<std::int16_t>(input >> (lane * 16)));
+                    const std::int32_t minimum =
+                        operation.is_signed ? -(1 << (operation.bits - 1)) : 0;
+                    const std::int32_t maximum = operation.is_signed
+                                                     ? (1 << (operation.bits - 1)) - 1
+                                                     : (1 << operation.bits) - 1;
+                    const std::int32_t result = std::clamp(value, minimum, maximum);
+                    saturated |= result != value;
+                    expected |= static_cast<std::uint32_t>(
+                                    static_cast<std::uint16_t>(result))
+                                << (lane * 16);
+                }
+
+                std::array<std::uint32_t, 16> initial_regs{
+                    0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                    0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                    0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                    0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+                };
+                initial_regs[operation.source] = input;
+                jit.Regs() = initial_regs;
+                jit.SetCpsr(preserved_flags | (initial_q ? q_flag : 0) | 0x000001d0 |
+                            (operation.thumb ? 0x20 : 0));
+                jit.SetFpscr(initial_fpscr);
+                callbacks.ticks_left = 2;
+                jit.Run();
+
+                CHECK(jit.Regs()[operation.destination] == expected);
+                for (std::size_t reg = 0; reg < 15; ++reg) {
+                    if (reg == operation.destination) {
+                        continue;
+                    }
+                    CAPTURE(reg);
+                    CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                }
+                const std::uint32_t expected_q = (initial_q || saturated) ? q_flag : 0;
+                CHECK((jit.Cpsr() & 0xf80f0000) == (preserved_flags | expected_q));
+                CHECK(jit.Fpscr() == initial_fpscr);
+            }
+        }
+    }
+}

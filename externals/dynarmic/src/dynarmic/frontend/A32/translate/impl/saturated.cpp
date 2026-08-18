@@ -7,14 +7,6 @@
 
 namespace Dynarmic::A32 {
 
-static IR::U32 Pack2x16To1x32(A32::IREmitter& ir, IR::U32 lo, IR::U32 hi) {
-    return ir.Or(ir.And(lo, ir.Imm32(0xFFFF)), ir.LogicalShiftLeft(hi, ir.Imm8(16), ir.Imm1(0)).result);
-}
-
-static IR::U16 MostSignificantHalf(A32::IREmitter& ir, IR::U32 value) {
-    return ir.LeastSignificantHalf(ir.LogicalShiftRight(value, ir.Imm8(16), ir.Imm1(0)).result);
-}
-
 // Saturation instructions
 
 // SSAT<c> <Rd>, #<imm>, <Rn>{, <shift>}
@@ -48,14 +40,10 @@ bool TranslatorVisitor::arm_SSAT16(Cond cond, Imm<4> sat_imm, Reg d, Reg n) {
     }
 
     const auto saturate_to = static_cast<size_t>(sat_imm.ZeroExtend()) + 1;
-    const auto lo_operand = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(ir.GetRegister(n)));
-    const auto hi_operand = ir.SignExtendHalfToWord(MostSignificantHalf(ir, ir.GetRegister(n)));
-    const auto lo_result = ir.SignedSaturation(lo_operand, saturate_to);
-    const auto hi_result = ir.SignedSaturation(hi_operand, saturate_to);
+    const auto result = ir.PackedSignedSaturation16(ir.GetRegister(n), saturate_to);
 
-    ir.SetRegister(d, Pack2x16To1x32(ir, lo_result.result, hi_result.result));
-    ir.OrQFlag(lo_result.overflow);
-    ir.OrQFlag(hi_result.overflow);
+    ir.SetRegister(d, result.result);
+    ir.OrQFlag(result.overflow);
     return true;
 }
 
@@ -89,16 +77,11 @@ bool TranslatorVisitor::arm_USAT16(Cond cond, Imm<4> sat_imm, Reg d, Reg n) {
         return true;
     }
 
-    // UnsignedSaturation takes a *signed* value as input, hence sign extension is required.
     const auto saturate_to = static_cast<size_t>(sat_imm.ZeroExtend());
-    const auto lo_operand = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(ir.GetRegister(n)));
-    const auto hi_operand = ir.SignExtendHalfToWord(MostSignificantHalf(ir, ir.GetRegister(n)));
-    const auto lo_result = ir.UnsignedSaturation(lo_operand, saturate_to);
-    const auto hi_result = ir.UnsignedSaturation(hi_operand, saturate_to);
+    const auto result = ir.PackedUnsignedSaturation16(ir.GetRegister(n), saturate_to);
 
-    ir.SetRegister(d, Pack2x16To1x32(ir, lo_result.result, hi_result.result));
-    ir.OrQFlag(lo_result.overflow);
-    ir.OrQFlag(hi_result.overflow);
+    ir.SetRegister(d, result.result);
+    ir.OrQFlag(result.overflow);
     return true;
 }
 

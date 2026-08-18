@@ -38,6 +38,16 @@ void EmitIR<IR::Opcode::UnsignedSaturation>(biscuit::Assembler&, EmitContext&, I
 }
 
 template<>
+void EmitIR<IR::Opcode::PackedSignedSaturation16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedUnsignedSaturation16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::SignedSaturatedAdd8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
