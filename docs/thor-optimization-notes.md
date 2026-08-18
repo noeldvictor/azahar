@@ -5179,6 +5179,63 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   result. Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/
   fan/brightness/duration A/B run.
 
+## ARM64 A32 Native Bitfield Extraction (2026-08-18)
+
+- A32 ARM and Thumb-2 `UBFX` previously expanded to recurring `LSR; AND`; `SBFX` expanded to
+  `LSL; ASR`. Dynarmic now retains them as first-class `UnsignedBitFieldExtract32` and
+  `SignedBitFieldExtract32` IR. ARM64 emits one native `UBFX` or `SBFX`, and the legal full-width
+  `lsb=0,width=32` identity aliases the source without emitting an instruction. x64 and RISC-V
+  polyfill the new operations back to the exact established shift/mask graphs.
+- Visual inspection of the local Cortex guides found the AArch64 basic `SBFM`/`UBFM` bitfield group
+  at latency/throughput 2/3 on A510 page 22, 1/4 on A710 page 27, 1/4 on A715 page 20, and 1/6 on
+  X3 page 18. The A510 footnote lists the simple immediate `LSL`/`LSR`/`ASR` aliases at latency 1,
+  predicting a throughput win but a possible dependency tie against the old two-operation graph.
+  Rendered review pages were deleted immediately; no manual PDF or rendered page was copied into
+  the repository.
+- A temporary actual-JIT trace captured raw words `53083e74`, `53054674`, `13083e74`, and
+  `13054674`. Host `llvm-objdump` decoded them as `ubfx w20,w19,#8,#8`,
+  `ubfx w20,w19,#5,#13`, `sbfx w20,w19,#8,#8`, and `sbfx w20,w19,#5,#13`. The trace hook was
+  removed, the final stripped binary contained no trace marker, and its focused test passed all
+  8,161 assertions.
+- The standalone benchmark was disassembly-checked for the exact old and new instruction bodies.
+  It ran four independent chains or one sequential dependency chain, 32,000,000 affected
+  operations per sample, 15 samples, and alternating old/new order. Every old/new checksum matched
+  and remained nonzero.
+
+  | Guest operation and dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `UBFX`, four independent chains | 1.5054x | 2.0185x | 2.0231x | 2.0579x |
+  | `SBFX`, four independent chains | 2.1327x | 2.0176x | 2.0218x | 2.0581x |
+  | `UBFX`, sequential chain | 1.0342x | 1.9992x | 1.9997x | 2.0001x |
+  | `SBFX`, sequential chain | 1.0209x | 1.9999x | 2.0006x | 1.9994x |
+
+- Permanent coverage checks signed and unsigned ARM/Thumb-2 forms; fields `{0,1}`, `{0,32}`,
+  `{31,1}`, `{8,8}`, `{5,13}`, and `{16,16}`; ten boundary/dirty inputs; distinct and
+  source/destination-alias operands; every unrelated GPR; NZCV/Q/GE; and FPSCR. The 8,161-assertion
+  case passed separately on CPU 0/A510, CPU 3/A715, CPU 5/A710, and CPU 7/X3. The full focused
+  `[core][arm][dynarmic]` suite passed 71,138 assertions in 36 cases on CPU 3/A715. A clean native
+  ARM64 build passed 2,200 Ninja steps in 13 minutes 18 seconds; the final trace-free incremental
+  rebuild passed four steps in 1 minute 24 seconds. Source/test commit `f4bc8cae9` was pushed
+  directly to `origin/master` using command-line Git SSH.
+- Exact source-commit packaging with `:app:assembleVanillaRelWithDebInfoLite`, JDK 21, ordinary
+  Gradle caching, and `--no-configuration-cache` passed in 3 minutes 54 seconds. The retained APK
+  is 29,000,672 bytes, reports `f4bc8cae9-vanilla-thor`, and has SHA-256
+  `FDD4B07D78AE38C5E7E68CFF544529453253FABC354F6543E39D519AC6C9376C`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 23%, 3.702 V, and 26.0 C, so
+  this is not battery-discharge watt evidence.
+- Cleanup removed 2,549,202,191 logical host bytes of the native test ELF, benchmark/test helpers,
+  and reproducible Gradle/JNI/R8/native-symbol/mapping staging while retaining the APK, its
+  476-byte metadata, and the 2,794,765,804-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,104,160,256 physical bytes and reported 78,131,527,680 bytes free immediately afterward. The
+  four exact temporary device helpers were also removed; no PDF, manual page, benchmark binary, or
+  scratch note was committed.
+- This is optimization 114 in the overlapping Thor work tally. The 1.02x-2.13x measurements apply
+  only while executing these exact bitfield-extract paths. They cannot be added to the other 113
+  items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result.
+  Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
+  brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

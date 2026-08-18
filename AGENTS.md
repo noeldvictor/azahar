@@ -670,6 +670,16 @@
   1.550576x-2.621212x for independent chains and 1.499462x-2.631136x for a sequential dependency
   chain across all four Thor CPU classes. Keep these claims path-local until a matched title and
   battery-power A/B exists.
+- A32 ARM/Thumb-2 `UBFX`/`SBFX` must retain the first-class `UnsignedBitFieldExtract32`/
+  `SignedBitFieldExtract32` IR operations. ARM64 must emit one native `UBFX` or `SBFX` for every
+  non-full-width legal field and alias the source without code for `lsb=0,width=32`; x64 and
+  RISC-V must polyfill back to the exact `LSR; AND` or `LSL; ASR` graph. Preserve both guest
+  encodings, boundary fields, signedness, distinct and source/destination-alias operands, untouched
+  GPRs, unchanged NZCV/Q/GE, and unchanged FPSCR in permanent tests. Exact Thor measurements were
+  1.5054x-2.0579x for unsigned throughput and 2.0176x-2.1327x for signed throughput. Dependency
+  chains were about 2.00x on A715/A710/X3 but only 1.02x-1.03x on A510, consistent with the A510
+  manual's latency table. Keep these claims path-local until a matched title and battery-power A/B
+  exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

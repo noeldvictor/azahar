@@ -228,6 +228,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   `REVSH` as `ByteReverseSignedHalf32`, emit the all-core winner `REV; ASR #16` on ARM64, and
   retain the exact `UXTH; REV16; SXTH` semantic polyfill on other hosts. Do not replace it with
   `REV16; SXTH`; that candidate lost materially on the A510 dependency chain.
+- The same scalar bitfield rows cover the native `SBFM`/`UBFM` aliases used by AArch64 `SBFX` and
+  `UBFX`. A510 page 22 lists the basic bitfield group at latency/throughput 2/3 while noting the
+  simple immediate-shift aliases at latency 1; A710 page 27 and A715 page 20 list 1/4, and X3 page
+  18 lists 1/6. Keep A32 ARM/Thumb-2 bitfield extraction semantic until ARM64 emits one native
+  instruction, but expect dependency chains to tie the old two latency-1 operations on A510 while
+  improving on the larger cores. Require actual-JIT disassembly, independent and dependent
+  all-core measurements, full-width identity coverage, portable host polyfills, and exact guest
+  signedness/flags/FPSCR tests before accepting the lowering.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,

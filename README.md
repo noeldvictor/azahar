@@ -833,6 +833,18 @@ new test passed 918 assertions separately on every Thor CPU class, and the full 
 passed 62,977 assertions in 35 cases. This is optimization 113; it is an exact instruction-path
 result, not a whole-game FPS or battery-watt claim.
 
+A32 ARM/Thumb-2 `UBFX` and `SBFX` now remain first-class through Dynarmic IR as
+`UnsignedBitFieldExtract32` and `SignedBitFieldExtract32`. ARM64 emits one native `UBFX`/`SBFX`
+instead of `LSR; AND` or `LSL; ASR`; full-width extracts alias the source without emitting code,
+while x64 and RISC-V expand the semantic operations back to the established portable graphs.
+Actual JIT words were decoded as the intended native instructions. A disassembly-checked,
+32-million-operation-per-sample Thor benchmark measured **1.51x-2.06x for unsigned throughput**,
+**2.02x-2.13x for signed throughput**, and about **2.00x dependency speed on A715/A710/X3**.
+A510 dependency chains were intentionally close to neutral at 1.02x-1.03x, matching its manual's
+latency distinction. The new test passed 8,161 assertions separately on every Thor CPU class, and
+the full focused suite passed 71,138 assertions in 36 cases. This is optimization 114; it is an
+exact instruction-path result, not a whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
