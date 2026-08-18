@@ -3544,7 +3544,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.155 V, and 20.0 C,
   so this is not a battery-discharge watt measurement.
 - Cleanup removed 2,017,658,292 logical bytes from `app/build` and raised C: free space by
-  1,577,951,232 bytes. Only the APK and 476-byte metadata remain there; the 3,244,668,217-byte
+  1,577,951,232 bytes. Only the APK and 476-byte metadata remain there; the 3,244,726,683-byte
   active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
 - This is optimization 84 in the Thor work tally. Its 1.21x-4.53x figures apply only to these exact
   generated sequences when the sole-consumer gate fires. The 84 items overlap and cannot be added.
