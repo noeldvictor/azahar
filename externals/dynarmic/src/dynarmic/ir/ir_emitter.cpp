@@ -521,6 +521,16 @@ U32U64 IREmitter::CountLeadingZeros(const U32U64& a) {
     return Inst<U64>(Opcode::CountLeadingZeros64, a);
 }
 
+U32 IREmitter::SignedBitFieldExtract(const U32& a, u8 lsb, u8 width) {
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+    return Inst<U32>(Opcode::SignedBitFieldExtract32, a, Imm8(lsb), Imm8(width));
+}
+
+U32 IREmitter::UnsignedBitFieldExtract(const U32& a, u8 lsb, u8 width) {
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+    return Inst<U32>(Opcode::UnsignedBitFieldExtract32, a, Imm8(lsb), Imm8(width));
+}
+
 U32U64 IREmitter::ExtractRegister(const U32U64& a, const U32U64& b, const U8& lsb) {
     if (a.GetType() == IR::Type::U32) {
         return Inst<U32>(Opcode::ExtractRegister32, a, b, lsb);

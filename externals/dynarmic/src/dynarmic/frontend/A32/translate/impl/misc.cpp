@@ -121,13 +121,9 @@ bool TranslatorVisitor::arm_SBFX(Cond cond, Imm<5> widthm1, Reg d, Imm<5> lsb, R
         return true;
     }
 
-    constexpr size_t max_width = mcl::bitsizeof<u32>;
-    const u32 width = widthm1_value + 1;
-    const u8 left_shift_amount = static_cast<u8>(max_width - width - lsb_value);
-    const u8 right_shift_amount = static_cast<u8>(max_width - width);
+    const u8 width = static_cast<u8>(widthm1_value + 1);
     const IR::U32 operand = ir.GetRegister(n);
-    const IR::U32 tmp = ir.LogicalShiftLeft(operand, ir.Imm8(left_shift_amount));
-    const IR::U32 result = ir.ArithmeticShiftRight(tmp, ir.Imm8(right_shift_amount));
+    const IR::U32 result = ir.SignedBitFieldExtract(operand, static_cast<u8>(lsb_value), width);
 
     ir.SetRegister(d, result);
     return true;
@@ -169,8 +165,8 @@ bool TranslatorVisitor::arm_UBFX(Cond cond, Imm<5> widthm1, Reg d, Imm<5> lsb, R
     }
 
     const IR::U32 operand = ir.GetRegister(n);
-    const IR::U32 mask = ir.Imm32(mcl::bit::ones<u32>(widthm1_value + 1));
-    const IR::U32 result = ir.And(ir.LogicalShiftRight(operand, ir.Imm8(u8(lsb_value))), mask);
+    const IR::U32 result = ir.UnsignedBitFieldExtract(
+        operand, static_cast<u8>(lsb_value), static_cast<u8>(widthm1_value + 1));
 
     ir.SetRegister(d, result);
     return true;

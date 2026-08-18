@@ -169,6 +169,8 @@ OPCODE(ByteReverseDual,                                     U64,            U64 
 OPCODE(ReverseBits32,                                       U32,            U32                                                             )
 OPCODE(CountLeadingZeros32,                                 U32,            U32                                                             )
 OPCODE(CountLeadingZeros64,                                 U64,            U64                                                             )
+OPCODE(SignedBitFieldExtract32,                             U32,            U32,            U8,             U8                              )
+OPCODE(UnsignedBitFieldExtract32,                           U32,            U32,            U8,             U8                              )
 OPCODE(ExtractRegister32,                                   U32,            U32,            U32,            U8                              )
 OPCODE(ExtractRegister64,                                   U64,            U64,            U64,            U8                              )
 OPCODE(ReplicateBit32,                                      U32,            U32,            U8                                              )

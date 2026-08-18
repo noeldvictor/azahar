@@ -155,13 +155,9 @@ bool TranslatorVisitor::thumb32_SBFX(Reg n, Imm<3> imm3, Reg d, Imm<2> imm2, Imm
         return UnpredictableInstruction();
     }
 
-    constexpr size_t max_width = mcl::bitsizeof<u32>;
-    const auto width = widthm1_value + 1;
-    const auto left_shift_amount = static_cast<u8>(max_width - width - lsbit);
-    const auto right_shift_amount = static_cast<u8>(max_width - width);
+    const auto width = static_cast<u8>(widthm1_value + 1);
     const auto operand = ir.GetRegister(n);
-    const auto tmp = ir.LogicalShiftLeft(operand, ir.Imm8(left_shift_amount));
-    const auto result = ir.ArithmeticShiftRight(tmp, ir.Imm8(right_shift_amount));
+    const auto result = ir.SignedBitFieldExtract(operand, static_cast<u8>(lsbit), width);
 
     ir.SetRegister(d, result);
     return true;
@@ -201,8 +197,8 @@ bool TranslatorVisitor::thumb32_UBFX(Reg n, Imm<3> imm3, Reg d, Imm<2> imm2, Imm
     }
 
     const auto operand = ir.GetRegister(n);
-    const auto mask = ir.Imm32(mcl::bit::ones<u32>(widthm1_value + 1));
-    const auto result = ir.And(ir.LogicalShiftRight(operand, ir.Imm8(u8(lsbit))), mask);
+    const auto result = ir.UnsignedBitFieldExtract(
+        operand, static_cast<u8>(lsbit), static_cast<u8>(widthm1_value + 1));
 
     ir.SetRegister(d, result);
     return true;

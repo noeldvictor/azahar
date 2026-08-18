@@ -1616,6 +1616,38 @@ void EmitIR<IR::Opcode::CountLeadingZeros64>(oaknut::CodeGenerator& code, EmitCo
         [&](auto& Xresult, auto& Xoperand) { code.CLZ(Xresult, Xoperand); });
 }
 
+template<bool is_signed>
+static void EmitBitFieldExtract(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    ASSERT(inst->GetArg(1).IsImmediate() && inst->GetArg(2).IsImmediate());
+    const u8 lsb = inst->GetArg(1).GetU8();
+    const u8 width = inst->GetArg(2).GetU8();
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+
+    if (width == 32) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
+    EmitTwoOp<32>(code, ctx, inst, [&](auto& Wresult, auto& Woperand) {
+        if constexpr (is_signed) {
+            code.SBFX(Wresult, Woperand, lsb, width);
+        } else {
+            code.UBFX(Wresult, Woperand, lsb, width);
+        }
+    });
+}
+
+template<>
+void EmitIR<IR::Opcode::SignedBitFieldExtract32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitBitFieldExtract<true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::UnsignedBitFieldExtract32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitBitFieldExtract<false>(code, ctx, inst);
+}
+
 template<>
 void EmitIR<IR::Opcode::ExtractRegister32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
