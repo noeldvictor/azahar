@@ -1863,6 +1863,38 @@ U128 IREmitter::VectorRoundingShiftRightAccumulateUnsigned(size_t esize, const U
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorShiftLeftInsert(size_t esize, const U128& destination, const U128& source, u8 shift_amount) {
+    ASSERT(shift_amount < esize);
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorShiftLeftInsert8, destination, source, Imm8(shift_amount));
+    case 16:
+        return Inst<U128>(Opcode::VectorShiftLeftInsert16, destination, source, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorShiftLeftInsert32, destination, source, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorShiftLeftInsert64, destination, source, Imm8(shift_amount));
+    }
+
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorShiftRightInsert(size_t esize, const U128& destination, const U128& source, u8 shift_amount) {
+    ASSERT(shift_amount >= 1 && shift_amount <= esize);
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorShiftRightInsert8, destination, source, Imm8(shift_amount));
+    case 16:
+        return Inst<U128>(Opcode::VectorShiftRightInsert16, destination, source, Imm8(shift_amount));
+    case 32:
+        return Inst<U128>(Opcode::VectorShiftRightInsert32, destination, source, Imm8(shift_amount));
+    case 64:
+        return Inst<U128>(Opcode::VectorShiftRightInsert64, destination, source, Imm8(shift_amount));
+    }
+
+    UNREACHABLE();
+}
+
 U128 IREmitter::VectorSignExtend(size_t original_esize, const U128& a) {
     switch (original_esize) {
     case 8:

@@ -1952,6 +1952,46 @@ void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU64>(oaknut::CodeGener
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<8>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SLI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<16>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SLI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<32>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SLI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<64>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SLI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<8>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SRI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<16>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SRI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<32>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SRI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitImmShiftAccumulate<64>(code, ctx, inst, [&](auto Vdestination, auto Vsource, u8 shift_amount) { code.SRI(Vdestination, Vsource, shift_amount); });
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignExtend8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     if (IsImmediatelyWidenShifted<8>(inst, IR::Opcode::VectorLogicalShiftLeft16, false)) {
         auto args = ctx.reg_alloc.GetArgumentInfo(inst);

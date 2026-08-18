@@ -271,6 +271,37 @@ void PolyfillVectorRoundingShiftRight(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(result);
 }
 
+template<size_t esize, bool shift_left>
+void PolyfillVectorShiftInsert(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U128 destination = (IR::U128)inst.GetArg(0);
+    const IR::U128 source = (IR::U128)inst.GetArg(1);
+    const u8 shift_amount = inst.GetArg(2).GetU8();
+    constexpr u64 element_mask = ~u64{0} >> (64 - esize);
+    const u64 mask = [&] {
+        if constexpr (shift_left) {
+            return element_mask << shift_amount;
+        } else {
+            return shift_amount == esize ? u64{0} : element_mask >> shift_amount;
+        }
+    }();
+    const IR::U128 shifted = shift_left ? ir.VectorLogicalShiftLeft(esize, source, shift_amount)
+                                        : ir.VectorLogicalShiftRight(esize, source, shift_amount);
+    const IR::U128 mask_vector = [&] {
+        if constexpr (esize == 8) {
+            return ir.VectorBroadcast(8, ir.Imm8(static_cast<u8>(mask)));
+        } else if constexpr (esize == 16) {
+            return ir.VectorBroadcast(16, ir.Imm16(static_cast<u16>(mask)));
+        } else if constexpr (esize == 32) {
+            return ir.VectorBroadcast(32, ir.Imm32(static_cast<u32>(mask)));
+        } else {
+            return ir.VectorBroadcast(64, ir.Imm64(mask));
+        }
+    }();
+    const IR::U128 result = ir.VectorOr(ir.VectorAndNot(destination, mask_vector), shifted);
+
+    inst.ReplaceUsesWith(result);
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -527,6 +558,46 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::VectorRoundingShiftRightAccumulateU64:
             if (polyfill.vector_rounding_shift_right) {
                 PolyfillVectorRoundingShiftRight<64, false, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftLeftInsert8:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<8, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftLeftInsert16:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<16, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftLeftInsert32:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<32, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftLeftInsert64:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<64, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftRightInsert8:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<8, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftRightInsert16:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<16, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftRightInsert32:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<32, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorShiftRightInsert64:
+            if (polyfill.vector_shift_insert) {
+                PolyfillVectorShiftInsert<64, false>(ir, inst);
             }
             break;
         case IR::Opcode::VectorSignedSaturatedRoundingNarrowToSigned16:

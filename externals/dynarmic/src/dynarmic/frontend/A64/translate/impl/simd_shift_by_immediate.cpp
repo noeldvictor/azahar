@@ -349,14 +349,10 @@ bool TranslatorVisitor::SRI_2(bool Q, Imm<4> immh, Imm<3> immb, Vec Vn, Vec Vd) 
     const size_t datasize = Q ? 128 : 64;
 
     const u8 shift_amount = static_cast<u8>((esize * 2) - concatenate(immh, immb).ZeroExtend<u8>());
-    const u64 mask = shift_amount == esize ? 0 : mcl::bit::ones<u64>(esize) >> shift_amount;
 
     const IR::U128 operand1 = V(datasize, Vn);
     const IR::U128 operand2 = V(datasize, Vd);
-
-    const IR::U128 shifted = ir.VectorLogicalShiftRight(esize, operand1, shift_amount);
-    const IR::U128 mask_vec = ir.VectorBroadcast(esize, I(esize, mask));
-    const IR::U128 result = ir.VectorOr(ir.VectorAndNot(operand2, mask_vec), shifted);
+    const IR::U128 result = ir.VectorShiftRightInsert(esize, operand2, operand1, shift_amount);
 
     V(datasize, Vd, result);
     return true;
@@ -375,14 +371,10 @@ bool TranslatorVisitor::SLI_2(bool Q, Imm<4> immh, Imm<3> immb, Vec Vn, Vec Vd) 
     const size_t datasize = Q ? 128 : 64;
 
     const u8 shift_amount = concatenate(immh, immb).ZeroExtend<u8>() - static_cast<u8>(esize);
-    const u64 mask = mcl::bit::ones<u64>(esize) << shift_amount;
 
     const IR::U128 operand1 = V(datasize, Vn);
     const IR::U128 operand2 = V(datasize, Vd);
-
-    const IR::U128 shifted = ir.VectorLogicalShiftLeft(esize, operand1, shift_amount);
-    const IR::U128 mask_vec = ir.VectorBroadcast(esize, I(esize, mask));
-    const IR::U128 result = ir.VectorOr(ir.VectorAndNot(operand2, mask_vec), shifted);
+    const IR::U128 result = ir.VectorShiftLeftInsert(esize, operand2, operand1, shift_amount);
 
     V(datasize, Vd, result);
     return true;

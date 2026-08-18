@@ -177,17 +177,13 @@ bool TranslatorVisitor::asimd_VSRI(bool D, size_t imm6, size_t Vd, bool L, bool 
     }
 
     const auto [esize, shift_amount] = ElementSizeAndShiftAmount(true, L, imm6);
-    const u64 mask = shift_amount == esize ? 0 : mcl::bit::ones<u64>(esize) >> shift_amount;
 
     const auto d = ToVector(Q, Vd, D);
     const auto m = ToVector(Q, Vm, M);
 
     const auto reg_m = ir.GetVector(m);
     const auto reg_d = ir.GetVector(d);
-
-    const auto shifted = ir.VectorLogicalShiftRight(esize, reg_m, static_cast<u8>(shift_amount));
-    const auto mask_vec = ir.VectorBroadcast(esize, I(esize, mask));
-    const auto result = ir.VectorOr(ir.VectorAndNot(reg_d, mask_vec), shifted);
+    const auto result = ir.VectorShiftRightInsert(esize, reg_d, reg_m, static_cast<u8>(shift_amount));
 
     ir.SetVector(d, result);
     return true;
@@ -203,17 +199,13 @@ bool TranslatorVisitor::asimd_VSLI(bool D, size_t imm6, size_t Vd, bool L, bool 
     }
 
     const auto [esize, shift_amount] = ElementSizeAndShiftAmount(false, L, imm6);
-    const u64 mask = mcl::bit::ones<u64>(esize) << shift_amount;
 
     const auto d = ToVector(Q, Vd, D);
     const auto m = ToVector(Q, Vm, M);
 
     const auto reg_m = ir.GetVector(m);
     const auto reg_d = ir.GetVector(d);
-
-    const auto shifted = ir.VectorLogicalShiftLeft(esize, reg_m, static_cast<u8>(shift_amount));
-    const auto mask_vec = ir.VectorBroadcast(esize, I(esize, mask));
-    const auto result = ir.VectorOr(ir.VectorAndNot(reg_d, mask_vec), shifted);
+    const auto result = ir.VectorShiftLeftInsert(esize, reg_d, reg_m, static_cast<u8>(shift_amount));
 
     ir.SetVector(d, result);
     return true;

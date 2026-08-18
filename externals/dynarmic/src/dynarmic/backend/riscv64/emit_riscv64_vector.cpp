@@ -1153,6 +1153,46 @@ void EmitIR<IR::Opcode::VectorRoundingShiftRightAccumulateU64>(biscuit::Assemble
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftLeftInsert64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorShiftRightInsert64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignExtend8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

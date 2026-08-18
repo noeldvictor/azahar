@@ -754,6 +754,112 @@ TEST_CASE("Dynarmic A32 vector rounding shift-right preserves lane semantics on 
     }
 }
 
+TEST_CASE("Dynarmic A32 vector shift-insert preserves destination bits on ARM64",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::size_t destination_s;
+        std::size_t source_s;
+        std::uint8_t vector_bits;
+        std::uint8_t element_bits;
+        std::uint8_t shift;
+        bool shift_left;
+    };
+    constexpr std::array operations{
+        Operation{0xf3880510, 0, 0, 64, 8, 0, true},        // VSLI.8 D0, D0, #0
+        Operation{0xf3cf0572, 32, 36, 128, 8, 7, true},     // VSLI.8 Q8, Q9, #7
+        Operation{0xf3900552, 0, 4, 128, 16, 0, true},      // VSLI.16 Q0, Q1, #0
+        Operation{0xf3df0532, 32, 36, 64, 16, 15, true},    // VSLI.16 D16, D18, #15
+        Operation{0xf3a00510, 0, 0, 64, 32, 0, true},       // VSLI.32 D0, D0, #0
+        Operation{0xf3ff0572, 32, 36, 128, 32, 31, true},   // VSLI.32 Q8, Q9, #31
+        Operation{0xf38005d2, 0, 4, 128, 64, 0, true},      // VSLI.64 Q0, Q1, #0
+        Operation{0xf3ff05b2, 32, 36, 64, 64, 63, true},    // VSLI.64 D16, D18, #63
+        Operation{0xf38f0410, 0, 0, 64, 8, 1, false},       // VSRI.8 D0, D0, #1
+        Operation{0xf3c80472, 32, 36, 128, 8, 8, false},    // VSRI.8 Q8, Q9, #8
+        Operation{0xf39f0452, 0, 4, 128, 16, 1, false},     // VSRI.16 Q0, Q1, #1
+        Operation{0xf3d00432, 32, 36, 64, 16, 16, false},   // VSRI.16 D16, D18, #16
+        Operation{0xf3bf0410, 0, 0, 64, 32, 1, false},      // VSRI.32 D0, D0, #1
+        Operation{0xf3e00472, 32, 36, 128, 32, 32, false},  // VSRI.32 Q8, Q9, #32
+        Operation{0xf3bf04d2, 0, 4, 128, 64, 1, false},     // VSRI.64 Q0, Q1, #1
+        Operation{0xf3c004b2, 32, 36, 64, 64, 64, false},   // VSRI.64 D16, D18, #64
+    };
+    constexpr std::array<std::uint32_t, 4> source_words{
+        0x80ff017f,
+        0x01234567,
+        0x89abcdef,
+        0xfedcba98,
+    };
+    constexpr std::array<std::uint32_t, 4> destination_words{
+        0xa55a3cc3,
+        0x0f0ff0f0,
+        0x13579bdf,
+        0x2468ace0,
+    };
+    constexpr std::uint32_t initial_cpsr = 0xa80f01d0;   // N/C/Q/GE, user mode
+    constexpr std::uint32_t initial_fpscr = 0xa3400001;  // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination_s, operation.source_s,
+                operation.vector_bits, operation.element_bits, operation.shift,
+                operation.shift_left);
+
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            0xeafffffe,  // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        jit.ExtRegs().fill(0xa5a5a5a5);
+        const std::size_t vector_words = operation.vector_bits / 32;
+        std::copy_n(destination_words.begin(), vector_words,
+                    jit.ExtRegs().begin() + operation.destination_s);
+        std::copy_n(source_words.begin(), vector_words, jit.ExtRegs().begin() + operation.source_s);
+
+        auto expected_regs = jit.ExtRegs();
+        const auto original_regs = expected_regs;
+        const auto* source_bytes =
+            reinterpret_cast<const std::uint8_t*>(original_regs.data() + operation.source_s);
+        auto* destination_bytes =
+            reinterpret_cast<std::uint8_t*>(expected_regs.data() + operation.destination_s);
+        const std::size_t element_bytes = operation.element_bits / 8;
+        const std::size_t lane_count = operation.vector_bits / operation.element_bits;
+        const std::uint64_t element_mask = operation.element_bits == 64
+                                               ? ~std::uint64_t{0}
+                                               : (std::uint64_t{1} << operation.element_bits) - 1;
+        const std::uint64_t insert_mask = operation.shift_left
+                                              ? (element_mask << operation.shift) & element_mask
+                                              : operation.shift == operation.element_bits
+                                                    ? 0
+                                                    : element_mask >> operation.shift;
+
+        for (std::size_t lane = 0; lane < lane_count; ++lane) {
+            std::uint64_t source{};
+            std::uint64_t destination{};
+            std::memcpy(&source, source_bytes + lane * element_bytes, element_bytes);
+            std::memcpy(&destination, destination_bytes + lane * element_bytes, element_bytes);
+            const std::uint64_t shifted = operation.shift_left
+                                              ? source << operation.shift
+                                              : operation.shift == operation.element_bits
+                                                    ? 0
+                                                    : source >> operation.shift;
+            const std::uint64_t result =
+                ((destination & ~insert_mask) | (shifted & insert_mask)) & element_mask;
+            std::memcpy(destination_bytes + lane * element_bytes, &result, element_bytes);
+        }
+
+        jit.SetCpsr(initial_cpsr);
+        jit.SetFpscr(initial_fpscr);
+        callbacks.ticks_left = 2;
+        jit.Run();
+
+        CHECK(jit.ExtRegs() == expected_regs);
+        CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
+        CHECK(jit.Fpscr() == initial_fpscr);
+    }
+}
+
 TEST_CASE("Dynarmic A32 VMLAL and VMLSL widen before modular accumulation",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

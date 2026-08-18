@@ -4048,6 +4048,38 @@ void EmitX64::EmitVectorRoundingShiftRightAccumulateU64(EmitContext&, IR::Inst*)
     ASSERT_FALSE("Unexpected VectorRoundingShiftRightAccumulateU64");
 }
 
+void EmitX64::EmitVectorShiftLeftInsert8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftLeftInsert8");
+}
+
+void EmitX64::EmitVectorShiftLeftInsert16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftLeftInsert16");
+}
+
+void EmitX64::EmitVectorShiftLeftInsert32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftLeftInsert32");
+}
+
+void EmitX64::EmitVectorShiftLeftInsert64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftLeftInsert64");
+}
+
+void EmitX64::EmitVectorShiftRightInsert8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftRightInsert8");
+}
+
+void EmitX64::EmitVectorShiftRightInsert16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftRightInsert16");
+}
+
+void EmitX64::EmitVectorShiftRightInsert32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftRightInsert32");
+}
+
+void EmitX64::EmitVectorShiftRightInsert64(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorShiftRightInsert64");
+}
+
 void EmitX64::EmitVectorSignExtend8(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     if (code.HasHostFeature(HostFeature::SSE41)) {
