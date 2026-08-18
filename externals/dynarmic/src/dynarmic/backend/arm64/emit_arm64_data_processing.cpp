@@ -1161,6 +1161,32 @@ void EmitIR<IR::Opcode::Mul64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR
 }
 
 template<>
+void EmitIR<IR::Opcode::SignedMultiplyAddLong>(oaknut::CodeGenerator& code, EmitContext& ctx,
+                                               IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Xresult = ctx.reg_alloc.WriteX(inst);
+    auto Wa = ctx.reg_alloc.ReadW(args[0]);
+    auto Wb = ctx.reg_alloc.ReadW(args[1]);
+    auto Xaddend = ctx.reg_alloc.ReadX(args[2]);
+    RegAlloc::Realize(Xresult, Wa, Wb, Xaddend);
+
+    code.SMADDL(Xresult, Wa, Wb, Xaddend);
+}
+
+template<>
+void EmitIR<IR::Opcode::SignedMultiplySubtractLong>(oaknut::CodeGenerator& code,
+                                                    EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Xresult = ctx.reg_alloc.WriteX(inst);
+    auto Wa = ctx.reg_alloc.ReadW(args[0]);
+    auto Wb = ctx.reg_alloc.ReadW(args[1]);
+    auto Xminuend = ctx.reg_alloc.ReadX(args[2]);
+    RegAlloc::Realize(Xresult, Wa, Wb, Xminuend);
+
+    code.SMSUBL(Xresult, Wa, Wb, Xminuend);
+}
+
+template<>
 void EmitIR<IR::Opcode::SignedMultiplyHigh64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     auto Xresult = ctx.reg_alloc.WriteX(inst);

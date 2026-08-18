@@ -291,6 +291,14 @@ U32U64 IREmitter::Mul(const U32U64& a, const U32U64& b) {
     return Inst<U64>(Opcode::Mul64, a, b);
 }
 
+U64 IREmitter::SignedMultiplyAddLong(const U32& a, const U32& b, const U64& addend) {
+    return Inst<U64>(Opcode::SignedMultiplyAddLong, a, b, addend);
+}
+
+U64 IREmitter::SignedMultiplySubtractLong(const U32& a, const U32& b, const U64& minuend) {
+    return Inst<U64>(Opcode::SignedMultiplySubtractLong, a, b, minuend);
+}
+
 U64 IREmitter::UnsignedMultiplyHigh(const U64& a, const U64& b) {
     return Inst<U64>(Opcode::UnsignedMultiplyHigh64, a, b);
 }

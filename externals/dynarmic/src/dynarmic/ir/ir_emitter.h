@@ -117,6 +117,8 @@ public:
     U32U64 Add(const U32U64& a, const U32U64& b);
     U32U64 Sub(const U32U64& a, const U32U64& b);
     U32U64 Mul(const U32U64& a, const U32U64& b);
+    U64 SignedMultiplyAddLong(const U32& a, const U32& b, const U64& addend);
+    U64 SignedMultiplySubtractLong(const U32& a, const U32& b, const U64& minuend);
     U64 UnsignedMultiplyHigh(const U64& a, const U64& b);
     U64 SignedMultiplyHigh(const U64& a, const U64& b);
     U32U64 UnsignedDiv(const U32U64& a, const U32U64& b);

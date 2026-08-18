@@ -1132,6 +1132,35 @@ void EmitX64::EmitMul64(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitSignedMultiplyAddLong(EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    const Xbyak::Reg64 result = ctx.reg_alloc.UseScratchGpr(args[0]);
+    const Xbyak::Reg64 factor = ctx.reg_alloc.UseScratchGpr(args[1]);
+    OpArg addend = ctx.reg_alloc.UseOpArg(args[2]);
+    code.movsxd(result, result.cvt32());
+    code.movsxd(factor, factor.cvt32());
+    code.imul(result, factor);
+    code.add(result, *addend);
+
+    ctx.reg_alloc.DefineValue(inst, result);
+}
+
+void EmitX64::EmitSignedMultiplySubtractLong(EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    const Xbyak::Reg64 result = ctx.reg_alloc.UseScratchGpr(args[0]);
+    const Xbyak::Reg64 factor = ctx.reg_alloc.UseScratchGpr(args[1]);
+    OpArg minuend = ctx.reg_alloc.UseOpArg(args[2]);
+    code.movsxd(result, result.cvt32());
+    code.movsxd(factor, factor.cvt32());
+    code.imul(result, factor);
+    code.neg(result);
+    code.add(result, *minuend);
+
+    ctx.reg_alloc.DefineValue(inst, result);
+}
+
 void EmitX64::EmitUnsignedMultiplyHigh64(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 

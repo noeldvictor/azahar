@@ -462,10 +462,9 @@ bool TranslatorVisitor::arm_SMLALD(Cond cond, Reg dHi, Reg dLo, Reg m, bool M, R
         std::swap(m_lo, m_hi);
     }
 
-    const IR::U64 product_lo = ir.SignExtendWordToLong(ir.Mul(n_lo, m_lo));
-    const IR::U64 product_hi = ir.SignExtendWordToLong(ir.Mul(n_hi, m_hi));
     const auto addend = ir.Pack2x32To1x64(ir.GetRegister(dLo), ir.GetRegister(dHi));
-    const auto result = ir.Add(ir.Add(product_lo, product_hi), addend);
+    const auto partial = ir.SignedMultiplyAddLong(n_lo, m_lo, addend);
+    const auto result = ir.SignedMultiplyAddLong(n_hi, m_hi, partial);
 
     ir.SetRegister(dLo, ir.LeastSignificantWord(result));
     ir.SetRegister(dHi, ir.MostSignificantWord(result).result);
@@ -533,10 +532,9 @@ bool TranslatorVisitor::arm_SMLSLD(Cond cond, Reg dHi, Reg dLo, Reg m, bool M, R
         std::swap(m_lo, m_hi);
     }
 
-    const IR::U64 product_lo = ir.SignExtendWordToLong(ir.Mul(n_lo, m_lo));
-    const IR::U64 product_hi = ir.SignExtendWordToLong(ir.Mul(n_hi, m_hi));
     const auto addend = ir.Pack2x32To1x64(ir.GetRegister(dLo), ir.GetRegister(dHi));
-    const auto result = ir.Add(ir.Sub(product_lo, product_hi), addend);
+    const auto partial = ir.SignedMultiplyAddLong(n_lo, m_lo, addend);
+    const auto result = ir.SignedMultiplySubtractLong(n_hi, m_hi, partial);
 
     ir.SetRegister(dLo, ir.LeastSignificantWord(result));
     ir.SetRegister(dHi, ir.MostSignificantWord(result).result);
