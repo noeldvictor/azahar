@@ -209,7 +209,13 @@ include:
   shift amount is already the result of `LeastSignificantByte`, its required `UXTB` is reused
   directly instead of emitting a second `AND #0xff`. Generic U8 producers and carry-producing
   shifts keep the conservative mask. Exact-sequence Thor measurements were **1.19x-1.42x for
-  LSL** and **1.24x-1.29x for ASR** across the measured A510/A710/A715 cores; and
+  LSL** and **1.24x-1.29x for ASR** across the measured A510/A710/A715 cores;
+- sole-consumer register-shift fusion for A32 `LSL`, `LSR`, and `ROR`. The byte extraction now
+  aliases the raw count, while AArch64's low-five-bit variable shifts plus `TST #0xe0` preserve
+  the complete A32 byte-count rules. This removes one more host instruction from LSL/LSR and the
+  complete `UXTB` from ROR. Exact-sequence Thor measurements were **1.21x-2.41x for LSL/LSR** and
+  **1.30x-4.53x for ROR** on measured A510/A710/A715 cores. An ASR variant was rejected after a
+  repeatable A710 regression, so ASR keeps the prior canonical path; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.

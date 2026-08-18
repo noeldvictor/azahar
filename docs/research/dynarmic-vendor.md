@@ -39,11 +39,16 @@ Dynarmic remote.
 - Fuse an immediately adjacent, single-use `LeastSignificantByte`/`LeastSignificantHalf` followed
   by its matching signed extension. The narrow IR result aliases its source and the surviving
   `SXTB`/`SXTH` supplies the required truncation and sign extension in one instruction. Other
-  consumers retain `UXTB`/`UXTH`; no per-block scan, table, or JIT-time allocation is added.
+  consumers retain `UXTB`/`UXTH` except for the separately gated shift-count case below.
 - Reuse a proven `LeastSignificantByte` result directly in no-carry 32-bit logical-left,
   logical-right, and arithmetic-right variable shifts. The producer has already emitted `UXTB`, so
   the following `AND #0xff` was a duplicate. Other U8 producers and carry-producing shift paths
   keep their original masks rather than relying on a backend-wide physical-canonicalization rule.
+- When `LeastSignificantByte` has exactly one eventual consumer and that consumer uses it as the
+  count for 32-bit LSL, LSR, or ROR, alias the raw source instead of emitting `UXTB`. No-carry
+  LSL/LSR use `TST #0xe0` to preserve A32's byte-sized saturation rule; ROR and the variable-shift
+  portions of the existing carry paths already use the architectural low five bits. ASR retains
+  its materialized byte because its otherwise shorter raw-count clamp regressed on A710.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -86,6 +91,15 @@ nine alternating-order rounds, disassembly inspection, and equal nonzero checksu
 CPU 6 and CPU 7 rejected harmless single-bit affinity probes for the final run, so no result is
 claimed for those cores. These 15.8%-29.3% exact-sequence time reductions do not predict whole-game
 FPS or battery watts.
+
+The follow-on sole-consumer benchmark compared the post-mask-elision sequences against raw-count
+LSL, LSR, and ROR over the same four chains, 16,777,216 iterations, nine alternating-order rounds,
+disassembly inspection, and equal nonzero checksums. LSL/LSR measured 2.006x/2.399x on A510,
+1.248x/1.248x on A710, and 1.214x/1.213x on A715; ROR measured 4.529x, 1.304x, and 1.360x. CPU 6
+and CPU 7 rejected harmless single-bit affinity probes, so no second-A715 or X3 result is claimed.
+An ASR candidate helped A510 by about 23% but repeatedly ranged from 0.9% to 4.9% slower on A710;
+it was rejected. These figures apply only to the isolated emitted sequences, not whole-game FPS or
+battery watts.
 
 The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was

@@ -3498,6 +3498,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness
   A/B run.
 
+## 2026-08-18 Dynarmic ARM64 Sole-Consumer Shift-Byte Fusion
+
+- Optimization 83 still materialized the frontend `LeastSignificantByte` as `UXTB`. For an A32
+  register shift, that byte value normally has exactly one eventual use as the shift instruction's
+  count, with only register/flag reads between producer and consumer. The ARM64 allocator can keep
+  the raw source live through those reads, so the byte result can alias it without a host
+  instruction when the sole consumer is 32-bit LSL, LSR, or ROR.
+- AArch64 variable shifts consume only bits 4:0. That directly matches A32 ROR's low-byte count
+  modulo 32. For no-carry LSL/LSR, `TST Wcount, #0xe0` examines only low-byte bits 7:5: EQ means
+  the A32 count is 0..31 and the variable-shift result is valid; non-EQ means 32..255 and selects
+  zero. Dirty source bits above bit 7 affect neither operation. Existing carry paths retain their
+  low-byte zero/range checks, while their variable shifts also need only bits 4:0.
+- The gate requires one use, finds that eventual consumer, accepts only its shift-count argument,
+  and recognizes only LSL/LSR/ROR. Shared values, stores, extensions, unknown consumers, and generic
+  U8 producers retain `UXTB` and their masks. ASR deliberately retains optimization 83's canonical
+  path: a candidate `MOV 31; TST #0xe0; CSEL; ASRV` sequence helped A510 by roughly 23%, but repeated
+  A710 runs were 0.9%-4.9% slower and A715 improved by only 0.6%-1.1%.
+- The checked manual tables list basic/flag-setting logical operations on X3 page 15, A715/A710
+  page 17, and A510 page 14. `UBFM`/`UXTB` and variable shifts are on X3 page 18, A715 page 20,
+  A710 page 27, and A510 page 22. These are real integer/ALU operations on every Thor core class;
+  removing one reduces instruction fetch/decode/issue work without an optional ISA feature.
+- A disassembly-checked benchmark used four independent chains, 16,777,216 iterations, nine
+  alternating-order rounds, best samples, and equal nonzero checksums. It compared optimization
+  83's exact sequence with the accepted raw-count sequence:
+
+  | Thor core | LSL old -> new | LSR old -> new | ROR old -> new |
+  | --- | --- | --- | --- |
+  | A510 CPU 0 | 1.509530 -> 0.752534 ns/op; 2.006x; 50.15% less time | 1.506653 -> 0.627943; 2.399x; 58.32% | 1.132371 -> 0.250024; 4.529x; 77.92% |
+  | A710 CPU 3 | 0.392147 -> 0.314307; 1.248x; 19.85% | 0.392278 -> 0.314244; 1.248x; 19.89% | 0.209037 -> 0.160285; 1.304x; 23.32% |
+  | A715 CPU 5 | 0.388550 -> 0.320123; 1.214x; 17.61% | 0.388614 -> 0.320318; 1.213x; 17.57% | 0.204095 -> 0.150064; 1.360x; 26.47% |
+
+  CPU 6 and CPU 7 reported online but rejected harmless single-bit affinity probes with `EINVAL`,
+  so no second-A715 or X3 result is claimed.
+- Permanent guest coverage now checks carry-producing LSLS, LSRS, ASRS, and RORS separately for
+  dirty-upper-bit count registers whose low bytes are 0, 1, 31, 32, 33, and 255, in addition to
+  the no-flags coverage. The final ARM64 build passed in one minute. Thor passed 154 assertions in
+  seven focused Dynarmic cases and 3,021 assertions in 22 broader core cases. Temporary test,
+  benchmark, disassembly, and rendered-manual files were removed from host and device. Source/test
+  commit `e9aa683d4` was pushed directly to `origin/master` through command-line Git SSH.
+- JDK 17 release packaging passed in 2 minutes 28 seconds. The 28,977,696-byte APK is ARM64-only,
+  v2-signed, reports `e9aa683d4-vanilla-thor`, and has SHA-256
+  `F3EA150A076C0682D70A7D24DE37EC3559D29CF360433550DC2E6C7927F34A50`. It installed over
+  `org.azahar_emu.azahar.debug` via Wi-Fi and was force-stopped with no process ID; no UI or game
+  was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.155 V, and 20.0 C,
+  so this is not a battery-discharge watt measurement.
+- Cleanup removed 2,017,658,292 logical bytes from `app/build` and raised C: free space by
+  1,577,951,232 bytes. Only the APK and 476-byte metadata remain there; the 3,244,668,217-byte
+  active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
+- This is optimization 84 in the Thor work tally. Its 1.21x-4.53x figures apply only to these exact
+  generated sequences when the sole-consumer gate fires. The 84 items overlap and cannot be added.
+  Whole-game FPS, sustained watts, frametime, and thermal claims still require a matched title,
+  scene, cache state, renderer, driver, resolution, layout, performance mode, fan, and brightness
+  A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

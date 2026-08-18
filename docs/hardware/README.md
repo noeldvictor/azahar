@@ -226,6 +226,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   and 1/3 on A510 page 22. Both consume the same integer/ALU resources on each core, so removing
   the proven duplicate reduces issue work and the shift-count dependency. Do not generalize this
   to callback-returned or otherwise unknown U8 values; retain their mask and all carry paths.
+- For a byte-sized A32 register count whose sole consumer is LSL, LSR, or ROR, avoid materializing
+  `UXTB` as well. AArch64 `LSLV`/`LSRV`/`RORV` consume only bits 4:0. For LSL/LSR, `TST #0xe0`
+  ignores dirty source bits above the low byte while separating valid 0..31 counts from A32's
+  saturating 32..255 cases; ROR needs no range operation. The same X3/A715/A710/A510 tables above
+  show that removing `UBFM` reduces real integer issue work. Keep ASR on the canonical path: the
+  analogous raw-count clamp repeatedly regressed on A710 even though it helped A510. Preserve
+  low-byte zero/range handling in carry-producing shifts and reject any extension that lacks
+  dirty-upper-bit result-and-carry coverage.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

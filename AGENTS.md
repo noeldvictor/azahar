@@ -64,16 +64,21 @@
 - Preserve ARM64 signed-narrow fusion only when `LeastSignificantByte`/`LeastSignificantHalf` has
   exactly one use and the immediately following IR instruction is the matching word/long signed
   extension. In that case the narrow value aliases its source and `SXTB`/`SXTH` performs both jobs.
-  Keep `UXTB`/`UXTH` for shifts, zero extensions, stores, shared/non-adjacent values, and every
-  unrecognized consumer. Retain the real A32 `SXTB`, `SXTH`, `SMULBB`, and dirty-high-byte `LSL`
-  regression so an over-broad alias cannot silently corrupt shift semantics.
+  Keep `UXTB`/`UXTH` for zero extensions, stores, shared/non-adjacent values, and every unrecognized
+  consumer; only the separately documented sole-consumer shift-count fusion may bypass `UXTB`.
+  Retain the real A32 `SXTB`, `SXTH`, `SMULBB`, and dirty-high-byte `LSL` regression so an over-broad
+  alias cannot silently corrupt shift semantics.
 - ARM64 Dynarmic may omit the second `AND #0xff` in no-carry A32 `LogicalShiftLeft32`,
   `LogicalShiftRight32`, and `ArithmeticShiftRight32` only when the shift argument resolves through
-  identities to `LeastSignificantByte`. A shift consumer cannot trigger the signed-narrow alias, so
-  that producer emitted the required `UXTB` and its host register is already canonical. Preserve
-  the mask for every other U8 producer and preserve the existing carry-producing paths. Keep real
-  guest coverage for dirty-upper-bit amounts 0, 1, 31, 32, 33, and 255 across LSL/LSR/ASR/ROR plus
-  LSLS carry behavior.
+  identities to a materialized `LeastSignificantByte`. A byte with exactly one eventual consumer
+  may instead alias its raw source only when that consumer takes it as argument 1 of 32-bit LSL,
+  LSR, or ROR. For no-carry LSL/LSR, preserve `TST #0xe0` plus EQ selection: AArch64 consumes only
+  bits 4:0, while bits 7:5 distinguish the A32 0..31 range from 32..255. ROR may use the raw source
+  directly because both architectures rotate by the low five bits; its carry path must retain the
+  low-byte zero test. Do not extend this alias to ASR: its raw-count clamp regressed on A710, so ASR
+  retains `UXTB` and the established canonical path. Preserve generic U8 masks and the complete
+  carry lowerings. Keep real guest coverage for dirty-upper-bit amounts 0, 1, 31, 32, 33, and 255
+  across no-flags and carry-producing LSL/LSR/ASR/ROR.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.
