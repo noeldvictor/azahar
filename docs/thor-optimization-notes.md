@@ -3605,6 +3605,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   gains still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
   brightness A/B.
 
+## 2026-08-18 Dynarmic A32 VZIP D-Register SIMD Retention
+
+- A32 D-register `VZIP.8` and `VZIP.16` already formed both results in one U128
+  `VectorInterleaveLower()`, but then extracted its two 64-bit halves with `VectorGetElement()` and
+  wrote them with `SetExtendedRegister()`. On ARM64, each extraction emitted an element-to-GPR
+  `UMOV`; each D-register write immediately reconstructed the same SIMD value with a GPR-to-D
+  `FMOV`. Four cross-register-bank transfers surrounded values that never needed to leave SIMD.
+- The D form now writes the interleave result's low half with `SetVector()` and uses
+  `VectorRotateWholeVectorRight(..., 64)` before writing the high half. The ARM64 backend consumes
+  the first D value directly and lowers the rotation to one `EXT #8`. Guest lane order is unchanged,
+  the existing Q-register path is untouched, and the decoder's existing rejection of the undefined
+  D-form 32-bit size remains intact. Result preparation falls from
+  `ZIP1; UMOV; UMOV; FMOV; FMOV` to `ZIP1; EXT`: five host instructions to two, with no optional
+  ISA feature.
+- The complete relevant timing-table pages were rendered and visually checked. X3 pages 31-32 list
+  `EXT` at two-cycle latency and throughput four, versus throughput one for element-to-general-
+  register `UMOV`. A715 pages 34-35 and A710 pages 52-53 list `EXT` at two-cycle latency and
+  throughput two, again versus throughput one for `UMOV`. A510 pages 43-44 place `EXT`, `UMOV`, and
+  the unzip/zip family on its VALU paths; the new sequence removes the two `UMOV`s and the two
+  reverse-bank `FMOV`s there as well.
+- A disassembly-checked benchmark compared eight independent old and new result paths, retained two
+  identical D-width consumers per operation, ran 8,388,609 iterations, alternated order over nine
+  rounds, selected each best sample, and required equal nonzero `0x81` checksums:
+
+  | Thor core | Old -> new | Local result-path gain |
+  | --- | --- | --- |
+  | A510 CPU 0 | 6.665553 -> 4.020711 ns/op | 1.658x; 39.68% less time |
+  | A710 CPU 3 | 1.066110 -> 0.728358 ns/op | 1.464x; 31.68% less time |
+  | A710 CPU 4 | 1.066017 -> 0.733805 ns/op | 1.453x; 31.16% less time |
+
+  Only the currently usable CPU 0/3/4 single-bit affinity masks were measured; no A715 or X3
+  number is claimed for this run.
+- Permanent guest coverage executes low-register `VZIP.8 D0, D1` and high-register
+  `VZIP.16 D30, D31` with non-repeating lanes and verifies all four complete 64-bit outputs. Thor
+  passed 174 assertions in nine focused `[core][arm][dynarmic]` cases and 3,041 assertions in 24
+  broader `[core]~[file_sys]` cases. The ARM64 native build passed in 1 minute 18 seconds. Temporary
+  assembler, benchmark, stripped-test, disassembly, and rendered-manual files were removed from
+  both host and device. Source/test commit `18b35d600` was made directly on `master`.
+- JDK 17 release packaging passed in 2 minutes 39 seconds. The ARM64-only, v2-signed APK is
+  28,977,540 bytes, reports `18b35d600-vanilla-thor`, and has SHA-256
+  `5FD34C294FA02032BB21C5B83FB4CDABF97C7BBD2BD8FCF3E43A644CF93A713A`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and
+  20.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Post-verification cleanup removed 2,017,695,829 logical bytes from `app/build` and raised C: free
+  space by 1,576,329,216 bytes. `app/build` retains only the 28,977,540-byte APK and 476-byte
+  metadata; the 3,245,100,241-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains for
+  incremental work.
+- This is optimization 86 in the Thor work tally. Its 1.45x-1.66x result applies only when an A32
+  guest executes the D-register VZIP forms and only to this exact result path. The 86 items overlap,
+  trigger at different frequencies, and cannot be added. Whole-game FPS, sustained watts,
+  frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/resolution/
+  layout/mode/fan/brightness A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
