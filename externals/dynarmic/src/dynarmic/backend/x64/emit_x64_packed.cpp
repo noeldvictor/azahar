@@ -745,6 +745,10 @@ void EmitX64::EmitPackedSelect(EmitContext& ctx, IR::Inst* inst) {
     }
 }
 
+void EmitX64::EmitPackedSignExtendByteToHalf(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected PackedSignExtendByteToHalf");
+}
+
 void EmitX64::EmitPackHalfwordBottom(EmitContext&, IR::Inst*) {
     ASSERT_FALSE("Unexpected PackHalfwordBottom");
 }

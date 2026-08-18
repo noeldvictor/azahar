@@ -108,9 +108,7 @@ bool TranslatorVisitor::arm_SXTB16(Cond cond, Reg d, SignExtendRotation rotate, 
     }
 
     const auto rotated = Rotate(ir, m, rotate);
-    const auto low_byte = ir.And(rotated, ir.Imm32(0x00FF00FF));
-    const auto sign_bit = ir.And(rotated, ir.Imm32(0x00800080));
-    const auto result = ir.Or(low_byte, ir.Mul(sign_bit, ir.Imm32(0x1FE)));
+    const auto result = ir.PackedSignExtendByteToHalf(rotated);
 
     ir.SetRegister(d, result);
     return true;

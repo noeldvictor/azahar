@@ -2386,3 +2386,105 @@ TEST_CASE("Dynarmic A32 packed saturation preserves every immediate, sticky Q, a
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 SXTB16 preserves rotations, aliases, flags, and FPSCR",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t rotation;
+        std::uint8_t destination;
+        std::uint8_t source;
+        bool thumb;
+    };
+
+    std::array<Operation, 16> operations{};
+    std::size_t operation_index = 0;
+    for (const bool thumb : {false, true}) {
+        for (const bool source_alias : {false, true}) {
+            const std::uint8_t destination = source_alias ? 4 : 0;
+            const std::uint8_t source = source_alias ? 4 : 2;
+            for (std::uint8_t rotate = 0; rotate < 4; ++rotate) {
+                const std::uint32_t instruction = [&] {
+                    if (!thumb) {
+                        return 0xe68f0070U | (static_cast<std::uint32_t>(destination) << 12) |
+                               (static_cast<std::uint32_t>(rotate) << 10) | source;
+                    }
+                    const std::uint32_t first_half = 0xfa2f;
+                    const std::uint32_t second_half =
+                        0xf080 | (static_cast<std::uint32_t>(destination) << 8) |
+                        (static_cast<std::uint32_t>(rotate) << 4) | source;
+                    return (second_half << 16) | first_half;
+                }();
+                operations[operation_index++] = Operation{
+                    instruction, static_cast<std::uint8_t>(rotate * 8), destination, source, thumb};
+            }
+        }
+    }
+    REQUIRE(operation_index == operations.size());
+
+    constexpr std::array inputs{
+        0x00000000u,
+        0x0000007fu,
+        0x00000080u,
+        0x0080007fu,
+        0x007f0080u,
+        0xff80aa7fu,
+        0x7f0180feu,
+        0x1234abcdu,
+        0x80007fffu,
+        0xffffffffu,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.rotation, operation.destination, operation.source,
+                operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const std::uint32_t input : inputs) {
+            const std::uint32_t rotated =
+                operation.rotation == 0
+                    ? input
+                    : (input >> operation.rotation) | (input << (32 - operation.rotation));
+            const auto sign_extend_byte = [](std::uint8_t value) {
+                return static_cast<std::uint16_t>(
+                    value | (value & 0x80 ? 0xff00 : 0x0000));
+            };
+            const std::uint16_t low = sign_extend_byte(static_cast<std::uint8_t>(rotated));
+            const std::uint16_t high =
+                sign_extend_byte(static_cast<std::uint8_t>(rotated >> 16));
+            const std::uint32_t expected = low | (static_cast<std::uint32_t>(high) << 16);
+
+            std::array<std::uint32_t, 16> initial_regs{
+                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+            };
+            initial_regs[operation.source] = input;
+            jit.Regs() = initial_regs;
+            jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            jit.SetFpscr(initial_fpscr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[operation.destination] == expected);
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.destination) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}

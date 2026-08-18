@@ -503,6 +503,19 @@ void EmitIR<IR::Opcode::PackedSelect>(oaknut::CodeGenerator& code, EmitContext& 
 }
 
 template<>
+void EmitIR<IR::Opcode::PackedSignExtendByteToHalf>(oaknut::CodeGenerator& code, EmitContext& ctx,
+                                                    IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+    RegAlloc::Realize(Wresult);
+
+    // Extract the upper byte before a final-use source aliases Wresult and SXTB overwrites it.
+    code.SBFX(Wscratch0, *Wresult, 16, 8);
+    code.SXTB(*Wresult, *Wresult);
+    code.BFI(*Wresult, Wscratch0, 16, 16);
+}
+
+template<>
 void EmitIR<IR::Opcode::PackHalfwordBottom>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     const u8 shift_amount = inst->GetArg(2).GetU8();

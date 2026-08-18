@@ -277,6 +277,10 @@ U32 IREmitter::UnsignedExtendAndAdd(const U32& addend, const U32& value, size_t 
                      Imm8(static_cast<u8>(esize)));
 }
 
+U32 IREmitter::PackedSignExtendByteToHalf(const U32& value) {
+    return Inst<U32>(Opcode::PackedSignExtendByteToHalf, value);
+}
+
 U32U64 IREmitter::SubWithCarry(const U32U64& a, const U32U64& b, const U1& carry_in) {
     ASSERT(a.GetType() == b.GetType());
     if (a.GetType() == Type::U32) {

@@ -129,6 +129,7 @@ OPCODE(Add32,                                               U32,            U32,
 OPCODE(Add64,                                               U64,            U64,            U64,            U1                              )
 OPCODE(SignedExtendAndAdd32,                                U32,            U32,            U32,            U8                              )
 OPCODE(UnsignedExtendAndAdd32,                              U32,            U32,            U32,            U8                              )
+OPCODE(PackedSignExtendByteToHalf,                          U32,            U32                                                             )
 OPCODE(Sub32,                                               U32,            U32,            U32,            U1                              )
 OPCODE(Sub64,                                               U64,            U64,            U64,            U1                              )
 OPCODE(Mul32,                                               U32,            U32,            U32                                             )

@@ -117,6 +117,7 @@ public:
     U32U64 Add(const U32U64& a, const U32U64& b);
     U32 SignedExtendAndAdd(const U32& addend, const U32& value, size_t esize);
     U32 UnsignedExtendAndAdd(const U32& addend, const U32& value, size_t esize);
+    U32 PackedSignExtendByteToHalf(const U32& value);
     U32U64 Sub(const U32U64& a, const U32U64& b);
     U32U64 Mul(const U32U64& a, const U32U64& b);
     U64 SignedMultiplyLong(const U32& a, const U32& b);

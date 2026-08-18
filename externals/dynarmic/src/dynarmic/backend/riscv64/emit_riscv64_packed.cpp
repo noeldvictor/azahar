@@ -208,6 +208,11 @@ void EmitIR<IR::Opcode::PackedSelect>(biscuit::Assembler&, EmitContext&, IR::Ins
 }
 
 template<>
+void EmitIR<IR::Opcode::PackedSignExtendByteToHalf>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::PackHalfwordBottom>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

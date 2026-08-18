@@ -375,6 +375,13 @@ void PolyfillExtendAndAdd(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(ir.Add(addend, extended));
 }
 
+void PolyfillPackedSignExtendByteToHalf(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U32 operand = (IR::U32)inst.GetArg(0);
+    const IR::U32 low_byte = ir.And(operand, ir.Imm32(0x00FF00FF));
+    const IR::U32 sign_bit = ir.And(operand, ir.Imm32(0x00800080));
+    inst.ReplaceUsesWith(ir.Or(low_byte, ir.Mul(sign_bit, ir.Imm32(0x1FE))));
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -396,6 +403,11 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::UnsignedExtendAndAdd32:
             if (polyfill.extend_and_add) {
                 PolyfillExtendAndAdd<false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::PackedSignExtendByteToHalf:
+            if (polyfill.packed_sign_extend_byte_to_half) {
+                PolyfillPackedSignExtendByteToHalf(ir, inst);
             }
             break;
         case IR::Opcode::PackHalfwordBottom:

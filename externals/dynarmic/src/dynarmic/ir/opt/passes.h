@@ -23,6 +23,7 @@ namespace Dynarmic::Optimization {
 struct PolyfillOptions {
     bool extend_and_add = false;
     bool pack_halfword = false;
+    bool packed_sign_extend_byte_to_half = false;
     bool packed_saturation16 = false;
     bool sha256 = false;
     bool vector_absolute_difference_widen = false;
