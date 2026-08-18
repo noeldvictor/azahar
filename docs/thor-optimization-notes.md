@@ -3716,6 +3716,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/resolution/
   layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Long/Wide Add and Subtract
+
+- A32 guest `VADDL`/`VSUBL` and A64 `SADDL`/`UADDL`/`SSUBL`/`USUBL` widened both 64-bit narrow
+  inputs separately and then used generic vector add/sub IR. The ARM64 host therefore emitted two
+  `SXTL`/`UXTL` instructions plus `ADD`/`SUB`. A32 `VADDW`/`VSUBW` and A64
+  `SADDW`/`UADDW`/`SSUBW`/`USUBW` kept one input wide but still extended the narrow input before a
+  generic add/sub, costing two host instructions.
+- Dynarmic now retains these guest operations as signed/unsigned, long/wide add/sub IR. The ARM64
+  backend emits one baseline `SADDL`/`UADDL`/`SSUBL`/`USUBL` for the long forms and one
+  `SADDW`/`UADDW`/`SSUBW`/`USUBW` for the wide forms. The selected A64 high half is already placed
+  in the IR value's low 64 bits. x64 polyfills the new IR back to the established extension plus
+  add/sub sequence, and RISC-V retains its existing unimplemented vector-backend status.
+- The actual Snapdragon core guides were rendered and visually checked again. Cortex-X3 issue 4.0
+  page 26 lists all eight instructions in basic ASIMD arithmetic at latency 2 / throughput 4.
+  Cortex-A715 issue 5.0 page 28 and Cortex-A710 issue 4.0 page 42 list latency 2 / throughput 2.
+  Cortex-A510 issue 6.0 page 35 lists the long/basic group at latency 3 with the table's `2,1`
+  throughput notation. All use the normal vector arithmetic pipeline; no optional ISA extension or
+  unsafe whole-binary core targeting is required.
+- A disassembly-checked benchmark compared eight independent exact old/new sequences over
+  2,000,000 loop iterations per sample, alternated order for seven rounds, and selected the best
+  samples:
+
+  | Thor core | Long: `2x extend + add` -> `UADDL` | Wide: `extend + add` -> `UADDW` |
+  | --- | --- | --- |
+  | A510 CPU 0 | 2.256113 -> 0.500260 ns/op; 4.510x | 2.005768 -> 0.500319; 4.009x |
+  | A715 CPU 3 | 0.716790 -> 0.178369 ns/op; 4.019x | 0.357243 -> 0.178372; 2.003x |
+  | A715 CPU 4 | 0.716087 -> 0.178844 ns/op; 4.004x | 0.357285 -> 0.178369; 2.003x |
+  | A710 CPU 6 | 0.715846 -> 0.178747 ns/op; 4.005x | 0.357139 -> 0.178372; 2.002x |
+
+  CPU 7/X3 still rejects the ADB shell's single-bit affinity request, so its manual throughput is
+  recorded but no direct X3 timing is claimed. These results measure only the fused host sequences;
+  their guest frequency and whole-game impact remain title/scene dependent.
+- Permanent A32 guest tests cover signed and unsigned `VADDL`, `VADDW`, `VSUBL`, and `VSUBW`
+  across 8/16/32-bit sizes, signed extremes, full-width results, and modular lane wraparound. Thor
+  passed 206 assertions in 13 focused `[core][arm][dynarmic]` cases and 3,073 assertions in 28
+  broader `[core]~[file_sys]` cases. The final ARM64 native rebuild passed in 1 minute 28 seconds.
+  Source/test commit `852e7ef8e` was pushed directly to `origin/master` over command-line Git SSH.
+- JDK 17 release packaging passed in 2 minutes 41 seconds. The ARM64-only, v2-signed APK is
+  28,985,020 bytes, reports `852e7ef8e-vanilla-thor`, and has SHA-256
+  `648F3286CFD5F8A471B3F9E582E4E40E6BFD1A8B164BE72D161F17403B351717`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.154 V, and
+  20.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Temporary benchmark/test binaries and rendered manual pages were removed from host and Thor.
+  Post-verification cleanup removed 2,018,486,183 logical bytes of Gradle/JNI/native staging and
+  raised C: free space by 1,576,734,720 bytes to 81,981,497,344. `src/android/app/build` retains
+  only the 28,985,020-byte APK and 476-byte metadata; the 3,248,592,186-byte active ARM64
+  RelWithDebInfo CMake/Ninja cache remains for bounded incremental work.
+- This is optimization 88 in the Thor work tally. Its 4.00x-4.51x long-form and 2.00x-4.01x
+  wide-form results apply only to these exact recurring host sequences. The 88 items overlap and
+  cannot be added. Whole-game FPS, sustained watts, frametime, and thermal gains still require a
+  matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

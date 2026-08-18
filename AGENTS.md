@@ -102,6 +102,14 @@
   native one-instruction operation into cross-register-bank transfers and separate widening.
   Keep the x64 polyfill and signed/unsigned 8/16/32-bit guest coverage, including signed extremes
   and widened-lane accumulator wraparound.
+- A32/A64 `VADDL`/`VADDW` and `VSUBL`/`VSUBW` must preserve their widening or wide operation in
+  `VectorSignedAddSubWiden()`/`VectorUnsignedAddSubWiden()` or
+  `VectorSignedAddSubWide()`/`VectorUnsignedAddSubWide()`. The ARM64 backend must lower these
+  directly to `SADDL`/`UADDL`/`SSUBL`/`USUBL` or `SADDW`/`UADDW`/`SSUBW`/`USUBW` on the selected
+  64-bit source half. Do not restore frontend `VectorSignExtend()`/`VectorZeroExtend()` plus generic
+  `VectorAdd()`/`VectorSub()` sequences: those expand native long forms from one host instruction
+  to three and wide forms to two. Keep the x64 polyfill and A32 signed/unsigned long/wide tests,
+  including signed extremes and modular destination-lane wraparound.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

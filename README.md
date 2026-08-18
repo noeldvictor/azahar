@@ -229,7 +229,12 @@ include:
   to GPR and back twice, widened both inputs separately, then subtracted: seven ARM64 instructions.
   The new widening-difference IR lowers directly to one baseline `SABDL`/`UABDL`. A checksum-locked
   exact-sequence benchmark measured **15.98x on Cortex-A510**, **5.72x-5.78x on Cortex-A715**, and
-  **8.17x on the usable Cortex-A710 core** for that preparation; and
+  **8.17x on the usable Cortex-A710 core** for that preparation;
+- native widening/wide add and subtract for guest `VADDL`/`VADDW` and `VSUBL`/`VSUBW`. The ARM64
+  host path now emits one `SADDL`/`UADDL`/`SSUBL`/`USUBL` instead of two extensions plus add/sub,
+  or one `SADDW`/`UADDW`/`SSUBW`/`USUBW` instead of extension plus add/sub. Disassembly-checked
+  exact-path measurements were **4.00x-4.51x for long forms** and **2.00x-4.01x for wide forms**
+  across the measured Cortex-A510/A715/A710 cores; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
