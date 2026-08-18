@@ -150,38 +150,84 @@ TEST_CASE("Dynarmic preserves VTBX defaults through ARM64 read-write coalescing"
 
 TEST_CASE("Dynarmic A32 long multiply preserves packed low and high words",
           "[core][arm][dynarmic]") {
-    ArmTestCallbacks callbacks;
-    callbacks.code = {
-        0xe0a21493,  // UMLAL R1, R2, R3, R4
-        0xeafffffe,  // B .
-        0xeafffffe,
-        0xeafffffe,
-        0xeafffffe,
-        0xeafffffe,
+    struct Operation {
+        std::uint32_t instruction;
+        bool accumulate;
+        bool source_alias;
+        bool thumb;
+        bool update_flags;
+    };
+    constexpr std::array operations{
+        Operation{0xe0a10392, true, false, false, false},   // ARM UMLAL R0, R1, R2, R3
+        Operation{0xe0b10392, true, false, false, true},    // ARM UMLALS R0, R1, R2, R3
+        Operation{0xe0a10190, true, true, false, false},    // ARM UMLAL R0, R1, R0, R1
+        Operation{0xe0810392, false, false, false, false},  // ARM UMULL R0, R1, R2, R3
+        Operation{0xe0910392, false, false, false, true},   // ARM UMULLS R0, R1, R2, R3
+        Operation{0xe0810190, false, true, false, false},   // ARM UMULL R0, R1, R0, R1
+        Operation{0x0103fbe2, true, false, true, false},   // Thumb UMLAL R0, R1, R2, R3
+        Operation{0x0101fbe0, true, true, true, false},    // Thumb UMLAL R0, R1, R0, R1
+        Operation{0x0103fba2, false, false, true, false},  // Thumb UMULL R0, R1, R2, R3
+        Operation{0x0101fba0, false, true, true, false},   // Thumb UMULL R0, R1, R0, R1
+    };
+    struct Inputs {
+        std::uint64_t addend;
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x0123456789abcdef, 0xfedcba98, 0x76543210},
+        Inputs{0, 0xffffffff, 0xffffffff},
+        Inputs{0xffffffffffffffff, 0xffffffff, 2},
+        Inputs{0x8000000000000000, 0x80000000, 0x80000000},
+        Inputs{0x7fffffffffffffff, 0x7fffffff, 0x7fffffff},
+        Inputs{0xdeadbeef01234567, 0x00010002, 0xfffeffff},
     };
 
-    Dynarmic::A32::UserConfig config{&callbacks};
-    Dynarmic::A32::Jit jit{config};
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, input.addend, input.n, input.m);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe,  // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+            const std::uint32_t n = operation.source_alias
+                                        ? static_cast<std::uint32_t>(input.addend)
+                                        : input.n;
+            const std::uint32_t m = operation.source_alias
+                                        ? static_cast<std::uint32_t>(input.addend >> 32)
+                                        : input.m;
+            const std::uint64_t product =
+                static_cast<std::uint64_t>(n) * static_cast<std::uint64_t>(m);
+            const std::uint64_t expected = operation.accumulate ? product + input.addend : product;
+            jit.Regs() = {};
+            jit.Regs()[0] = static_cast<std::uint32_t>(input.addend);
+            jit.Regs()[1] = static_cast<std::uint32_t>(input.addend >> 32);
+            jit.Regs()[2] = input.n;
+            jit.Regs()[3] = input.m;
+            constexpr std::uint32_t initial_flags = 0x780f0000;  // ZCV/Q/GE
+            const std::uint32_t initial_cpsr =
+                initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0);
+            jit.SetCpsr(initial_cpsr);
+            callbacks.ticks_left = 2;
+            jit.Run();
 
-    constexpr std::uint32_t lo = 0x89abcdef;
-    constexpr std::uint32_t hi = 0x01234567;
-    constexpr std::uint32_t lhs = 0xfedcba98;
-    constexpr std::uint32_t rhs = 0x76543210;
-    constexpr std::uint64_t expected =
-        (static_cast<std::uint64_t>(hi) << 32 | lo) +
-        static_cast<std::uint64_t>(lhs) * static_cast<std::uint64_t>(rhs);
-
-    jit.Regs() = {};
-    jit.Regs()[1] = lo;
-    jit.Regs()[2] = hi;
-    jit.Regs()[3] = lhs;
-    jit.Regs()[4] = rhs;
-    jit.SetCpsr(0x000001d0);  // User mode
-    callbacks.ticks_left = 2;
-    jit.Run();
-
-    CHECK(jit.Regs()[1] == static_cast<std::uint32_t>(expected));
-    CHECK(jit.Regs()[2] == static_cast<std::uint32_t>(expected >> 32));
+            CHECK(jit.Regs()[0] == static_cast<std::uint32_t>(expected));
+            CHECK(jit.Regs()[1] == static_cast<std::uint32_t>(expected >> 32));
+            if (!operation.source_alias) {
+                CHECK(jit.Regs()[2] == input.n);
+                CHECK(jit.Regs()[3] == input.m);
+            }
+            const std::uint32_t expected_flags = operation.update_flags
+                                                     ? (initial_flags & 0x380f0000) |
+                                                           (expected == 0 ? 0x40000000 : 0) |
+                                                           (expected >> 63 != 0 ? 0x80000000 : 0)
+                                                     : initial_flags;
+            CHECK((jit.Cpsr() & 0xf80f0000) == expected_flags);
+        }
+    }
 }
 
 TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its lane",

@@ -161,9 +161,7 @@ bool TranslatorVisitor::thumb32_UMLAL(Reg n, Reg dLo, Reg dHi, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.ZeroExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.ZeroExtendWordToLong(ir.GetRegister(m));
-    const auto product = ir.Mul(n64, m64);
+    const auto product = ir.UnsignedMultiplyLong(ir.GetRegister(n), ir.GetRegister(m));
     const auto addend = ir.Pack2x32To1x64(ir.GetRegister(dLo), ir.GetRegister(dHi));
     const auto result = ir.Add(product, addend);
     const auto lo = ir.LeastSignificantWord(result);
@@ -183,9 +181,7 @@ bool TranslatorVisitor::thumb32_UMULL(Reg n, Reg dLo, Reg dHi, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.ZeroExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.ZeroExtendWordToLong(ir.GetRegister(m));
-    const auto result = ir.Mul(n64, m64);
+    const auto result = ir.UnsignedMultiplyLong(ir.GetRegister(n), ir.GetRegister(m));
     const auto lo = ir.LeastSignificantWord(result);
     const auto hi = ir.MostSignificantWord(result).result;
 

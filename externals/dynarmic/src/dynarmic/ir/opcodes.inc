@@ -795,7 +795,8 @@ A32OPC(CoprocGetTwoWords,                                   U64,            Copr
 A32OPC(CoprocLoadWords,                                     Void,           CoprocInfo,     U32                                             )
 A32OPC(CoprocStoreWords,                                    Void,           CoprocInfo,     U32                                             )
 
-// Native widening multiply-accumulate selection
+// Native widening multiply and multiply-accumulate selection
+OPCODE(UnsignedMultiplyLong,                                U64,            U32,            U32                                                             )
 OPCODE(SignedMultiplyAddLong,                               U64,            U32,            U32,            U64                            )
 OPCODE(SignedMultiplySubtractLong,                          U64,            U32,            U32,            U64                            )
 

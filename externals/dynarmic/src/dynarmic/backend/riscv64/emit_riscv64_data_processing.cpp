@@ -350,6 +350,11 @@ void EmitIR<IR::Opcode::Mul64>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
 }
 
 template<>
+void EmitIR<IR::Opcode::UnsignedMultiplyLong>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::SignedMultiplyAddLong>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

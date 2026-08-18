@@ -1161,6 +1161,18 @@ void EmitIR<IR::Opcode::Mul64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR
 }
 
 template<>
+void EmitIR<IR::Opcode::UnsignedMultiplyLong>(oaknut::CodeGenerator& code, EmitContext& ctx,
+                                              IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Xresult = ctx.reg_alloc.WriteX(inst);
+    auto Wa = ctx.reg_alloc.ReadW(args[0]);
+    auto Wb = ctx.reg_alloc.ReadW(args[1]);
+    RegAlloc::Realize(Xresult, Wa, Wb);
+
+    code.UMULL(Xresult, Wa, Wb);
+}
+
+template<>
 void EmitIR<IR::Opcode::SignedMultiplyAddLong>(oaknut::CodeGenerator& code, EmitContext& ctx,
                                                IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
