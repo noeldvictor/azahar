@@ -109,6 +109,15 @@ rounds, disassembly inspection, and checksum `0040003f` measured 2.506x on A510 
 request, so no second-A710 or X3 result is claimed. These are exact generated-sequence timings, not
 whole-game FPS or battery watts.
 
+The mixed-saturation follow-up keeps ARM11 `QASX`/`QSAX`/`UQASX`/`UQSAX` packed in IR. Its ARM64
+backend exchanges halfwords with `REV32`, computes both lane candidates with signed or unsigned
+saturating AdvSIMD arithmetic, and inserts the alternate low lane. A disassembly-checked,
+checksum-locked dependency-chain benchmark compared the old 21-instruction scalar clamp/repack
+sequence with the four-instruction native operation over four alternating rounds of 8,000,000
+operations. Best samples measured 1.110x on A510 CPU 0, 2.121x and 2.141x on A715 CPUs 3 and 4,
+and 1.808x on A710 CPU 5. CPU 6 and X3 CPU 7 rejected the affinity request, so no result is claimed
+for them. These are exact-path operation timings, not whole-game FPS or battery watts.
+
 Command-line Git checked upstream `master` again on 2026-08-18. It resolved to
 `fb1c1a7104fae94c670e2ea1e2a6bf09e99379c2`, and `git merge-base master upstream/master`
 returned that same revision. The fork therefore already contains the latest upstream source; no

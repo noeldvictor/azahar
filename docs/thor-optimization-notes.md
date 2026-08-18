@@ -3877,6 +3877,58 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   watts, frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/
   resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Mixed Saturated Add/Subtract
+
+- ARM and Thumb-2 `QASX`/`QSAX`/`UQASX`/`UQSAX` previously expanded into four halfword extracts,
+  signed or unsigned extensions, scalar add/subtract, two generic saturation clamps, shifts,
+  masks, and repacking. The recurring signed ARM64 result path was 21 instructions before any
+  one-time guest-flag spill required by its scalar `CMP` operations.
+- Four packed IR operations now preserve the exchanged-halfword semantics through the backends.
+  ARM64 emits `REV32`, both signed `SQADD`/`SQSUB` or unsigned `UQADD`/`UQSUB` candidates, and one
+  element insert: four recurring instructions. Lazy host FPSR state is spilled before native
+  saturating arithmetic so its QC side effect cannot contaminate guest FP state. The x64 backend
+  uses saturated SSE word arithmetic plus `PBLENDW`, with an SSE2 `PEXTRW`/`PINSRW` fallback.
+- The complete relevant manual pages were rendered and visually checked. Cortex-X3 issue 4.0 page
+  26 lists these saturating AdvSIMD operations at latency 2 / throughput 4. Cortex-A715 issue 5.0
+  page 28 and Cortex-A710 issue 4.0 page 42 list latency 2 / throughput 2. Cortex-A510 issue 6.0
+  page 35 lists the complex saturated group at latency 4 with the guide's `2,1` throughput
+  notation. The A510 latency explains why the dependency-chain improvement is smaller there.
+- A disassembly-checked benchmark compared the 21-instruction signed scalar clamp/repack sequence
+  with the four-instruction native operation, used an identical loop-carried dependency, ran
+  8,000,000 operations per sample over four alternating-order rounds, selected the best samples,
+  and required equal nonzero checksum `7fff8000`:
+
+  | Thor core | 21 scalar instructions -> four AdvSIMD instructions | Result |
+  | --- | --- | --- |
+  | A510 CPU 0 | 5.018444 -> 4.523125 ns/op | 1.110x; 9.87% less time |
+  | A715 CPU 3 | 3.124603 -> 1.472897 ns/op | 2.121x; 52.86% less time |
+  | A715 CPU 4 | 3.125534 -> 1.459720 ns/op | 2.141x; 53.30% less time |
+  | A710 CPU 5 | 2.796231 -> 1.546693 ns/op | 1.808x; 44.69% less time |
+
+  CPU 6 and X3 CPU 7 rejected the harmless single-bit affinity request despite `0-7` being online,
+  so no timing is claimed for those cores. The source/test commit is `5c8820635`, pushed directly
+  to `origin/master` over command-line Git SSH.
+- Thor passed all 237 assertions in 16 focused `[core][arm][dynarmic]` cases. The new permanent test
+  saturates both directions for signed and unsigned ASX/SAX layouts and confirms guest NZCV, Q,
+  and GE flags remain unchanged. The full native binary executed 187,784 assertions: 187,780 passed;
+  the four unrelated device-environment failures were three missing build-flavor/DSP hooks and the
+  existing Vulkan resource-pool device mismatch. An x86_64 Android syntax compile also accepted the
+  new SSE backend. The full ARM64 compile/link passed in 1 minute 47 seconds.
+- The JDK 17 release build passed in 2 minutes 47 seconds. Its ARM64-only APK is 28,984,420 bytes,
+  reports `5c8820635-vanilla-thor`, and has SHA-256
+  `91D496D5898718597AD73EB993E426C289D3422988AA6981D7787B6FA172ABBA`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.151 V, and 20.0 C,
+  so this charging snapshot is not battery-discharge watt evidence.
+- Cleanup retained the hash-verified APK and active 2,793,703,011-byte ARM64 `.cxx` cache, removed
+  2,018,782,277 logical bytes of reproducible Gradle/JNI staging plus the 447,513,344-byte test ELF,
+  and deleted temporary benchmark/test binaries and rendered manual pages from host and Thor.
+  `app/build` now contains only the 28,984,420-byte APK and its 476-byte metadata.
+- This is optimization 91 in the Thor work tally. Its 1.110x-2.141x result applies only to the
+  recurring mixed-saturation host sequence and cannot be added to the other 90 items. Whole-game
+  FPS, sustained watts, frametimes, and thermals still require a matched title/scene/cache/
+  renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

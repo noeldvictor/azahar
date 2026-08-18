@@ -126,6 +126,15 @@
   A510/A715/A710 cores. Preserve signed floor rounding, unsigned underflow, both ASX/SAX lane
   arrangements, and the permanent A32 edge-case test. This is a hot-path result, not a whole-game
   FPS or watt claim.
+- A32 `QASX`/`QSAX`/`UQASX`/`UQSAX` must remain packed through
+  `PackedSaturatedAddSubU16/S16` or `PackedSaturatedSubAddU16/S16`. The ARM64 backend must spill
+  lazy host FPSR state before using `SQADD`/`SQSUB` or `UQADD`/`UQSUB`, exchange the second source
+  with `REV32`, and insert only the alternate low lane. Do not restore scalar halfword extraction,
+  extension, two generic saturation clamps, and repacking: that expands the recurring path from
+  four host instructions to 21 and measured 1.11x-2.14x slower on tested A510/A715/A710 cores.
+  Preserve signed/unsigned saturation, ASX/SAX lane placement, unchanged guest NZCV/Q/GE flags,
+  the x64 SSE4.1/SSE2 lowering, and the permanent A32 edge-case test. Treat this as a path-local
+  result until a matched game/power A/B exists.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

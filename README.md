@@ -243,7 +243,12 @@ include:
 - native mixed halving add/subtract for ARM11 `SHASX`/`SHSAX`/`UHASX`/`UHSAX`. ARM64 now emits
   `REV32`, native halving add/subtract, and one lane insert instead of widening both operands,
   synthesizing signs, shifting, and narrowing. The recurring path falls from nine to four host
-  instructions and measured **2.316x-2.506x faster** across the tested A510/A715/A710 cores; and
+  instructions and measured **2.316x-2.506x faster** across the tested A510/A715/A710 cores;
+- native mixed saturated add/subtract for ARM11 `QASX`/`QSAX`/`UQASX`/`UQSAX`. One packed IR
+  operation now lowers to `REV32`, native `SQADD`/`SQSUB` or `UQADD`/`UQSUB`, and one lane insert
+  instead of scalar extraction, extension, two clamp sequences, and repacking. The recurring host
+  path falls from 21 to four instructions and measured **1.11x on A510**, **2.12x-2.14x on A715**,
+  and **1.81x on A710** in the dependency-chain benchmark; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
