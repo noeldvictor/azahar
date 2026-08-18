@@ -98,9 +98,10 @@ private:
     void Compile_SanitizedMul(oaknut::QReg src1, oaknut::QReg src2, oaknut::QReg scratch0);
 
     /**
-     * Emits the code to evaluate a conditional instruction and update the host's EQ/NE status-flags
+     * Emits one flag-setting instruction for a conditional instruction and returns the host
+     * condition code that represents a true guest condition.
      */
-    void Compile_EvaluateCondition(Instruction instr);
+    oaknut::Cond Compile_EvaluateCondition(Instruction instr);
     void Compile_UniformCondition(Instruction instr);
 
     /**

@@ -1133,6 +1133,86 @@ SHADER_TEST_CASE("Conditional", "[video_core][shader]") {
     }
 }
 
+SHADER_TEST_CASE("Conditional control flow", "[video_core][shader]") {
+    const auto sh_input = SourceRegister::MakeInput(0);
+    const auto sh_temp = SourceRegister::MakeTemporary(0);
+    const auto sh_output = DestRegister::MakeOutput(0);
+
+    // This condition lowers to CMP + GE on AArch64. Keep COND1 true so COND0 selects false/true;
+    // that catches consumers which incorrectly assume every compiled condition uses EQ/NE.
+    const bool condition = GENERATE(false, true);
+    Pica::ShaderUnit shader_unit;
+    shader_unit.conditional_code[0] = condition;
+    shader_unit.conditional_code[1] = true;
+
+    const auto make_condition = [](OpCode::Id opcode) {
+        nihstro::Instruction instr{};
+        instr.opcode = nihstro::OpCode(opcode);
+        instr.flow_control.op = nihstro::Instruction::FlowControlType::Op::Or;
+        instr.flow_control.refx = 1;
+        instr.flow_control.refy = 0;
+        return instr;
+    };
+
+    SECTION("CALLC") {
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::MOV, sh_output, sh_temp},
+            {OpCode::Id::NOP}, // CALLC configured below
+            {OpCode::Id::END},
+            {OpCode::Id::NOP},
+            {OpCode::Id::MOV, sh_output, sh_input},
+            {OpCode::Id::END},
+        });
+        auto CALLC = make_condition(OpCode::Id::CALLC);
+        CALLC.flow_control.dest_offset = 4;
+        CALLC.flow_control.num_instructions = 1;
+        shader_setup->UpdateProgramCode(1, CALLC.hex);
+
+        auto shader_test = TestType(std::move(shader_setup));
+        shader_test.Run(shader_unit, 1.0f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].x.ToFloat32() ==
+                (condition ? 1.0f : 0.0f));
+    }
+
+    SECTION("JMPC") {
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::MOV, sh_output, sh_temp},
+            {OpCode::Id::NOP}, // JMPC configured below
+            {OpCode::Id::END},
+            {OpCode::Id::NOP},
+            {OpCode::Id::MOV, sh_output, sh_input},
+            {OpCode::Id::END},
+        });
+        auto JMPC = make_condition(OpCode::Id::JMPC);
+        JMPC.flow_control.dest_offset = 4;
+        shader_setup->UpdateProgramCode(1, JMPC.hex);
+
+        auto shader_test = TestType(std::move(shader_setup));
+        shader_test.Run(shader_unit, 1.0f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].x.ToFloat32() ==
+                (condition ? 1.0f : 0.0f));
+    }
+
+    SECTION("BREAKC") {
+        auto shader_setup = CompileShaderSetup({
+            {OpCode::Id::MOV, sh_output, sh_temp},
+            {OpCode::Id::LOOP, 0},
+            {OpCode::Id::NOP}, // BREAKC configured below
+            {OpCode::Id::MOV, sh_output, sh_input},
+            {Type::EndLoop},
+            {OpCode::Id::END},
+        });
+        auto BREAKC = make_condition(OpCode::Id::BREAKC);
+        shader_setup->UpdateProgramCode(2, BREAKC.hex);
+        shader_setup->uniforms.i[0] = {0, 0, 0, 0};
+
+        auto shader_test = TestType(std::move(shader_setup));
+        shader_test.Run(shader_unit, 1.0f);
+        REQUIRE(shader_unit.output[shader_unit.output_bank][0].x.ToFloat32() ==
+                (condition ? 0.0f : 1.0f));
+    }
+}
+
 SHADER_TEST_CASE("Source Swizzle", "[video_core][shader]") {
     const auto sh_input = SourceRegister::MakeInput(0);
     const auto sh_output = DestRegister::MakeOutput(0);

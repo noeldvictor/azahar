@@ -615,55 +615,42 @@ void JitShader::Compile_SanitizedMul(QReg src1, QReg src2, QReg scratch0) {
     AND(src1.B16(), src1.B16(), VSCRATCH0.B16());
 }
 
-void JitShader::Compile_EvaluateCondition(Instruction instr) {
+Cond JitShader::Compile_EvaluateCondition(Instruction instr) {
     const bool refx = instr.flow_control.refx.Value();
     const bool refy = instr.flow_control.refy.Value();
 
     switch (instr.flow_control.op) {
-    // Note: NXOR is used below to check for equality
-    case Instruction::FlowControlType::Or: {
-        XReg OpX = XSCRATCH0;
-        if (!refx) {
-            EOR(OpX, COND0, u8(refx) ^ 1);
-        } else {
-            OpX = COND0;
+    case Instruction::FlowControlType::Or:
+        if (refx && refy) {
+            CMN(COND0, COND1);
+            return Cond::NE;
         }
-        XReg OpY = XSCRATCH1;
-        if (!refy) {
-            EOR(OpY, COND1, u8(refy) ^ 1);
-        } else {
-            OpY = COND1;
+        if (!refx && !refy) {
+            TST(COND0, COND1);
+            return Cond::EQ;
         }
-        ORR(XSCRATCH0, OpX, OpY);
-        CMP(XSCRATCH0, 0);
-        break;
-    }
-    // Note: TST will AND two registers and set the EQ/NE flags on the result
-    case Instruction::FlowControlType::And: {
-        XReg OpX = XSCRATCH0;
-        if (!refx) {
-            EOR(OpX, COND0, u8(refx) ^ 1);
-        } else {
-            OpX = COND0;
+        CMP(COND0, COND1);
+        return refx ? Cond::GE : Cond::LE;
+    case Instruction::FlowControlType::And:
+        if (refx && refy) {
+            TST(COND0, COND1);
+            return Cond::NE;
         }
-        XReg OpY = XSCRATCH1;
-        if (!refy) {
-            EOR(OpY, COND1, u8(refy) ^ 1);
-        } else {
-            OpY = COND1;
+        if (!refx && !refy) {
+            CMN(COND0, COND1);
+            return Cond::EQ;
         }
-        TST(OpX, OpY);
-        break;
-    }
+        CMP(COND0, COND1);
+        return refx ? Cond::GT : Cond::LT;
     case Instruction::FlowControlType::JustX:
-        CMP(COND0, u8(refx) ^ 1);
-        break;
+        CMP(COND0, u8(refx));
+        return Cond::EQ;
     case Instruction::FlowControlType::JustY:
-        CMP(COND1, u8(refy) ^ 1);
-        break;
+        CMP(COND1, u8(refy));
+        return Cond::EQ;
     default:
         UNREACHABLE();
-        break;
+        return Cond::AL;
     }
 }
 
@@ -953,9 +940,9 @@ void JitShader::Compile_END(Instruction instr) {
 void JitShader::Compile_BREAKC(Instruction instr) {
     Compile_Assert(loop_depth, "BREAKC must be inside a LOOP");
     if (loop_depth) {
-        Compile_EvaluateCondition(instr);
+        const Cond condition = Compile_EvaluateCondition(instr);
         ASSERT(!loop_break_labels.empty());
-        B(Cond::NE, loop_break_labels.back());
+        B(condition, loop_break_labels.back());
     }
 }
 
@@ -973,9 +960,9 @@ void JitShader::Compile_CALL(Instruction instr) {
 }
 
 void JitShader::Compile_CALLC(Instruction instr) {
-    Compile_EvaluateCondition(instr);
+    const Cond condition = Compile_EvaluateCondition(instr);
     Label b;
-    B(Cond::EQ, b);
+    B(invert(condition), b);
     Compile_CALL(instr);
     l(b);
 }
@@ -1068,12 +1055,13 @@ void JitShader::Compile_IF(Instruction instr) {
     Label l_else, l_endif;
 
     // Evaluate the "IF" condition
+    Cond condition = Cond::NE;
     if (instr.opcode.Value() == OpCode::Id::IFU) {
         Compile_UniformCondition(instr);
     } else if (instr.opcode.Value() == OpCode::Id::IFC) {
-        Compile_EvaluateCondition(instr);
+        condition = Compile_EvaluateCondition(instr);
     }
-    B(Cond::EQ, l_else);
+    B(invert(condition), l_else);
 
     // Compile the code that corresponds to the condition evaluating as true
     Compile_Block(instr.flow_control.dest_offset);
@@ -1131,23 +1119,21 @@ void JitShader::Compile_LOOP(Instruction instr) {
 }
 
 void JitShader::Compile_JMP(Instruction instr) {
+    Cond condition = Cond::NE;
     if (instr.opcode.Value() == OpCode::Id::JMPC) {
-        Compile_EvaluateCondition(instr);
+        condition = Compile_EvaluateCondition(instr);
     } else if (instr.opcode.Value() == OpCode::Id::JMPU) {
         Compile_UniformCondition(instr);
     } else {
         UNREACHABLE();
     }
 
-    const bool inverted_condition =
-        (instr.opcode.Value() == OpCode::Id::JMPU) && (instr.flow_control.num_instructions & 1);
+    if ((instr.opcode.Value() == OpCode::Id::JMPU) && (instr.flow_control.num_instructions & 1)) {
+        condition = invert(condition);
+    }
 
     Label& b = instruction_labels[instr.flow_control.dest_offset];
-    if (inverted_condition) {
-        B(Cond::EQ, b);
-    } else {
-        B(Cond::NE, b);
-    }
+    B(condition, b);
 }
 
 static void Emit(GeometryEmitter* emitter, ShaderUnit* unit) {
