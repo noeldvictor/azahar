@@ -533,14 +533,15 @@
   power A/B exists.
 - ARM64 Dynarmic may fuse `VectorSignExtend8/16/32` or `VectorZeroExtend8/16/32` with the
   immediately following matching `VectorLogicalShiftLeft16/32/64` only when the extension has one
-  use, the shift consumes it as argument zero, and the immediate is smaller than the original
-  narrow element width. The extension then aliases its narrow source and the consumer emits one
-  native `SSHLL`/`USHLL`. Shared, non-adjacent, mismatched-width, non-immediate, and out-of-range
+  use and the shift consumes it as argument zero. An immediate smaller than the original narrow
+  element width emits native `SSHLL`/`USHLL`; an immediate exactly equal to that width is accepted
+  only for zero extension and emits native `SHLL`. The extension then aliases its narrow source.
+  Shared, non-adjacent, mismatched-width, non-immediate, larger-than-width, and signed maximum-width
   forms must retain `SXTL`/`UXTL` plus `SHL`; the alias and fused-emitter predicates must remain
   symmetrical so a fallback never sees an unextended operand. Preserve signed/unsigned 8/16/32-bit
-  A32 `VSHLL` coverage, maximum shifts, high registers, source/destination overlap, untouched SIMD
-  state, and unchanged CPSR flags. Treat the measured result as path-local until a matched game and
-  power A/B exists.
+  A32 `VSHLL` coverage, architectural maximum-width `VSHLL.I8/I16/I32`, high registers, source/
+  destination overlap, untouched SIMD state, and unchanged CPSR flags. Treat the measured result
+  as path-local until a matched game and power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

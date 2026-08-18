@@ -689,9 +689,17 @@ widen-and-shift shape through the ARM64 backend. The previous `SXTL`/`UXTL` plus
 one native `SSHLL`/`USHLL`. Shared, non-adjacent, mismatched, and out-of-range IR keeps the original
 two-instruction path. A disassembly-checked, nonzero-checksum Thor benchmark measured the exact
 affected sequence at **4.01x-4.14x on A510**, **2.00x on A715/A710**, and **2.80x on X3**. All
-1,760 assertions in 23 focused ARM/Dynarmic cases pass on Thor, including maximum shifts, high
-registers, and source/destination overlap. This is optimization 99; none of these path-local figures
-can be added together or treated as a whole-game FPS or battery-watt result.
+1,760 assertions in 23 focused ARM/Dynarmic cases pass on Thor, including the largest signed and
+unsigned immediates, high registers, and source/destination overlap. This is optimization 99; none
+of these path-local figures can be added together or treated as a whole-game FPS or battery-watt
+result.
+
+The architectural maximum-width `VSHLL.I8/I16/I32` forms are now covered too. Their adjacent,
+sole-use zero extension plus shift-by-8/16/32 becomes one native AArch64 `SHLL`; smaller signed and
+unsigned shifts retain the `SSHLL`/`USHLL` fusion above. Exact Thor medians were **4.06x-4.27x on
+A510**, **2.00x on A715/A710**, and **2.80x on X3** for this instruction sequence. The expanded
+on-device suite passes 1,766 assertions in 23 cases, including partial register overlap. This is
+optimization 100, not a 100x emulator or whole-game speed claim.
 
 ## Vulkan Worker-Power Updates
 

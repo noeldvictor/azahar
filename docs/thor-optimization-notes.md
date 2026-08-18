@@ -4360,6 +4360,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   FPS, sustained watts, frametimes, and thermals still require a matched title/scene/cache/renderer/
   driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Maximum-Width Vector Shift-Long
+
+- A32 `VSHLL.I8`, `VSHLL.I16`, and `VSHLL.I32`, plus A64 `SHLL`, use the maximum shift equal to the
+  original element width. Their frontend IR is an adjacent zero extension followed by a logical
+  shift by 8, 16, or 32. Optimization 99 deliberately required a smaller immediate because native
+  `SSHLL`/`USHLL` only encode 0 through width-minus-one, so these maximum forms still emitted
+  `UXTL` plus `SHL`.
+- The recorded Cortex-X3, A715, A710, and A510 software optimization guides explicitly group
+  `SHLL` with the basic AdvSIMD immediate-shift family. They list latency/throughput as 2/2 on X3,
+  2/1 on A715 and A710, and latency 3 with A510's `2,1` throughput notation. Exact AArch64 assembly
+  and `llvm-objdump` then verified that the candidate loop contained one `SHLL` where the baseline
+  contained `UXTL` plus `SHL`, with otherwise identical loop control.
+- The benchmark ran four independent vector operations per loop for 5,000,000 iterations, or
+  20,000,000 affected operations per sample, across nine alternating-order rounds. Warmup and timed
+  checksums matched and remained nonzero. Median results were:
+
+  | Guest form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VSHLL.I8 #8` | 43,724,323 -> 10,239,271 ns; 4.270257x | 2.001835x | 1.999951x | 2.803131x |
+  | `VSHLL.I16 #16` | 43,645,052 -> 10,329,427 ns; 4.225312x | 1.998722x | 2.000696x | 2.801387x |
+  | `VSHLL.I32 #32` | 43,650,364 -> 10,739,583 ns; 4.064438x | 2.000654x | 1.999606x | 2.801009x |
+
+- ARM64 Dynarmic now accepts equality only for the adjacent, sole-use zero-extension shape and emits
+  native `SHLL`; signed extension remains limited to a smaller immediate, and larger, shared,
+  non-adjacent, mismatched, or non-immediate forms retain the generic path. The extension alias and
+  consumer predicates use the same rule so a rejected fusion cannot expose an unextended operand.
+  Permanent A32 cases cover all three encodings, exact results, source preservation, unrelated SIMD
+  state, CPSR state, high registers, and partial source/destination overlap.
+- The release build passed and Thor passed all 1,766 assertions in 23 focused
+  `[core][arm][dynarmic]` cases. Source/test commit `03e97ef1e` was pushed directly to
+  `origin/master` over command-line Git SSH. The initial release build passed in 2 minutes 57 seconds;
+  the exact post-commit release rebuild passed in 1 minute 42 seconds.
+- The installed ARM64 APK is 28,986,332 bytes, reports `03e97ef1e-vanilla-thor`, and has SHA-256
+  `26A636CBCB7532E0B40D6EEC4FF3A864C382B01DA5FAB3D639B344EFC661FA46`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was empty,
+  and no app UI or game was launched. Thor reported USB power, no AC/wireless power, 78% battery,
+  4.126 V, and 23.0 C. That charging context is not a battery-discharge watt measurement.
+- Cleanup deleted both device binaries, all local benchmark/object/stripped-test artifacts, four
+  rendered manual pages, the 447,741,832-byte native test ELF, `.cxx` tool metadata, and reproducible
+  Gradle/JNI/R8/native-symbol staging. It retained the 28,986,332-byte APK plus its 476-byte metadata
+  and the 2,791,288,080-byte active ARM64 CMake/Ninja cache. Total logical host removal was
+  2,499,901,607 bytes; C: recovered 2,059,575,296 physical bytes and reported 81,604,730,880 bytes
+  free afterward.
+- This is optimization 100 in the overlapping Thor work tally. Its 1.999x-4.270x figures apply only
+  to these maximum-width widening shifts and cannot be added to the other 99 items. Whole-game FPS,
+  sustained watts, frametimes, and thermals still require a matched title/scene/cache/renderer/
+  driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
