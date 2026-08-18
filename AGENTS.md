@@ -504,6 +504,12 @@
   and reassociated/fused candidates regressed X3 or other big cores. Preserve ARM `S`-bit N/Z,
   unchanged C/V/Q/GE, modulo-64-bit arithmetic, Thumb behavior, unsigned extremes, and every
   source/destination alias in permanent tests.
+- ARM and Thumb-2 `SMULL` deliberately use `SignedMultiplyLong` in generic Dynarmic IR. Keep ARM64
+  on one native `SMULL Xd, Wn, Wm`; do not restore two `SXTW` operations followed by X-form `MUL`.
+  The native path measured 1.600x-3.500x faster across the Thor's X3, A715, A710, and A510 core
+  classes. Preserve exact signed 32x32-to-64 arithmetic, ARM `S`-bit N/Z updates, unchanged
+  C/V/Q/GE, Thumb behavior, signed extremes/zero, and every source/destination alias in permanent
+  tests.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

@@ -651,6 +651,19 @@ rejected. The complete on-device ARM/Dynarmic suite passes 1,217 assertions in 1
 exact ARM64 release build passes. This is optimization 95 in the overlapping work tally; it is not
 a whole-game FPS, battery-watt, or additive speedup claim.
 
+## Dynarmic Signed Widening-Multiply Update
+
+ARM and Thumb-2 `SMULL` now retain their signed 32x32-to-64-bit operation in Dynarmic IR. The
+ARM64 backend emits one native `SMULL Xd, Wn, Wm` instead of two `SXTW` instructions followed by
+X-form `MUL`. ARM flag-setting, Thumb behavior, signed extremes, complete 64-bit results, and
+source/destination aliases remain exact.
+
+An alternating-order Thor benchmark measured that affected host sequence at 3.500x on A510 CPU 0,
+1.826x-1.849x on A715 CPUs 3-4, 1.626x on A710 CPU 6, and 1.600x on X3 CPU 7. The complete
+on-device ARM/Dynarmic suite passes 1,364 assertions in 20 cases, and the exact ARM64 release build
+passes. This is optimization 96 in the overlapping work tally; these figures apply only when the
+guest executes `SMULL`, not to whole-game FPS or battery watts.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

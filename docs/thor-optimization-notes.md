@@ -4152,6 +4152,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and thermals still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
   brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Signed Widening Multiply
+
+- ARM and Thumb-2 `SMULL` previously sign-extended both 32-bit operands into 64-bit IR and then
+  used generic `Mul64`. ARM64 emitted `SXTW`, `SXTW`, and X-form `MUL` for each guest operation.
+  The new generic `SignedMultiplyLong(U32, U32) -> U64` IR operation emits one native
+  `SMULL Xd, Wn, Wm`. The x64 backend preserves the same semantics with two `MOVSXD` operations
+  and 64-bit `IMUL`; the generic modulo-64-bit result remains unchanged.
+- The complete relevant manual pages were rendered and visually checked. Cortex-X3 issue 4.0 page
+  16 and Cortex-A710 issue 4.0 page 21 list multiply-long `SMULL` at latency 2 and throughput 2 on
+  the M pipelines. Cortex-A715 issue 5.0 page 18 states that the `SMULL` zero-accumulator alias can
+  execute on M at throughput 2. Cortex-A510 issue 6.0 page 18 lists X-form `MUL` at latency 4 and
+  throughput 1/2, versus latency 2 and throughput 1 for the long multiply-accumulate form that
+  encodes `SMULL` when its accumulator is zero.
+- `llvm-objdump` verified the exact temporary loop bodies. The baseline repeated four independent
+  groups of `SXTW`, `SXTW`, `MUL`; the candidate repeated four independent `SMULL X, W, W`
+  instructions. Each sample ran 20,000,000 iterations, or 80,000,000 signed products, for nine
+  alternating-order rounds. All warmup and timed checksums matched. Median results were:
+
+  | Thor core | Baseline -> native `SMULL` | Result |
+  | --- | --- | --- |
+  | A510 CPU 0 | 141,038,021 -> 40,297,917 ns | 3.499884x |
+  | A715 CPU 3 | 30,355,469 -> 16,418,489 ns | 1.848859x |
+  | A715 CPU 4 | 30,369,948 -> 16,633,959 ns | 1.825780x |
+  | A710 CPU 6 | 23,290,677 -> 14,327,969 ns | 1.625539x |
+  | X3 CPU 7 | 20,128,438 -> 12,582,187 ns | 1.599757x |
+
+  MIDRs were re-read immediately before the run: CPU 0 `0x411fd461`, CPUs 3-4 `0x411fd4d0`, CPU 6
+  `0x412fd470`, and CPU 7 `0x411fd4e0`. Thor reported USB power, no AC/wireless power, 80% battery,
+  4.160 V, and 21.0 C. That is useful thermal context, not a battery-discharge watt measurement.
+- The permanent regression covers ARM `SMULL`/`SMULLS`, Thumb-2 `SMULL`, source/destination aliases,
+  seven signed-extreme/zero inputs, ARM N/Z updates, unchanged C/V/Q/GE, and complete 64-bit
+  results. The complete Thor `[core][arm][dynarmic]` run passed 1,364 assertions in 20 cases. The
+  source/test commit is `f511c52f8`, pushed directly to `origin/master` over command-line Git SSH.
+  The clean JDK 17 release-style build passed in 3 minutes 7 seconds; the exact post-commit rebuild
+  passed in 1 minute 35 seconds.
+- The installed ARM64 APK is 28,984,800 bytes, reports `f511c52f8-vanilla-thor`, and has SHA-256
+  `2E68C3E83CF13AB444C7321DE749B98D8DE9617EFD84983B9DE107FD57944F99`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, and no game was launched.
+- Cleanup removed the benchmark/encoding source and binaries, four manual renders, stripped Thor
+  test copy, both device copies, 447,640,208-byte native test ELF, and reproducible Gradle/JNI/R8/
+  native-symbol staging. It retained the 28,984,800-byte APK plus 476-byte metadata and the
+  2,796,499,773-byte active ARM64 CMake/Ninja cache. Total logical removal was 2,493,530,904 bytes;
+  C: recovered 2,053,332,992 physical bytes and reported 81,954,062,336 bytes free afterward.
+- This is optimization 96 in the Thor work tally. Its 1.600x-3.500x result applies only to the
+  affected signed widening-multiply host sequence and cannot be added to the other 95 items.
+  Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
+  cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
