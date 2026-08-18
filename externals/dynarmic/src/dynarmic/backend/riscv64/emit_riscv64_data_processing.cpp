@@ -525,6 +525,11 @@ void EmitIR<IR::Opcode::ByteReverseHalf>(biscuit::Assembler&, EmitContext&, IR::
 }
 
 template<>
+void EmitIR<IR::Opcode::ByteReverseHalfwords32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected ByteReverseHalfwords32");
+}
+
+template<>
 void EmitIR<IR::Opcode::ByteReverseDual>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }

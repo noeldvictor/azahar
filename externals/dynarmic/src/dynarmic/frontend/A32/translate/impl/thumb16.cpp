@@ -819,17 +819,8 @@ bool TranslatorVisitor::thumb16_REV(Reg m, Reg d) {
 
 // REV16 <Rd>, <Rm>
 // Rd cannot encode R15.
-// TODO: Consider optimizing
 bool TranslatorVisitor::thumb16_REV16(Reg m, Reg d) {
-    const auto Rm = ir.GetRegister(m);
-    const auto upper_half = ir.LeastSignificantHalf(ir.LogicalShiftRight(Rm, ir.Imm8(16), ir.Imm1(0)).result);
-    const auto lower_half = ir.LeastSignificantHalf(Rm);
-    const auto rev_upper_half = ir.ZeroExtendHalfToWord(ir.ByteReverseHalf(upper_half));
-    const auto rev_lower_half = ir.ZeroExtendHalfToWord(ir.ByteReverseHalf(lower_half));
-    const auto result = ir.Or(ir.LogicalShiftLeft(rev_upper_half, ir.Imm8(16), ir.Imm1(0)).result,
-                              rev_lower_half);
-
-    ir.SetRegister(d, result);
+    ir.SetRegister(d, ir.ByteReverseHalfwords(ir.GetRegister(m)));
     return true;
 }
 

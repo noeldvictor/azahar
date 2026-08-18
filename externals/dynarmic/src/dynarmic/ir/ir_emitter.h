@@ -148,6 +148,7 @@ public:
     U64 IndeterminateExtendToLong(const UAny& a);
     U32 ByteReverseWord(const U32& a);
     U16 ByteReverseHalf(const U16& a);
+    U32 ByteReverseHalfwords(const U32& a);
     U64 ByteReverseDual(const U64& a);
     U32 ReverseBits(const U32& a);
     U32U64 CountLeadingZeros(const U32U64& a);

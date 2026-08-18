@@ -27,7 +27,8 @@ IR::Block A32AddressSpace::GenerateIR(IR::LocationDescriptor descriptor) const {
     IR::Block ir_block = A32::Translate(A32::LocationDescriptor{descriptor}, conf.callbacks, {conf.arch_version, conf.define_unpredictable_behaviour, conf.hook_hint_instructions});
 
     Optimization::PolyfillPass(ir_block,
-                               {.extend_and_add = true,
+                               {.byte_reverse_halfwords = true,
+                                .extend_and_add = true,
                                 .pack_halfword = true,
                                 .packed_sign_extend_byte_to_half = true,
                                 .packed_saturation16 = true,

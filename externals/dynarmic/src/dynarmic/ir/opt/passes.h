@@ -21,6 +21,7 @@ class Block;
 namespace Dynarmic::Optimization {
 
 struct PolyfillOptions {
+    bool byte_reverse_halfwords = false;
     bool extend_and_add = false;
     bool pack_halfword = false;
     bool packed_sign_extend_byte_to_half = false;

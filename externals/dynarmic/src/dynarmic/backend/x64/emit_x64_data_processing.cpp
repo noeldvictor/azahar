@@ -1608,6 +1608,10 @@ void EmitX64::EmitByteReverseHalf(EmitContext& ctx, IR::Inst* inst) {
     ctx.reg_alloc.DefineValue(inst, result);
 }
 
+void EmitX64::EmitByteReverseHalfwords32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected ByteReverseHalfwords32");
+}
+
 void EmitX64::EmitByteReverseDual(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     const Xbyak::Reg64 result = ctx.reg_alloc.UseScratchGpr(args[0]);

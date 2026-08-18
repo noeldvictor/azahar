@@ -46,12 +46,7 @@ bool TranslatorVisitor::arm_REV16(Cond cond, Reg d, Reg m) {
         return true;
     }
 
-    const auto reg_m = ir.GetRegister(m);
-    const auto lo = ir.And(ir.LogicalShiftRight(reg_m, ir.Imm8(8), ir.Imm1(0)).result, ir.Imm32(0x00FF00FF));
-    const auto hi = ir.And(ir.LogicalShiftLeft(reg_m, ir.Imm8(8), ir.Imm1(0)).result, ir.Imm32(0xFF00FF00));
-    const auto result = ir.Or(lo, hi);
-
-    ir.SetRegister(d, result);
+    ir.SetRegister(d, ir.ByteReverseHalfwords(ir.GetRegister(m)));
     return true;
 }
 

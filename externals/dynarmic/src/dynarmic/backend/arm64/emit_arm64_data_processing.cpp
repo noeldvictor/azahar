@@ -1574,6 +1574,13 @@ void EmitIR<IR::Opcode::ByteReverseHalf>(oaknut::CodeGenerator& code, EmitContex
 }
 
 template<>
+void EmitIR<IR::Opcode::ByteReverseHalfwords32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitTwoOp<32>(
+        code, ctx, inst,
+        [&](auto& Wresult, auto& Woperand) { code.REV16(Wresult, Woperand); });
+}
+
+template<>
 void EmitIR<IR::Opcode::ByteReverseDual>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitTwoOp<64>(
         code, ctx, inst,

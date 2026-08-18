@@ -497,6 +497,10 @@ U16 IREmitter::ByteReverseHalf(const U16& a) {
     return Inst<U16>(Opcode::ByteReverseHalf, a);
 }
 
+U32 IREmitter::ByteReverseHalfwords(const U32& a) {
+    return Inst<U32>(Opcode::ByteReverseHalfwords32, a);
+}
+
 U64 IREmitter::ByteReverseDual(const U64& a) {
     return Inst<U64>(Opcode::ByteReverseDual, a);
 }

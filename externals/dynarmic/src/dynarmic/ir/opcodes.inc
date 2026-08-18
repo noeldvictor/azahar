@@ -163,6 +163,7 @@ OPCODE(ZeroExtendWordToLong,                                U64,            U32 
 OPCODE(ZeroExtendLongToQuad,                                U128,           U64                                                             )
 OPCODE(ByteReverseWord,                                     U32,            U32                                                             )
 OPCODE(ByteReverseHalf,                                     U16,            U16                                                             )
+OPCODE(ByteReverseHalfwords32,                              U32,            U32                                                             )
 OPCODE(ByteReverseDual,                                     U64,            U64                                                             )
 OPCODE(ReverseBits32,                                       U32,            U32                                                             )
 OPCODE(CountLeadingZeros32,                                 U32,            U32                                                             )
