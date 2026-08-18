@@ -3160,6 +3160,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   scene, cache, renderer, driver, resolution, layout, mode, fan, brightness, and duration A/B is
   still required before attributing a sustained system-level gain.
 
+## 2026-08-17 AArch64 PICA Partial MOVA Extraction
+
+- The narrowed AArch64 `MOVA` still converted X/Y with one D-form `.2S` `FCVTZS`, but partial
+  X-only and Y-only masks then transferred the complete low 64-bit pair to a GPR before a separate
+  `SXTW` or `ASR`. A signed element transfer can select either 32-bit lane and sign-extend it into
+  the destination GPR in one instruction, removing one generated instruction from every partial
+  `MOVA` while preserving the existing truncating conversion.
+- The Cortex-X3, A715, and A710 guides list element-to-GPR `UMOV`/`SMOV` at two-cycle latency and
+  one-per-cycle throughput on pages 32, 35, and 53 respectively. The A510 guide lists three-cycle
+  latency and one-per-cycle throughput on page 44. This is baseline AdvSIMD functionality on all
+  Snapdragon 8 Gen 2 core classes, not an X3-only extension.
+- A disassembly-checked ARM64 benchmark compared the exact generated sequences over 67,108,864
+  partial conversions per sample, alternating A/B order across ten rounds and taking each best
+  result. Current versus direct-`SMOV` X extraction measured 2.392305 versus 0.879373 ns/op on CPU 0
+  (63.24% faster), 0.463409 versus 0.463997 on CPU 3 (effectively tied), 0.463285 versus 0.370489 on
+  CPU 5 (20.03%), and 0.338756 versus 0.338707 on CPU 7 (tied). Y results were 2.399199 versus
+  0.882965 (63.20%), 0.463819 versus 0.463686 (tied), 0.463347 versus 0.370460 (20.05%), and
+  0.338737 versus 0.338700 ns/op (tied).
+- Replacing the packed XY extraction with two `SMOV`s was rejected. Although it helped A510, it was
+  26.10% slower on CPU 3, 71.45% slower on CPU 5, and 97.46% slower on CPU 7 because two element
+  transfers contend for the documented transfer path. The shipped hybrid therefore uses one
+  `SMOV` for X-only or Y-only and retains one packed transfer plus `SXTW`/`ASR` for XY.
+- Correctness is exact for the selected path: `SMOV Xd, Vn.S[lane]` produces the same signed
+  32-to-64-bit value as the removed packed `UMOV` plus lane extraction. Disabled address registers
+  remain untouched. Permanent coverage now includes an explicit negative Y-only case alongside
+  X-only preservation, XY truncation, exceptional ignored Z/W inputs, and initial-state checks.
+- The full ARM64 native build passed in 1 minute 37 seconds. On Wi-Fi ADB `192.168.1.33:5555`, the
+  focused `PICA State Access*` suite passed all 102 assertions in two interpreter/JIT cases and the
+  complete `[shader]` suite passed all 18,304 assertions in 50 cases. The 25,862,424-byte stripped
+  test ELF and the 8,536-byte benchmark were removed from both host and Thor immediately. Source
+  commit `ef555210d` was pushed to `master` before packaging.
+- Release-style packaging passed in 2 minutes 55 seconds. The ARM64-only, v2-signed APK is
+  28,975,900 bytes, reports `ef555210d-vanilla-thor`, and has SHA-256
+  `7474747FA816752AD669E2E7017AFE55759CAC0EEC2A39ADB8623F5D06558EE3`. It installed successfully
+  over `org.azahar_emu.azahar.debug`, reports `primaryCpuAbi=arm64-v8a`, and remains force-stopped;
+  no UI or game was launched. The Thor reported USB power, no AC/wireless power, 80% battery,
+  4.211 V, and 23.0 C, so this is not a battery-discharge watt measurement.
+- Post-verification cleanup removed about 2.02 GB of Gradle/JNI/native staging plus the repo-local
+  Gradle cache and rendered manual pages. `app/build` retains only the APK and its 476-byte metadata;
+  the 3,225,378,046-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains. C: reported
+  86,221,090,816 bytes free after cleanup.
+- This is an isolated generated-instruction and throughput improvement, not a whole-game FPS or
+  wattage result. A matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B remains required before claiming a sustained system-level gain.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

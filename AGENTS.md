@@ -103,10 +103,14 @@
   two dependent pairwise reductions; the shorter dependency graph measured 16.7-26.0% faster on
   Thor core classes. Keep interpreter/JIT W-NaN and broadcast-result coverage.
 - AArch64 PICA `MOVA` consumes only X/Y. Keep its truncating conversion on D-form `.2S` `FCVTZS`,
-  extract the resulting low 64-bit pair once, and sign-extend only enabled address lanes. Do not
-  widen the conversion back to Q-form or write disabled address/loop registers. Preserve negative
-  truncation, partial masks, ignored exceptional Z/W inputs, and initial-state behavior; D-form
-  measured essentially twice the Q-form throughput on every Thor core class.
+  then choose extraction by the destination mask. X-only and Y-only must use one signed element
+  transfer (`SMOV Xd, Vn.S[lane]`), which combines the SIMD-to-GPR move and sign extension. XY must
+  retain one packed low-64-bit transfer followed by `SXTW`/`ASR`: two `SMOV`s measured 26.1-97.5%
+  slower on the Thor's A710/A715/X3 cores. Do not widen the conversion back to Q-form or write
+  disabled address/loop registers. Preserve negative truncation, partial masks, ignored exceptional
+  Z/W inputs, and initial-state behavior; keep explicit X-only, Y-only, and XY interpreter/JIT
+  coverage. D-form conversion measured essentially twice the Q-form throughput on every core class,
+  while partial-mask `SMOV` removed one more instruction and won or tied on all four classes.
 - The AArch64 PICA `CMP` helper combines X/Y only when both lanes use the same operation. Preserve
   the ordered `FCMEQ`/`FCMGT`/`FCMGE` masks, inverted-equality implementation of `NotEqual` so NaN
   remains unordered/true, sign-bit extraction for lanes zero and one, and the unchanged scalar path
