@@ -109,11 +109,12 @@ bool TranslatorVisitor::thumb32_BFI(Reg n, Imm<3> imm3, Reg d, Imm<2> imm2, Imm<
         return UnpredictableInstruction();
     }
 
-    const u32 inclusion_mask = mcl::bit::ones<u32>(msbit - lsbit + 1) << lsbit;
-    const u32 exclusion_mask = ~inclusion_mask;
-    const IR::U32 operand1 = ir.And(ir.GetRegister(d), ir.Imm32(exclusion_mask));
-    const IR::U32 operand2 = ir.And(ir.LogicalShiftLeft(ir.GetRegister(n), ir.Imm8(u8(lsbit))), ir.Imm32(inclusion_mask));
-    const IR::U32 result = ir.Or(operand1, operand2);
+    const u8 lsb = static_cast<u8>(lsbit);
+    const u8 width = static_cast<u8>(msbit - lsbit + 1);
+    const IR::U32 destination = ir.GetRegister(d);
+    const IR::U32 result = d == n
+                             ? ir.BitFieldInsertSelf(destination, lsb, width)
+                             : ir.BitFieldInsert(destination, ir.GetRegister(n), lsb, width);
 
     ir.SetRegister(d, result);
     return true;

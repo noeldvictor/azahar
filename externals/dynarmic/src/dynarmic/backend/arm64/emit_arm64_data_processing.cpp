@@ -1616,6 +1616,33 @@ void EmitIR<IR::Opcode::CountLeadingZeros64>(oaknut::CodeGenerator& code, EmitCo
         [&](auto& Xresult, auto& Xoperand) { code.CLZ(Xresult, Xoperand); });
 }
 
+template<>
+void EmitIR<IR::Opcode::BitFieldInsert32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    ASSERT(args[2].IsImmediate() && args[3].IsImmediate());
+    const u8 lsb = inst->GetArg(2).GetU8();
+    const u8 width = inst->GetArg(3).GetU8();
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+    auto Wsource = ctx.reg_alloc.ReadW(args[1]);
+    RegAlloc::Realize(Wresult, Wsource);
+    code.BFI(*Wresult, *Wsource, lsb, width);
+}
+
+template<>
+void EmitIR<IR::Opcode::BitFieldInsertSelf32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    ASSERT(args[1].IsImmediate() && args[2].IsImmediate());
+    const u8 lsb = inst->GetArg(1).GetU8();
+    const u8 width = inst->GetArg(2).GetU8();
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+    RegAlloc::Realize(Wresult);
+    code.BFI(*Wresult, *Wresult, lsb, width);
+}
+
 template<bool is_signed>
 static void EmitBitFieldExtract(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     ASSERT(inst->GetArg(1).IsImmediate() && inst->GetArg(2).IsImmediate());

@@ -45,13 +45,12 @@ bool TranslatorVisitor::arm_BFI(Cond cond, Imm<5> msb, Reg d, Imm<5> lsb, Reg n)
         return true;
     }
 
-    const u32 lsb_value = lsb.ZeroExtend();
-    const u32 msb_value = msb.ZeroExtend();
-    const u32 inclusion_mask = mcl::bit::ones<u32>(msb_value - lsb_value + 1) << lsb_value;
-    const u32 exclusion_mask = ~inclusion_mask;
-    const IR::U32 operand1 = ir.And(ir.GetRegister(d), ir.Imm32(exclusion_mask));
-    const IR::U32 operand2 = ir.And(ir.LogicalShiftLeft(ir.GetRegister(n), ir.Imm8(u8(lsb_value))), ir.Imm32(inclusion_mask));
-    const IR::U32 result = ir.Or(operand1, operand2);
+    const u8 lsb_value = static_cast<u8>(lsb.ZeroExtend());
+    const u8 width = static_cast<u8>(msb.ZeroExtend() - lsb_value + 1);
+    const IR::U32 destination = ir.GetRegister(d);
+    const IR::U32 result = d == n
+                             ? ir.BitFieldInsertSelf(destination, lsb_value, width)
+                             : ir.BitFieldInsert(destination, ir.GetRegister(n), lsb_value, width);
 
     ir.SetRegister(d, result);
     return true;

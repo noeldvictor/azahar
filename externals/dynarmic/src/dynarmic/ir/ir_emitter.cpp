@@ -521,6 +521,22 @@ U32U64 IREmitter::CountLeadingZeros(const U32U64& a) {
     return Inst<U64>(Opcode::CountLeadingZeros64, a);
 }
 
+U32 IREmitter::BitFieldInsert(const U32& destination, const U32& source, u8 lsb, u8 width) {
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+    if (width == 32) {
+        return source;
+    }
+    return Inst<U32>(Opcode::BitFieldInsert32, destination, source, Imm8(lsb), Imm8(width));
+}
+
+U32 IREmitter::BitFieldInsertSelf(const U32& source, u8 lsb, u8 width) {
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+    if (lsb == 0) {
+        return source;
+    }
+    return Inst<U32>(Opcode::BitFieldInsertSelf32, source, Imm8(lsb), Imm8(width));
+}
+
 U32 IREmitter::SignedBitFieldExtract(const U32& a, u8 lsb, u8 width) {
     ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
     return Inst<U32>(Opcode::SignedBitFieldExtract32, a, Imm8(lsb), Imm8(width));

@@ -415,6 +415,21 @@ void PolyfillBitFieldExtract(IR::IREmitter& ir, IR::Inst& inst) {
     }
 }
 
+void PolyfillBitFieldInsert(IR::IREmitter& ir, IR::Inst& inst, bool is_self) {
+    const IR::U32 destination = (IR::U32)inst.GetArg(0);
+    const IR::U32 source = is_self ? destination : (IR::U32)inst.GetArg(1);
+    const size_t immediate_offset = is_self ? 1 : 2;
+    const u8 lsb = inst.GetArg(immediate_offset).GetU8();
+    const u8 width = inst.GetArg(immediate_offset + 1).GetU8();
+    ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
+
+    const u32 mask = width == 32 ? 0xffffffffU : ((1U << width) - 1) << lsb;
+    const IR::U32 preserved = ir.And(destination, ir.Imm32(~mask));
+    const IR::U32 shifted = ir.LogicalShiftLeft(source, ir.Imm8(lsb));
+    const IR::U32 inserted = ir.And(shifted, ir.Imm32(mask));
+    inst.ReplaceUsesWith(ir.Or(preserved, inserted));
+}
+
 void PolyfillReverseBits(IR::IREmitter& ir, IR::Inst& inst) {
     const IR::U32 swapped = ir.ByteReverseWord((IR::U32)inst.GetArg(0));
 
@@ -449,6 +464,16 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         ir.SetInsertionPointBefore(&inst);
 
         switch (inst.GetOpcode()) {
+        case IR::Opcode::BitFieldInsert32:
+            if (polyfill.bit_field_insert) {
+                PolyfillBitFieldInsert(ir, inst, false);
+            }
+            break;
+        case IR::Opcode::BitFieldInsertSelf32:
+            if (polyfill.bit_field_insert) {
+                PolyfillBitFieldInsert(ir, inst, true);
+            }
+            break;
         case IR::Opcode::SignedBitFieldExtract32:
             if (polyfill.bit_field_extract) {
                 PolyfillBitFieldExtract<true>(ir, inst);

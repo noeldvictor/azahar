@@ -2969,3 +2969,129 @@ TEST_CASE("Dynarmic A32 bitfield extract preserves signedness, aliases, flags, a
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 BFI inserts fields without corrupting aliases, flags, or FPSCR",
+          "[core][arm][dynarmic]") {
+    struct Field {
+        std::uint8_t lsb;
+        std::uint8_t width;
+    };
+    constexpr std::array fields{
+        Field{0, 1},
+        Field{0, 32},
+        Field{31, 1},
+        Field{8, 8},
+        Field{5, 13},
+        Field{16, 16},
+    };
+
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t destination;
+        std::uint8_t source;
+        std::uint8_t lsb;
+        std::uint8_t width;
+        bool source_alias;
+        bool thumb;
+    };
+    std::array<Operation, 24> operations{};
+    std::size_t operation_index = 0;
+    for (const bool thumb : {false, true}) {
+        for (const bool source_alias : {false, true}) {
+            const std::uint8_t destination = source_alias ? 4 : 0;
+            const std::uint8_t source = source_alias ? 4 : 2;
+            for (const auto& field : fields) {
+                const std::uint8_t msb = static_cast<std::uint8_t>(field.lsb + field.width - 1);
+                const std::uint32_t instruction = [&] {
+                    if (!thumb) {
+                        return 0xe7c00010U | (static_cast<std::uint32_t>(msb) << 16) |
+                               (static_cast<std::uint32_t>(destination) << 12) |
+                               (static_cast<std::uint32_t>(field.lsb) << 7) | source;
+                    }
+                    const std::uint32_t first_half = 0xf360U | source;
+                    const std::uint32_t second_half =
+                        (static_cast<std::uint32_t>(field.lsb >> 2) << 12) |
+                        (static_cast<std::uint32_t>(destination) << 8) |
+                        (static_cast<std::uint32_t>(field.lsb & 3) << 6) | msb;
+                    return (second_half << 16) | first_half;
+                }();
+                operations[operation_index++] = Operation{
+                    instruction,
+                    destination,
+                    source,
+                    field.lsb,
+                    field.width,
+                    source_alias,
+                    thumb,
+                };
+            }
+        }
+    }
+    REQUIRE(operation_index == operations.size());
+
+    struct Input {
+        std::uint32_t destination;
+        std::uint32_t source;
+    };
+    constexpr std::array inputs{
+        Input{0x00000000, 0x00000000},
+        Input{0xffffffff, 0x00000000},
+        Input{0x00000000, 0xffffffff},
+        Input{0xa5a55a5a, 0x01234567},
+        Input{0x01234567, 0x89abcdef},
+        Input{0x80000000, 0x00000001},
+        Input{0x0000ffff, 0xffff0000},
+        Input{0xdeadbeef, 0xcafebabe},
+        Input{0x13579bdf, 0x2468ace0},
+        Input{0x55aa55aa, 0xaa55aa55},
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination, operation.source, operation.lsb,
+                operation.width, operation.source_alias, operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const auto& input : inputs) {
+            CAPTURE(input.destination, input.source);
+            const std::uint32_t destination = operation.source_alias ? input.source : input.destination;
+            const std::uint32_t source = input.source;
+            const std::uint32_t mask =
+                operation.width == 32 ? 0xffffffffU : ((1U << operation.width) - 1) << operation.lsb;
+            const std::uint32_t expected =
+                (destination & ~mask) | ((source << operation.lsb) & mask);
+
+            std::array<std::uint32_t, 16> initial_regs{
+                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+            };
+            initial_regs[operation.destination] = destination;
+            initial_regs[operation.source] = source;
+            jit.Regs() = initial_regs;
+            jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            jit.SetFpscr(initial_fpscr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[operation.destination] == expected);
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.destination) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}
