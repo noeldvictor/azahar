@@ -195,11 +195,9 @@ bool AbsoluteDifferenceLong(TranslatorVisitor& v, bool U, bool D, size_t sz, siz
 
     const auto reg_m = v.ir.GetVector(m);
     const auto reg_n = v.ir.GetVector(n);
-    const auto operand_m = v.ir.VectorZeroExtend(esize, v.ir.ZeroExtendToQuad(v.ir.VectorGetElement(64, reg_m, 0)));
-    const auto operand_n = v.ir.VectorZeroExtend(esize, v.ir.ZeroExtendToQuad(v.ir.VectorGetElement(64, reg_n, 0)));
     const auto result = [&] {
-        const auto absdiff = U ? v.ir.VectorUnsignedAbsoluteDifference(esize, operand_m, operand_n)
-                               : v.ir.VectorSignedAbsoluteDifference(esize, operand_m, operand_n);
+        const auto absdiff = U ? v.ir.VectorUnsignedAbsoluteDifferenceWiden(esize, reg_n, reg_m)
+                               : v.ir.VectorSignedAbsoluteDifferenceWiden(esize, reg_n, reg_m);
 
         if (accumulate == AccumulateBehavior::Accumulate) {
             const auto reg_d = v.ir.GetVector(d);

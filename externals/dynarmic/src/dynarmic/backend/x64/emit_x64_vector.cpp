@@ -4071,6 +4071,18 @@ void EmitX64::EmitVectorSignedAbsoluteDifference32(EmitContext& ctx, IR::Inst* i
     EmitVectorSignedAbsoluteDifference(32, ctx, inst, code);
 }
 
+void EmitX64::EmitVectorSignedAbsoluteDifferenceWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAbsoluteDifferenceWiden8");
+}
+
+void EmitX64::EmitVectorSignedAbsoluteDifferenceWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAbsoluteDifferenceWiden16");
+}
+
+void EmitX64::EmitVectorSignedAbsoluteDifferenceWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAbsoluteDifferenceWiden32");
+}
+
 void EmitX64::EmitVectorSignedMultiply16(EmitContext& ctx, IR::Inst* inst) {
     const auto upper_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetUpperFromOp);
     const auto lower_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetLowerFromOp);
@@ -5680,6 +5692,18 @@ void EmitX64::EmitVectorUnsignedAbsoluteDifference16(EmitContext& ctx, IR::Inst*
 
 void EmitX64::EmitVectorUnsignedAbsoluteDifference32(EmitContext& ctx, IR::Inst* inst) {
     EmitVectorUnsignedAbsoluteDifference(32, ctx, inst, code);
+}
+
+void EmitX64::EmitVectorUnsignedAbsoluteDifferenceWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAbsoluteDifferenceWiden8");
+}
+
+void EmitX64::EmitVectorUnsignedAbsoluteDifferenceWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAbsoluteDifferenceWiden16");
+}
+
+void EmitX64::EmitVectorUnsignedAbsoluteDifferenceWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAbsoluteDifferenceWiden32");
 }
 
 void EmitX64::EmitVectorUnsignedMultiply16(EmitContext& ctx, IR::Inst* inst) {

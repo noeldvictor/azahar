@@ -1048,6 +1048,21 @@ void EmitIR<IR::Opcode::VectorSignedAbsoluteDifference32>(biscuit::Assembler&, E
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignedMultiply16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
@@ -1284,6 +1299,21 @@ void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifference16>(biscuit::Assembler&,
 
 template<>
 void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifference32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
 

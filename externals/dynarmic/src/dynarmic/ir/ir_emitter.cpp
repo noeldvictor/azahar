@@ -1780,6 +1780,18 @@ U128 IREmitter::VectorSignedAbsoluteDifference(size_t esize, const U128& a, cons
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorSignedAbsoluteDifferenceWiden(size_t esize, const U128& a, const U128& b) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorSignedAbsoluteDifferenceWiden8, a, b);
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedAbsoluteDifferenceWiden16, a, b);
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedAbsoluteDifferenceWiden32, a, b);
+    }
+    UNREACHABLE();
+}
+
 UpperAndLower IREmitter::VectorSignedMultiply(size_t esize, const U128& a, const U128& b) {
     const Value multiply = [&] {
         switch (esize) {
@@ -1982,6 +1994,18 @@ U128 IREmitter::VectorUnsignedAbsoluteDifference(size_t esize, const U128& a, co
         return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifference16, a, b);
     case 32:
         return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifference32, a, b);
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorUnsignedAbsoluteDifferenceWiden(size_t esize, const U128& a, const U128& b) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifferenceWiden8, a, b);
+    case 16:
+        return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifferenceWiden16, a, b);
+    case 32:
+        return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifferenceWiden32, a, b);
     }
     UNREACHABLE();
 }

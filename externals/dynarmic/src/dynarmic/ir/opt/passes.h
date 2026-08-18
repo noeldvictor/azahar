@@ -22,6 +22,7 @@ namespace Dynarmic::Optimization {
 
 struct PolyfillOptions {
     bool sha256 = false;
+    bool vector_absolute_difference_widen = false;
     bool vector_multiply_widen = false;
 
     bool operator==(const PolyfillOptions&) const = default;

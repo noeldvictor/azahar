@@ -139,6 +139,18 @@ void PolyfillSHA256Hash(IR::IREmitter& ir, IR::Inst& inst) {
 }
 
 template<size_t esize, bool is_signed>
+void PolyfillVectorAbsoluteDifferenceWiden(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U128 n = (IR::U128)inst.GetArg(0);
+    const IR::U128 m = (IR::U128)inst.GetArg(1);
+
+    const IR::U128 difference = is_signed ? ir.VectorSignedAbsoluteDifference(esize, n, m)
+                                          : ir.VectorUnsignedAbsoluteDifference(esize, n, m);
+    const IR::U128 result = ir.VectorZeroExtend(esize, difference);
+
+    inst.ReplaceUsesWith(result);
+}
+
+template<size_t esize, bool is_signed>
 void PolyfillVectorMultiplyWiden(IR::IREmitter& ir, IR::Inst& inst) {
     IR::U128 n = (IR::U128)inst.GetArg(0);
     IR::U128 m = (IR::U128)inst.GetArg(1);
@@ -177,6 +189,36 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::SHA256Hash:
             if (polyfill.sha256) {
                 PolyfillSHA256Hash(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAbsoluteDifferenceWiden8:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<8, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAbsoluteDifferenceWiden16:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<16, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAbsoluteDifferenceWiden32:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<32, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden8:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<8, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden16:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<16, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden32:
+            if (polyfill.vector_absolute_difference_widen) {
+                PolyfillVectorAbsoluteDifferenceWiden<32, false>(ir, inst);
             }
             break;
         case IR::Opcode::VectorMultiplySignedWiden8:

@@ -25,10 +25,11 @@ bool AbsoluteDifferenceLong(TranslatorVisitor& v, bool Q, Imm<2> size, Vec Vm, V
     const size_t esize = 8 << size.ZeroExtend();
     const size_t datasize = 64;
 
-    const IR::U128 operand1 = v.ir.VectorZeroExtend(esize, v.Vpart(datasize, Vn, Q));
-    const IR::U128 operand2 = v.ir.VectorZeroExtend(esize, v.Vpart(datasize, Vm, Q));
-    IR::U128 result = sign == Signedness::Signed ? v.ir.VectorSignedAbsoluteDifference(esize, operand1, operand2)
-                                                 : v.ir.VectorUnsignedAbsoluteDifference(esize, operand1, operand2);
+    const IR::U128 operand1 = v.Vpart(datasize, Vn, Q);
+    const IR::U128 operand2 = v.Vpart(datasize, Vm, Q);
+    IR::U128 result = sign == Signedness::Signed
+                       ? v.ir.VectorSignedAbsoluteDifferenceWiden(esize, operand1, operand2)
+                       : v.ir.VectorUnsignedAbsoluteDifferenceWiden(esize, operand1, operand2);
 
     if (behavior == AbsoluteDifferenceBehavior::Accumulate) {
         const IR::U128 data = v.V(2 * datasize, Vd);

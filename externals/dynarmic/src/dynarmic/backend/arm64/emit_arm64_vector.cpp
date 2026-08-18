@@ -1402,6 +1402,21 @@ void EmitIR<IR::Opcode::VectorSignedAbsoluteDifference32>(oaknut::CodeGenerator&
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<8>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.SABDL(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<16>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.SABDL(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAbsoluteDifferenceWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<32>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.SABDL(Vresult, Va, Vb); });
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignedMultiply16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     (void)code;
     (void)ctx;
@@ -1771,6 +1786,21 @@ void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifference16>(oaknut::CodeGenerato
 template<>
 void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifference32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitThreeOpArranged<32>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.UABD(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<8>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.UABDL(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<16>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.UABDL(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitThreeOpArrangedWiden<32>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.UABDL(Vresult, Va, Vb); });
 }
 
 template<>

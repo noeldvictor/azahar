@@ -298,6 +298,7 @@ public:
     U128 VectorRoundingShiftLeftUnsigned(size_t esize, const U128& a, const U128& b);
     U128 VectorSignExtend(size_t original_esize, const U128& a);
     U128 VectorSignedAbsoluteDifference(size_t esize, const U128& a, const U128& b);
+    U128 VectorSignedAbsoluteDifferenceWiden(size_t esize, const U128& a, const U128& b);
     UpperAndLower VectorSignedMultiply(size_t esize, const U128& a, const U128& b);
     U128 VectorSignedSaturatedAbs(size_t esize, const U128& a);
     U128 VectorSignedSaturatedAccumulateUnsigned(size_t esize, const U128& a, const U128& b);
@@ -316,6 +317,7 @@ public:
     U128 VectorTableLookup(const U128& defaults, const Table& table, const U128& indices);
     U128 VectorTranspose(size_t esize, const U128& a, const U128& b, bool part);
     U128 VectorUnsignedAbsoluteDifference(size_t esize, const U128& a, const U128& b);
+    U128 VectorUnsignedAbsoluteDifferenceWiden(size_t esize, const U128& a, const U128& b);
     U128 VectorUnsignedRecipEstimate(const U128& a);
     U128 VectorUnsignedRecipSqrtEstimate(const U128& a);
     U128 VectorUnsignedSaturatedAccumulateSigned(size_t esize, const U128& a, const U128& b);

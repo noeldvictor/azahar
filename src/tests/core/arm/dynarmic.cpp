@@ -272,6 +272,131 @@ TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its l
     }
 }
 
+TEST_CASE("Dynarmic A32 VABDL widens signed and unsigned differences",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf2820703,  // VABDL.S8 Q0, D2, D3
+        0xf3968707,  // VABDL.U16 Q4, D6, D7
+        0xf2ea070b,  // VABDL.S32 Q8, D10, D11
+        0xeafffffe,  // B .
+        0xeafffffe,
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.ExtRegs() = {};
+
+    // D2: {-128, -1, 0, 1, 42, 100, 127, -64}.
+    // D3: {127, 1, 0, -1, -42, -100, -128, 64}.
+    jit.ExtRegs()[4] = 0x0100ff80;
+    jit.ExtRegs()[5] = 0xc07f642a;
+    jit.ExtRegs()[6] = 0xff00017f;
+    jit.ExtRegs()[7] = 0x40809cd6;
+
+    // D6: {0, 1, 0x8000, 0xffff}; D7: {0xffff, 0, 0x7fff, 1}.
+    jit.ExtRegs()[12] = 0x00010000;
+    jit.ExtRegs()[13] = 0xffff8000;
+    jit.ExtRegs()[14] = 0x0000ffff;
+    jit.ExtRegs()[15] = 0x00017fff;
+
+    // D10: {INT32_MIN, 123456789}; D11: {INT32_MAX, -123456789}.
+    jit.ExtRegs()[20] = 0x80000000;
+    jit.ExtRegs()[21] = 0x075bcd15;
+    jit.ExtRegs()[22] = 0x7fffffff;
+    jit.ExtRegs()[23] = 0xf8a432eb;
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 4;
+    jit.Run();
+
+    CHECK(jit.ExtRegs()[0] == 0x000200ff);
+    CHECK(jit.ExtRegs()[1] == 0x00020000);
+    CHECK(jit.ExtRegs()[2] == 0x00c80054);
+    CHECK(jit.ExtRegs()[3] == 0x008000ff);
+
+    constexpr std::array<std::uint32_t, 4> unsigned16_expected{
+        0x0000ffff, 0x00000001, 0x00000001, 0x0000fffe};
+    for (std::size_t lane = 0; lane < unsigned16_expected.size(); ++lane) {
+        CAPTURE(lane);
+        CHECK(jit.ExtRegs()[16 + lane] == unsigned16_expected[lane]);
+    }
+
+    CHECK(jit.ExtRegs()[32] == 0xffffffff);
+    CHECK(jit.ExtRegs()[33] == 0x00000000);
+    CHECK(jit.ExtRegs()[34] == 0x0eb79a2a);
+    CHECK(jit.ExtRegs()[35] == 0x00000000);
+}
+
+TEST_CASE("Dynarmic A32 VABAL widens before accumulating with lane wraparound",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf3ce850f,  // VABAL.U8 Q12, D14, D15
+        0xf29245a3,  // VABAL.S16 Q2, D18, D19
+        0xf3e4c5a5,  // VABAL.U32 Q14, D20, D21
+        0xeafffffe,  // B .
+        0xeafffffe,
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.ExtRegs() = {};
+
+    // Q12 accumulator and unsigned byte inputs D14/D15.
+    jit.ExtRegs()[48] = 0xffffff80;
+    jit.ExtRegs()[49] = 0x00010000;
+    jit.ExtRegs()[50] = 0xfff07fff;
+    jit.ExtRegs()[51] = 0xff010064;
+    jit.ExtRegs()[28] = 0x7f020100;
+    jit.ExtRegs()[29] = 0xfffec880;
+    jit.ExtRegs()[30] = 0x800300ff;
+    jit.ExtRegs()[31] = 0x00ff647f;
+
+    // Q2 accumulator and signed halfword inputs D18/D19.
+    jit.ExtRegs()[8] = 0xfffffff0;
+    jit.ExtRegs()[9] = 0xffffffff;
+    jit.ExtRegs()[10] = 0x00000000;
+    jit.ExtRegs()[11] = 0x80000000;
+    jit.ExtRegs()[36] = 0xffff8000;
+    jit.ExtRegs()[37] = 0x7fff0000;
+    jit.ExtRegs()[38] = 0x00017fff;
+    jit.ExtRegs()[39] = 0x8000ffff;
+
+    // Q14 accumulator and unsigned word inputs D20/D21.
+    jit.ExtRegs()[56] = 0xfffffff0;
+    jit.ExtRegs()[57] = 0xffffffff;
+    jit.ExtRegs()[58] = 0x89abcdef;
+    jit.ExtRegs()[59] = 0x01234567;
+    jit.ExtRegs()[40] = 0x00000000;
+    jit.ExtRegs()[41] = 0xffffffff;
+    jit.ExtRegs()[42] = 0xffffffff;
+    jit.ExtRegs()[43] = 0x00000001;
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 4;
+    jit.Run();
+
+    CHECK(jit.ExtRegs()[48] == 0x0000007f);
+    CHECK(jit.ExtRegs()[49] == 0x00020001);
+    CHECK(jit.ExtRegs()[50] == 0x00548000);
+    CHECK(jit.ExtRegs()[51] == 0x00000065);
+
+    CHECK(jit.ExtRegs()[8] == 0x0000ffef);
+    CHECK(jit.ExtRegs()[9] == 0x00000001);
+    CHECK(jit.ExtRegs()[10] == 0x00000001);
+    CHECK(jit.ExtRegs()[11] == 0x8000ffff);
+
+    CHECK(jit.ExtRegs()[56] == 0xffffffef);
+    CHECK(jit.ExtRegs()[57] == 0x00000000);
+    CHECK(jit.ExtRegs()[58] == 0x89abcded);
+    CHECK(jit.ExtRegs()[59] == 0x01234568);
+}
+
 TEST_CASE("Dynarmic A32 VZIP keeps both D-register results in SIMD",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
