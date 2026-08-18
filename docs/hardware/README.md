@@ -199,6 +199,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   read arithmetic flags directly with `MRS X23, NZCV` instead of `MRS Xtemp, NZCV` plus `MOV`.
   The A510 guide has no comparable special-register table, so its measured 16.2% sequence win is
   the controlling evidence there; the A710/A715/X3 wins were 20.1%, 19.3%, and 2.3% respectively.
+- Treat a full SIMD register copy in generated code as real front-end/vector-pipeline work even
+  when the Arm manuals make the following arithmetic operation look cheap. If an IR read/write
+  operand is at its final use, has one owner, and stays in the same host-register class, transfer
+  the physical register to the output instead of emitting the copy. Keep a conservative fallback
+  for shared, locked, immediate, spilled, or already-realized values, then prove the result with
+  final disassembly, independent dependency chains, and guest-instruction correctness tests on
+  every Thor core class.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

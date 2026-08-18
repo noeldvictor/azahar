@@ -3308,6 +3308,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and include rejected/UX/power-oriented work; their percentages must not be added. Whole-game FPS,
   sustained power, frametime, and thermal gains still require a matched title/scene A/B.
 
+## 2026-08-17 Dynarmic ARM64 Final-Use Read/Write Coalescing
+
+- Dynarmic's x64 allocator already updates an eligible final-use read/write operand in its current
+  host register, but the ARM64 allocator always allocated a new output register and copied the old
+  value first. The ARM64 path now transfers that physical location to the output when the input is
+  non-immediate, has the same host-register class, has exactly one remaining IR use and one active
+  lock, and the output has not already been realized. Shared or otherwise ineligible values retain
+  the original allocate-and-copy path.
+- `HostLocInfo::ReplaceLastUseWith()` changes only the final value owner. `RAReg` records a reused
+  read location so its destructor unlocks the output value without erasing the physical location it
+  now owns. This removes copies from eligible SHA-256, saturating vector accumulate, vector-element
+  insertion, VTBX default, vector FMA, and FP16 absolute-value lowerings without changing their
+  emitted operation or the allocator's spill fallback.
+- A disassembly-checked benchmark compared the old explicit full-vector copy with the coalesced
+  form over 16,777,216 useful operations, alternated order for nine rounds, and used the best sample.
+  An initial version accidentally serialized four nominal chains through one temporary and its
+  numbers were discarded. The corrected benchmark kept four independent chains. Nanoseconds per
+  useful read/write operation, throughput multiple, and time reduction were:
+
+  | Thor core | FMLA old -> new | FMLA gain | BIC old -> new | BIC gain |
+  | --- | --- | --- | --- | --- |
+  | A510 CPU 0 | 2.756224 -> 1.250332 | 2.204x; 54.6% less time | 2.501638 -> 1.001578 | 2.498x; 60.0% less time |
+  | A710 CPU 3 | 0.543852 -> 0.189565 | 2.869x; 65.1% less time | 0.353695 -> 0.190552 | 1.856x; 46.1% less time |
+  | A715 CPU 5 | 0.648188 -> 0.189363 | 3.423x; 70.8% less time | 0.389752 -> 0.187444 | 2.079x; 51.9% less time |
+  | X3 CPU 7 | 0.592520 -> 0.169103 | 3.504x; 71.5% less time | 0.338578 -> 0.169240 | 2.001x; 50.0% less time |
+
+- A complete 2,200-action ARM64 native rebuild and release-style package passed in 14 minutes 8
+  seconds. A permanent A32 VTBX regression then rebuilt in 38 seconds and passed on Thor together
+  with the existing linked-block flag case: 32 assertions in two `[core][arm][dynarmic]` cases. The
+  broader `[core]~[file_sys]` run passed 2,899 assertions in 17 cases. Source commit `a9aada95d`
+  and test commit `6ca666b71` were pushed to `origin/master` through command-line Git over SSH.
+- The ARM64-only, v2-signed APK is 28,979,556 bytes, reports
+  `a9aada95d-vanilla-thor`, and has SHA-256
+  `54EB796EE6854BDD3FB4AD1623A79706F7E0E7D5FA295314D64011489D00AC09`. It installed over
+  `org.azahar_emu.azahar.debug` by wireless ADB, reports `primaryCpuAbi=arm64-v8a`, and remains
+  force-stopped; no app UI or game was launched. Thor reported USB power, no AC/wireless power,
+  78% battery, 4.126 V, and 23.0 C, so this is not battery-discharge watt evidence.
+- Temporary benchmark/test executables were removed from host and device. Post-verification cleanup
+  removed 2,017,514,496 logical bytes of reproducible Gradle/JNI/native staging and increased C:
+  free space by 1,579,499,520 bytes. `app/build` retains only the APK and 476-byte metadata; the
+  3,243,275,791-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains for incremental work.
+- This is optimization 80 in the current Thor tally. The measured result is a 1.86x-3.50x synthetic
+  throughput gain, or 46.1%-71.5% less time, only when these recurring read/write sequences and
+  final-use lifetimes occur. It cannot be added to the other 79 items. Whole-game FPS, sustained
+  watts, frametimes, and thermals still require a matched title/scene A/B.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

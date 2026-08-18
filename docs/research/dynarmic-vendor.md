@@ -29,6 +29,10 @@ Dynarmic remote.
   upstream state-memory path and full register-allocation set.
 - Load `A32SetCpsrNZCV` inputs directly into reserved `X23`. A flags-backed value now emits
   `MRS X23, NZCV` instead of materializing an allocator temporary and moving it to `W23`.
+- Coalesce eligible final-use ARM64 read/write operands into their existing physical register.
+  Vector FMA, VTBX defaults, saturating accumulation, vector-element insertion, FP16 absolute,
+  and SHA-256 helpers avoid a full-register copy when the source has one remaining use and one
+  lock; all other lifetimes keep the original allocate-and-copy path.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -43,6 +47,12 @@ dispatcher-saturated loop; it is not an emulator-wide FPS or power result.
 The direct NZCV benchmark ran 16,777,216 flag evaluations per case, alternated order for nine
 rounds, and measured 16.22% faster on A510, 20.13% on A710, 19.28% on A715, and 2.30% on X3.
 This is the exact generated transfer followed by a flag consumer, not a whole-game result.
+
+The corrected read/write microbenchmark used four independent dependency chains and confirmed in
+disassembly that the old loop copied a full vector before each FMLA or BIC while the coalesced loop
+did not. Best-of-nine Thor results measured 1.86x to 3.50x throughput, equivalent to 46.1% to 71.5%
+less time in those synthetic recurring sequences. This does not predict whole-game FPS or watts;
+the affected opcode mix and register lifetimes vary by title.
 
 The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was

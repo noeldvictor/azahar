@@ -49,6 +49,12 @@
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target
   only registers excluded from the active allocator order; preserve use accounting, flag spilling,
   callback/state synchronization, and the linked-block arithmetic-NZCV regression test.
+- Dynarmic ARM64 read/write operands may inherit the read value's physical register only for a
+  non-immediate value of the same host-register class with exactly one remaining IR use, exactly
+  one active lock, and no prior realization of the output. `ReplaceLastUseWith()` transfers the
+  location metadata to the output, and the `RAReg` lifetime must unlock that new value without
+  clearing its reused location. Preserve the allocate-and-copy fallback for every other case and
+  retain the A32 VTBX read/write regression on a real ARM64 host.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

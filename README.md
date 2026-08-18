@@ -191,7 +191,11 @@ include:
   linked blocks while preserving callback-visible CPSR behavior;
 - direct capture of arithmetic NZCV into that reserved register, eliminating the temporary GPR and
   `MOV` from the recurring flag-transfer sequence. The exact sequence measured **2.3%-20.1%
-  faster** across the Thor's four CPU core classes; and
+  faster** across the Thor's four CPU core classes;
+- final-use read/write coalescing that lets eligible vector operations update their existing host
+  SIMD register instead of allocating another register and copying 128 bits first. Corrected
+  independent-chain FMLA/BIC microbenchmarks measured **1.86x-3.50x isolated throughput**, or
+  **46.1%-71.5% less time** in those exact recurring sequences; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
