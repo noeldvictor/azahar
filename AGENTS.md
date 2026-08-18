@@ -497,6 +497,13 @@
   64-bit accumulation, ARM `S`-bit N/Z updates, unchanged C/V/Q/GE state, Thumb behavior, and every
   source/destination accumulator alias. Retain the permanent plain/halfword signed-edge, wrap,
   flag, and alias coverage.
+- ARM and Thumb-2 `UMULL`/`UMLAL` deliberately use `UnsignedMultiplyLong` in generic Dynarmic IR.
+  Keep ARM64 on native `UMULL Xd, Wn, Wm`, followed by the required packed-accumulator `ADD` for
+  `UMLAL`. Do not globally fuse `UMLAL` to `UMADDL`: Thor measurements improved A510 but regressed
+  A715, A710, and X3. Leave `UMAAL` on its existing generic multiply/add lowering; native `UMULL`
+  and reassociated/fused candidates regressed X3 or other big cores. Preserve ARM `S`-bit N/Z,
+  unchanged C/V/Q/GE, modulo-64-bit arithmetic, Thumb behavior, unsigned extremes, and every
+  source/destination alias in permanent tests.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

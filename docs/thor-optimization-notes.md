@@ -4095,6 +4095,63 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
   cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Unsigned Widening Multiply
+
+- ARM and Thumb-2 `UMULL` and `UMLAL` previously zero-extended two 32-bit inputs into 64-bit IR and
+  then used generic `Mul64`. ARM64 consequently emitted X-form `MUL`, even though the guest
+  operation is exactly a 32x32-to-64-bit unsigned widening multiply. The new generic
+  `UnsignedMultiplyLong(U32, U32) -> U64` IR operation emits native `UMULL Xd, Wn, Wm` on ARM64.
+  The x64 backend zeroes both 32-bit scratch registers before its 64-bit `IMUL` polyfill. ARM and
+  Thumb `UMLAL` add the packed accumulator after `UMULL`; `UMULL` consumes the result directly.
+  `UMAAL` was deliberately left unchanged.
+- The complete relevant manual pages were text-extracted, rendered, and visually checked.
+  Cortex-X3 issue 4.0 page 16, Cortex-A715 issue 5.0 page 18, and Cortex-A710 issue 4.0 page 21 list
+  `MUL`/the `UMULL` alias at throughput 2 while `UMADDL` has throughput 1 and accumulator latency 1.
+  Cortex-A510 issue 6.0 page 18 lists X-form `MUL` at latency 4 and throughput 1/2, versus latency 2
+  and throughput 1 for the widening long-multiply form. That predicts the selected lowering's large
+  A510 win and big-core parity.
+- `llvm-objdump` verified the exact temporary benchmark bodies: the baseline used four independent
+  X-form `MUL` results; the candidate used four independent `UMULL X, W, W` results. `UMLAL` added
+  one 64-bit `ADD` to each chain, while the rejected `UMAAL` candidate added two. Each sample ran
+  20,000,000 loop iterations, or 80,000,000 affected operations, for nine alternating-order rounds;
+  all baseline/candidate checksums matched. Median accepted-path ratios were:
+
+  | Thor core | `UMULL`: X-form `MUL` -> native `UMULL` | `UMLAL`: X-form `MUL` + `ADD` -> `UMULL` + `ADD` |
+  | --- | --- | --- |
+  | A510 CPU 0 | 1.9965x | 1.7940x |
+  | A715 CPU 3 | 1.0004x | 0.9987x |
+  | A715 CPU 4 | 1.0007x | 0.9977x |
+  | A710 CPU 6 | 1.0003x | 1.0007x |
+  | X3 CPU 7 | 0.9998x | 1.0005x |
+
+  A510's raw medians were 80,629,271 -> 40,385,781 ns for `UMULL` and 90,624,532 ->
+  50,515,729 ns for `UMLAL`. The sub-0.31% movements on accepted big-core paths are treated as
+  parity/noise, not speed claims.
+- Direct `UMADDL` was rejected despite being about 2.24x faster than the old `UMLAL` sequence on
+  A510: it measured only about 0.766x-0.769x on A715, 0.664x on A710, and 0.516x on X3. Fused
+  `UMAAL` variants had the same asymmetric problem. Merely reassociating `UMAAL` helped A510 by
+  about 44%, A715 by 5.7%-6.9%, and A710 by 9.4%, but a longer X3 run measured 0.9498x. Applying
+  native `UMULL` to `UMAAL` itself measured 0.9776x on X3, so `UMAAL` remains unchanged.
+- The permanent regression covers ARM `UMLAL`/`UMLALS`/`UMULL`/`UMULLS`, Thumb-2
+  `UMLAL`/`UMULL`, source/destination aliases, six unsigned-extreme and 64-bit-wrap inputs, ARM N/Z
+  updates, and unchanged C/V/Q/GE state. The complete Thor `[core][arm][dynarmic]` run passed 1,217
+  assertions in 19 cases. The source/test commit is `dd02d1b5b`, pushed directly to
+  `origin/master` over command-line Git SSH. The clean JDK 17 release-style build passed in 3 minutes
+  24 seconds; the exact post-commit rebuild passed in 1 minute 42 seconds.
+- The installed ARM64 APK is 28,985,276 bytes, reports `dd02d1b5b-vanilla-thor`, and has SHA-256
+  `FBB82CB04CF865E2F31B9F395501C3FBA5A1036B22AC72C46B9E3E4A821D69AF`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, and no game was launched.
+- Cleanup removed the temporary benchmark source/binary, four manual renders, stripped Thor test
+  copy, both device copies, 447,611,496-byte native test ELF, and reproducible Gradle/JNI/R8/native-
+  symbol staging. It retained the 28,985,276-byte APK plus 476-byte metadata and the
+  2,795,665,346-byte active ARM64 CMake/Ninja cache. Total logical removal was 2,493,397,879 bytes;
+  C: recovered 2,053,197,824 physical bytes and reported 82,027,966,464 bytes free afterward.
+- This is optimization 95 in the Thor work tally. Its 1.794x-1.997x figures apply only to the
+  affected unsigned widening-multiply host sequences on A510; the accepted big-core paths were
+  parity. It cannot be added to the other 94 items. Whole-game FPS, sustained watts, frametimes,
+  and thermals still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
+  brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

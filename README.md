@@ -635,6 +635,22 @@ assertions in 19 cases, and the exact ARM64 release build passes. This is optimi
 overlapping work tally; these figures describe only affected guest multiply-accumulate-long
 instructions, not whole-game FPS or battery watts.
 
+## Dynarmic Unsigned Widening-Multiply Update
+
+ARM and Thumb-2 `UMULL` and `UMLAL` now retain their unsigned 32x32-to-64-bit operation in
+Dynarmic IR. The ARM64 backend emits native `UMULL Xd, Wn, Wm`; `UMLAL` then adds its packed
+64-bit accumulator. This replaces accidental X-form `MUL` inputs produced by separately
+zero-extending both operands. `UMAAL` deliberately keeps its existing lowering because the same
+change regressed the Thor's X3 core.
+
+An alternating-order Thor benchmark measured the affected `UMULL`/`UMLAL` sequences at
+1.997x/1.794x on A510 CPU 0. A715 CPUs 3-4 and A710 CPU 6 were within 0.31% of parity; X3 CPU 7
+was within 0.05% for the two accepted paths. Direct `UMADDL` and reordered/fused `UMAAL`
+alternatives were faster on A510 but materially slower on one or more big cores, so they were
+rejected. The complete on-device ARM/Dynarmic suite passes 1,217 assertions in 19 cases, and the
+exact ARM64 release build passes. This is optimization 95 in the overlapping work tally; it is not
+a whole-game FPS, battery-watt, or additive speedup claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
