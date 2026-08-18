@@ -742,6 +742,15 @@ path. Thor measurements across every lane width were **6.94x-8.32x on A510, 1.99
 Thor. This is optimization 104 in the overlapping tally, not a 104x emulator result; title FPS and
 battery watts still require a matched gameplay A/B.
 
+A32 ARMv6 `USAD8`/`USADA8`, which is directly relevant to the 3DS ARM11 guest, now lowers on ARM64
+from `MOVI` + `UABD` + `AND` + `UADDLV` to `UABDL` + four-halfword `UADDLV`. Widening the eight byte
+differences lets the reduction consume exactly the guest instruction's low four bytes without a
+materialized mask, cutting this affected path from four host instructions to two. Thor exact-path
+medians were **1.76x on A510, 2.52x on A715, 2.51x on A710, and 2.81x on X3**. All 2,176
+assertions in 27 focused cases pass on Thor, including ARM/Thumb forms, accumulator wrap, source
+aliases, maximum differences, untouched registers, and flags. This is optimization 105 in the
+overlapping tally; the measurements are path-local and are not a whole-game FPS or watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

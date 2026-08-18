@@ -4652,6 +4652,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
   duration A/B run.
 
+## ARM64 Packed Unsigned Byte Difference Sum (2026-08-18)
+
+- A32 ARMv6 `USAD8` and `USADA8` are part of the actual 3DS ARM11 guest instruction set, unlike
+  guest AdvSIMD-only experiments. Dynarmic's ARM64 `PackedAbsDiffSumU8` lowering previously emitted
+  `MOVI` for a four-byte lane mask, `UABD`, `AND`, and `UADDLV`. It now emits `UABDL H8` followed by
+  `UADDLV H4`, reducing the affected guest operation from four host instructions to two, or 50%.
+- The semantic shortcut is exact: `UABDL` widens all eight unsigned byte differences, placing the
+  four defined guest lanes in the low four halfwords. Reducing only `H4` ignores the packed
+  operand's undefined upper word without a mask. The largest sum is 4 * 255 = 1020, and `USADA8`
+  retains its normal 32-bit modular accumulator addition in the surrounding IR.
+- The complete Arm guide pages were rendered and visually checked before measurement. A510 lists
+  `UABDL` at latency 3 and throughput `2,1` on VALU and `UADDLV 4H` at latency 4 and throughput 1
+  on VALU. A710 lists latency/throughput 2/2 on V for `UABDL` and 2/1 on V1 for `UADDLV 4H`.
+  A715 lists 2/2 on V and 3/1 on V1 respectively. X3 lists 2/4 on V and 2/2 on V13 respectively.
+  These differences supported measuring every Thor core class instead of extrapolating from X3.
+- `llvm-objdump` verified the intended four-instruction baseline and two-instruction candidate with
+  identical loop control. The harness used four independent packed operations for 1,000,000
+  iterations, or 4,000,000 affected operations, over nine alternating-order rounds per core.
+  Warmup and timed checksums matched and remained nonzero at 1432.
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `USAD8` four-byte difference sum | 1.759435x | 2.515585x | 2.505252x | 2.806593x |
+
+- Permanent A32 tests execute ARM and Thumb `USAD8`/`USADA8`, including normal and source/
+  accumulator-alias encodings, maximum byte differences, an accumulator at `UINT32_MAX`, patterned
+  edge values, unrelated-register preservation, and unchanged NZCV/Q/GE flags. The complete native
+  ARM64 build passed in 11 minutes 42 seconds, and Thor passed all 2,176 assertions in 27 focused
+  `[core][arm][dynarmic]` cases. Source/test commit `928eae934` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 2 minutes 48 seconds. Its ARM64-only APK is 28,997,788 bytes, reports
+  `928eae934-vanilla-thor`, and has SHA-256
+  `DCF8B4F89B683FD45F70A986E6773B122C7F048284880ED2878E993BCC6F3B57`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 49%, 3.849 V, and 21.0 C, so
+  this is not battery-discharge watt evidence. Both temporary device binaries were removed.
+- Cleanup removed 2,496,891,355 logical bytes: the 448,367,400-byte native test ELF, stripped test
+  copy, benchmark/encoding scratch, five rendered manual pages, copied JNI dependencies, and
+  reproducible Gradle/JNI/R8/native-symbol staging. It retained the 28,997,788-byte APK plus
+  476-byte metadata and the 2,787,840,399-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,054,905,856 physical bytes and reported 81,254,731,776 bytes free immediately afterward. No
+  PDF or rendered manual artifact was committed.
+- This is optimization 105 in the overlapping Thor work tally. The 1.76x-2.81x measurements apply
+  only while executing these exact packed byte-difference forms. They cannot be added to the other
+  104 items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result.
+  Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
+  brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

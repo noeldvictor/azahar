@@ -583,6 +583,14 @@
   shift/immediate/broadcast/bit-clear/OR expansion: the exact native path measured 6.94x-8.32x on
   Thor A510, 1.99x-2.01x on A715, 2.17x-2.21x on A710, and 2.42x-2.43x on X3. Keep these claims
   path-local until a matched title and battery-power A/B exists.
+- ARM64 Dynarmic `PackedAbsDiffSumU8` must retain the two-instruction `UABDL H8` plus low-`H4`
+  `UADDLV` lowering used by A32 ARMv6 `USAD8`/`USADA8`. The low four widened halfwords are exactly
+  the four guest byte lanes; never reduce all eight lanes or restore the old `MOVI`/`UABD`/`AND`/
+  `UADDLV` mask path. Preserve ARM and Thumb encodings, maximum difference sum 1020, modular
+  `USADA8` accumulator wrap, destination/source and accumulator aliases, unrelated registers, and
+  unchanged NZCV/Q/GE flags in permanent tests. The exact four-to-two instruction path measured
+  1.759435x on Thor A510, 2.515585x on A715, 2.505252x on A710, and 2.806593x on X3. Keep these
+  claims path-local until a matched title and battery-power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
