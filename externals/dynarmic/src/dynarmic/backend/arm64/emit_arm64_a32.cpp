@@ -470,12 +470,12 @@ void EmitIR<IR::Opcode::A32SetCpsr>(oaknut::CodeGenerator& code, EmitContext& ct
 }
 
 template<>
-void EmitIR<IR::Opcode::A32SetCpsrNZCV>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+void EmitIR<IR::Opcode::A32SetCpsrNZCV>(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
-    auto Wvalue = ctx.reg_alloc.ReadW(args[0]);
-    RegAlloc::Realize(Wvalue);
 
-    code.MOV(Wnzcv, Wvalue);
+    // Flag-producing operations leave this value in the host NZCV register. Copy it directly
+    // into the reserved A32 state register instead of materializing a temporary GPR first.
+    ctx.reg_alloc.ReadIntoFixedRegister(args[0], Xnzcv);
 }
 
 template<>

@@ -188,6 +188,11 @@ void RegAlloc::PrepareForCall(std::optional<Argument::copyable_reference> arg0, 
     }
 }
 
+void RegAlloc::ReadIntoFixedRegister(Argument& arg, oaknut::XReg reg) {
+    ASSERT(std::find(gpr_order.begin(), gpr_order.end(), reg.index()) == gpr_order.end());
+    LoadCopyInto(arg.value, reg);
+}
+
 void RegAlloc::DefineAsExisting(IR::Inst* inst, Argument& arg) {
     defined_insts.insert(inst);
 

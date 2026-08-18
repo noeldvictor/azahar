@@ -3,6 +3,7 @@ add_executable(tests
     common/file_util.cpp
     common/math_util.cpp
     common/param_package.cpp
+    core/arm/dynarmic.cpp
     core/core_timing.cpp
     core/file_sys/path_parser.cpp
     core/hle/kernel/hle_ipc.cpp
@@ -43,7 +44,7 @@ if (BSD STREQUAL "NetBSD")
     disable_pax_mprotect(tests)
 endif()
 
-target_link_libraries(tests PRIVATE citra_common citra_core video_core audio_core)
+target_link_libraries(tests PRIVATE citra_common citra_core video_core audio_core dynarmic)
 target_link_libraries(tests PRIVATE SoundTouch ${PLATFORM_LIBRARIES} catch2 nihstro-headers Threads::Threads)
 target_include_directories(tests PRIVATE ${PROJECT_SOURCE_DIR}/externals/soundtouch/source/SoundTouch)
 

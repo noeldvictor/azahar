@@ -278,6 +278,10 @@ public:
 
     void PrepareForCall(std::optional<Argument::copyable_reference> arg0 = {}, std::optional<Argument::copyable_reference> arg1 = {}, std::optional<Argument::copyable_reference> arg2 = {}, std::optional<Argument::copyable_reference> arg3 = {});
 
+    // Copy an argument directly into a fixed register without first relocating the value into
+    // the allocator's GPR set. This is useful for reserved architectural-state registers.
+    void ReadIntoFixedRegister(Argument& arg, oaknut::XReg reg);
+
     void DefineAsExisting(IR::Inst* inst, Argument& arg);
     void DefineAsRegister(IR::Inst* inst, oaknut::Reg reg);
 
