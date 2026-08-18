@@ -263,13 +263,11 @@ bool TranslatorVisitor::thumb32_SMULWY(Reg n, Reg d, bool M, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const IR::U64 n32 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    IR::U32 m32 = ir.GetRegister(m);
-    if (M) {
-        m32 = ir.LogicalShiftRight(m32, ir.Imm8(16), ir.Imm1(0)).result;
-    }
-    const IR::U64 m16 = ir.SignExtendWordToLong(ir.SignExtendHalfToWord(ir.LeastSignificantHalf(m32)));
-    const auto result = ir.LogicalShiftRight(ir.Mul(n32, m16), ir.Imm8(16));
+    const IR::U32 m32 = ir.GetRegister(m);
+    const IR::U32 m16 = M ? ir.ArithmeticShiftRight(m32, ir.Imm8(16), ir.Imm1(0)).result
+                          : ir.SignExtendHalfToWord(ir.LeastSignificantHalf(m32));
+    const auto result =
+        ir.LogicalShiftRight(ir.SignedMultiplyLong(ir.GetRegister(n), m16), ir.Imm8(16));
 
     ir.SetRegister(d, ir.LeastSignificantWord(result));
     return true;

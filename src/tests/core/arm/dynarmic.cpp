@@ -1249,6 +1249,77 @@ TEST_CASE("Dynarmic A32 signed most-significant-word multiplies preserve edge se
     }
 }
 
+TEST_CASE("Dynarmic A32 signed word-by-halfword multiplies preserve edge semantics",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        bool top;
+        bool source_alias;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe12003a2, false, false, false}, // ARM SMULWB R0, R2, R3
+        Operation{0xe12003e2, true, false, false},  // ARM SMULWT R0, R2, R3
+        Operation{0xe12001a0, false, true, false},  // ARM SMULWB R0, R0, R1
+        Operation{0xe12001e0, true, true, false},   // ARM SMULWT R0, R0, R1
+        Operation{0xf003fb32, false, false, true}, // Thumb SMULWB R0, R2, R3
+        Operation{0xf013fb32, true, false, true},  // Thumb SMULWT R0, R2, R3
+        Operation{0xf001fb30, false, true, true},  // Thumb SMULWB R0, R0, R1
+        Operation{0xf011fb30, true, true, true},   // Thumb SMULWT R0, R0, R1
+    };
+    struct Inputs {
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x80000000, 0x7fff8000}, Inputs{0x7fffffff, 0x80007fff},
+        Inputs{0xffffffff, 0x0001ffff}, Inputs{0x00000001, 0xffff0001},
+        Inputs{0x87654321, 0x13579bdf}, Inputs{0x00000000, 0x8000ffff},
+    };
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, input.n, input.m);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+
+            const auto signed_n = static_cast<std::int64_t>(static_cast<std::int32_t>(input.n));
+            const auto signed_m = static_cast<std::int64_t>(
+                static_cast<std::int16_t>(input.m >> (operation.top ? 16 : 0)));
+            const auto product = static_cast<std::uint64_t>(signed_n * signed_m);
+            const auto expected = static_cast<std::uint32_t>(product >> 16);
+
+            jit.Regs() = {};
+            if (operation.source_alias) {
+                jit.Regs()[0] = input.n;
+                jit.Regs()[1] = input.m;
+            } else {
+                jit.Regs()[0] = 0xdeadbeef;
+                jit.Regs()[2] = input.n;
+                jit.Regs()[3] = input.m;
+            }
+            constexpr std::uint32_t initial_flags = 0xf80f0000; // NZCV/Q/GE
+            jit.SetCpsr(initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == expected);
+            if (operation.source_alias) {
+                CHECK(jit.Regs()[1] == input.m);
+            } else {
+                CHECK(jit.Regs()[2] == input.n);
+                CHECK(jit.Regs()[3] == input.m);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == initial_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
