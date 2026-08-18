@@ -611,6 +611,23 @@
   1.329924x-1.340523x on A510, 1.165637x-1.204479x on A715, and 1.126133x-1.135539x on A710.
   The X3 was parked by `core_ctl` during this run, so its optimization-guide evidence is not a
   physical Thor benchmark. Keep all speed claims path-local until a matched title and power A/B.
+- A32 ARM/Thumb-2 `SSAT16`/`USAT16` must retain the first-class `PackedSignedSaturation16`/
+  `PackedUnsignedSaturation16` IR and one combined overflow pseudo-result. ARM64 must share the
+  two lanes' bounds, clamp with scalar `CMP`/`CSEL`, pack with `BFI`, compare the packed result to
+  the input once, and call `A32OrQFlag` once. Do not substitute AdvSIMD `SQSHL`/`SQSHLU`: their
+  host `FPSR.QC` side effect is not the guest ARM11 `CPSR.Q` result and can corrupt guest VFP
+  `FPSCR.QC`. Signed saturation to 16 bits may alias the input with overflow false; unsigned
+  saturation to zero bits must return zero and compare against the input. x64 and RISC-V must
+  polyfill the first-class operation back into the exact two-lane scalar DAG. Preserve every
+  signed 1-16 and unsigned 0-15 immediate, ARM and Thumb encodings, source/destination aliases,
+  untouched registers/NZCV/GE, sticky initial Q, and unchanged FPSCR in permanent tests. The exact
+  path measured 1.09x-1.31x on Thor A510, about 2.00x on A715, 1.93x-2.02x on A710, and
+  1.50x-2.03x on X3. Keep these claims path-local until a matched title and battery-power A/B.
+- Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
+  showed attractive independent A510 results but regressed the dependent A510 path and both
+  measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the
+  split `MUL` plus `ADD`/`SUB` lowering unless a future title-gated, dependency-aware proof wins
+  on every intended Thor core class.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

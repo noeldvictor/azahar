@@ -4829,6 +4829,86 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   result. Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/
   fan/brightness/duration A/B run.
 
+## Rejected ARM64 A32 MLA/MLS MADD/MSUB Fusion (2026-08-18)
+
+- A tempting A32 Dynarmic change was to replace the current split `MUL` plus `ADD`/`SUB` lowering
+  for `MLA`/`MLS` with native AArch64 `MADD`/`MSUB`. The complete integer multiply tables in the
+  Cortex-A510, A710, A715, and X3 software optimization guides were reviewed first. A510 documents
+  W-form multiply-add/subtract latency 3, throughput 1, and typical accumulator forwarding every
+  two cycles; the three larger cores document latency 2 with accumulator forwarding 1 and
+  throughput 1. The tables made dependency structure a required measurement dimension rather than
+  a reason to assume the fused instruction was universally better.
+- `llvm-objdump` verified exact split and fused sequences. A standalone harness measured both four
+  independent chains and a sequential accumulator chain for 16,000,000 affected operations per
+  sample over nine alternating-order rounds. Every checksum matched and remained nonzero. Ratios
+  below are fused divided by the retained split path; values below 1.0 are regressions.
+
+  | Form and dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `MLA`, independent | 1.241811x | 0.690163x | 0.625852x | 0.554212x |
+  | `MLA`, dependent | 0.613736x | 0.739660x | 0.997213x | 1.001076x |
+  | `MLS`, independent | 1.235381x | 0.668825x | 0.624810x | 0.554066x |
+  | `MLS`, dependent | 0.595157x | 0.726579x | 1.001818x | 1.000144x |
+
+- The fused lowering was rejected and the split `MUL` plus `ADD`/`SUB` path remains unchanged.
+  This experiment does not increment the optimization tally. Its source, binaries, encodings, and
+  device helper were removed after measurement; no manual PDF or rendered page was copied into the
+  repository.
+
+## ARM64 A32 Packed Halfword Saturation (2026-08-18)
+
+- A32 ARM/Thumb-2 `SSAT16` and `USAT16` are ARM11 guest instructions. Dynarmic previously extracted
+  and sign-extended both halfwords, invoked the scalar saturation operation twice, repacked them,
+  derived two overflow results, and updated sticky `CPSR.Q` twice. The frontend now emits
+  `PackedSignedSaturation16` or `PackedUnsignedSaturation16` plus one overflow pseudo-result and one
+  `A32OrQFlag` call.
+- ARM64 sign-extracts both lanes, shares the min/max constants, clamps with scalar `CMP`/`CSEL`,
+  packs with `BFI`, and compares the packed result against the input once. Signed saturation to 16
+  bits aliases the input and reports no overflow; unsigned saturation to zero bits returns zero and
+  performs the required comparison. AdvSIMD `SQSHL`/`SQSHLU` were deliberately not used because
+  their host `FPSR.QC` side effect could incorrectly alter guest VFP `FPSCR.QC`; this guest
+  instruction updates only ARM11 `CPSR.Q`. x64 and RISC-V polyfill the new IR back into the exact
+  established two-lane scalar DAG.
+- `llvm-objdump` verified the intended old and new sequences. The standalone harness measured
+  representative signed and unsigned 8-bit saturation, with the sticky-Q load/OR/store included.
+  It used four independent operations and four sequential dependent operations per loop,
+  4,000,000 affected operations per sample, and nine alternating-order rounds. Every checksum
+  matched and remained nonzero.
+
+  | Guest-equivalent path | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `SSAT16`, independent | 1.314113x | 1.999041x | 2.024448x | 2.031681x |
+  | `SSAT16`, dependent | 1.207003x | 1.999299x | 1.966196x | 1.505940x |
+  | `USAT16`, independent | 1.092654x | 2.000018x | 2.007952x | 2.031970x |
+  | `USAT16`, dependent | 1.124863x | 2.000474x | 1.928901x | 1.495144x |
+
+- Permanent coverage generates all 128 operation/immediate/encoding/alias combinations: ARM and
+  Thumb, signed immediates 1-16, unsigned immediates 0-15, and aliased or distinct source and
+  destination registers. Ten mixed-lane inputs and both initial Q states verify exact output,
+  every unrelated GPR, unchanged NZCV/GE and FPSCR, and sticky CPSR.Q. The final native ARM64 build
+  passed with JDK 17 in 1 minute 56 seconds. Thor passed the full 51,007-assertion, 30-case focused
+  suite; the new test passed all 43,521 assertions when pinned separately to CPU 0/A510,
+  CPU 3/A715, CPU 5/A710, and CPU 7/X3. Source/test commit `aac808826` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` cold
+  build passed with JDK 17 in 13 minutes 9 seconds. Its ARM64-only APK is 28,999,820 bytes, reports
+  `aac808826-vanilla-thor`, and has SHA-256
+  `8BE9CA081B05BA8589AF2EE5C080563D01EB19B1C4C9CDE2C014C7A4C7439A41`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 55%, 3.907 V, and 22.0 C, so
+  this is not battery-discharge watt evidence.
+- Cleanup removed 2,493,164,811 logical bytes: the 447,536,016-byte native test ELF, benchmark and
+  encoding scratch, rendered manual pages, and reproducible Gradle/JNI/R8/native-symbol/mapping
+  staging. It retained the 28,999,820-byte APK, 476-byte metadata, and 2,784,972,401-byte active
+  ARM64 CMake/Ninja cache. C: recovered 2,051,076,096 physical bytes and reported 80,769,478,656
+  bytes free immediately afterward. Both temporary device helpers were removed; no PDF, manual
+  page, benchmark binary, or scratch note was committed.
+- This is optimization 108 in the overlapping Thor work tally. The 1.09x-2.03x measurements apply
+  only while executing these exact packed-saturation forms. They cannot be added to the other 107
+  items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result. Those
+  still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

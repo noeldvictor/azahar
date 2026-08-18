@@ -770,6 +770,17 @@ The X3 was parked by Android `core_ctl` during this run, so no physical X3 resul
 7,486 assertions in 29 focused cases pass on Thor. This is optimization 107; these exact-path
 figures do not predict whole-game FPS or battery watts.
 
+A32 ARM/Thumb-2 `SSAT16`/`USAT16` now also remain first-class through Dynarmic IR. The old lowering
+extracted and saturated each halfword independently, repacked the result, and updated sticky
+`CPSR.Q` twice. ARM64 now shares both lanes' bounds, clamps them with scalar `CMP`/`CSEL`, packs
+with `BFI`, compares the packed result once, and performs one sticky-Q update. It deliberately
+does not use AdvSIMD saturating shifts because their host `FPSR.QC` side effect could corrupt the
+guest's independent VFP saturation state. x64 and RISC-V retain exact portable polyfills. Thor
+exact-path medians ranged from **1.09x-1.31x on A510, approximately 2.00x on A715, 1.93x-2.02x on
+A710, and 1.50x-2.03x on X3**. The full focused suite passed 51,007 assertions in 30 cases, and the
+new test passed 43,521 assertions when pinned separately to each Thor CPU class. This is
+optimization 108; it is a path-local result, not a whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
