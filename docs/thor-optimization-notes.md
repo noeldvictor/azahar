@@ -3227,10 +3227,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   - A510 CPU 0: OR11 0.560538 -> 0.373591 (33.35%), OR00 0.902216 -> 0.372051
     (58.76%), OR10 0.747175 -> 0.372039 (50.21%), AND00 0.750218 -> 0.373479
     (50.22%), and AND10 0.561308 -> 0.373529 (33.45%).
-  - A710 CPU 3: 0.292621 -> 0.196484 (32.85%), 0.509576 -> 0.196484 (61.44%),
+  - A715 CPU 3: 0.292621 -> 0.196484 (32.85%), 0.509576 -> 0.196484 (61.44%),
     0.385394 -> 0.196484 (49.02%), 0.382662 -> 0.196497 (48.65%), and
     0.294664 -> 0.196484 (33.32%).
-  - A715 CPU 5: 0.302723 -> 0.212689 (29.74%), 0.476968 -> 0.212677 (55.41%),
+  - A710 CPU 5: 0.302723 -> 0.212689 (29.74%), 0.476968 -> 0.212677 (55.41%),
     0.387151 -> 0.212739 (45.05%), 0.384922 -> 0.212689 (44.74%), and
     0.302618 -> 0.212739 (29.70%).
   - X3 CPU 7: 0.243131 -> 0.158492 (34.81%), 0.429650 -> 0.156431 (63.59%),
@@ -3278,13 +3278,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   disassembly-checked ARM64 benchmark evaluated 16,777,216 flag results per case, consumed each with
   `TBZ`, alternated current/direct order across nine rounds, and took the best result:
   - A510 CPU 0: 3.087629 -> 2.586969 ns/evaluation, 16.22% faster.
-  - A710 CPU 3: 0.504820 -> 0.403201 ns/evaluation, 20.13% faster.
-  - A715 CPU 5: 0.516344 -> 0.416782 ns/evaluation, 19.28% faster.
+  - A715 CPU 3: 0.504820 -> 0.403201 ns/evaluation, 20.13% faster.
+  - A710 CPU 5: 0.516344 -> 0.416782 ns/evaluation, 19.28% faster.
   - X3 CPU 7: 0.389681 -> 0.380737 ns/evaluation, 2.30% faster.
 - A nearby two-instruction idea was deliberately rejected. Replacing uniform `LDRB; CMP; B.cond`
   with `LDRB; CBZ/CBNZ` removed an instruction but made the two taken patterns 24.18%/22.71% slower
-  on A510 and 45.99%/38.93% slower on A710. A510 fallthrough improved about 44%; A710 fallthrough
-  tied, and A715/X3 tied or moved only within noise. The manual throughput rows did not capture the
+  on A510 and 45.99%/38.93% slower on A715. A510 fallthrough improved about 44%; A715 fallthrough
+  tied, and A710/X3 tied or moved only within noise. The manual throughput rows did not capture the
   branch-direction cost, so the production PICA sequence remains unchanged.
 - Permanent `[core][arm][dynarmic]` coverage runs real guest `ADDS R0, R0, #1` followed by MI, VS,
   CS, and EQ conditional moves across linked A32 blocks. N/V, Z/C, no-flags, and N-only inputs passed
@@ -3330,8 +3330,8 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | FMLA old -> new | FMLA gain | BIC old -> new | BIC gain |
   | --- | --- | --- | --- | --- |
   | A510 CPU 0 | 2.756224 -> 1.250332 | 2.204x; 54.6% less time | 2.501638 -> 1.001578 | 2.498x; 60.0% less time |
-  | A710 CPU 3 | 0.543852 -> 0.189565 | 2.869x; 65.1% less time | 0.353695 -> 0.190552 | 1.856x; 46.1% less time |
-  | A715 CPU 5 | 0.648188 -> 0.189363 | 3.423x; 70.8% less time | 0.389752 -> 0.187444 | 2.079x; 51.9% less time |
+  | A715 CPU 3 | 0.543852 -> 0.189565 | 2.869x; 65.1% less time | 0.353695 -> 0.190552 | 1.856x; 46.1% less time |
+  | A710 CPU 5 | 0.648188 -> 0.189363 | 3.423x; 70.8% less time | 0.389752 -> 0.187444 | 2.079x; 51.9% less time |
   | X3 CPU 7 | 0.592520 -> 0.169103 | 3.504x; 71.5% less time | 0.338578 -> 0.169240 | 2.001x; 50.0% less time |
 
 - A complete 2,200-action ARM64 native rebuild and release-style package passed in 14 minutes 8
@@ -3375,8 +3375,8 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | Pack 32x2 old -> new | Low word old -> new | Packed SEL old -> new |
   | --- | --- | --- | --- |
   | A510 CPU 0 | 0.625756 -> 0.249660 ns/op; 2.506x | 0.624926 -> 0.294328; 2.123x | 2.763567 -> 2.008003; 1.376x |
-  | A710 CPU 3 | 0.225835 -> 0.159822; 1.413x | 0.244629 -> 0.165706; 1.476x | 0.539208 -> 0.370929; 1.454x |
-  | A715 CPU 5 | 0.208508 -> 0.184927; 1.128x | 0.209658 -> 0.162218; 1.292x | 0.556094 -> 0.370510; 1.501x |
+  | A715 CPU 3 | 0.225835 -> 0.159822; 1.413x | 0.244629 -> 0.165706; 1.476x | 0.539208 -> 0.370929; 1.454x |
+  | A710 CPU 5 | 0.208508 -> 0.184927; 1.128x | 0.209658 -> 0.162218; 1.292x | 0.556094 -> 0.370510; 1.501x |
   | X3 CPU 7 | 0.178597 -> 0.169376; 1.054x | 0.148312 -> 0.102176; 1.452x | 0.254074 -> 0.231546; 1.097x |
 
 - Permanent tests execute real A32 `UMLAL` to cover packed low/high results and real A32 `SEL`
@@ -3421,10 +3421,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | Byte `UXTB; SXTB` -> `SXTB` | Half `UXTH; SXTH` -> `SXTH` |
   | --- | --- | --- |
   | A510 CPU 0 | 0.627656 -> 0.250822 ns/op; 2.502x; 60.04% less time | 1.132231 -> 0.251382; 4.504x; 77.80% less time |
-  | A710 CPU 3 | 0.236033 -> 0.141632; 1.667x; 39.99% | 0.235977 -> 0.141353; 1.669x; 40.10% |
-  | A715 CPU 5 | 0.273183 -> 0.155802; 1.753x; 42.97% | 0.276155 -> 0.152790; 1.807x; 44.67% |
+  | A715 CPU 3 | 0.236033 -> 0.141632; 1.667x; 39.99% | 0.235977 -> 0.141353; 1.669x; 40.10% |
+  | A710 CPU 5 | 0.273183 -> 0.155802; 1.753x; 42.97% | 0.276155 -> 0.152790; 1.807x; 44.67% |
 
-  A715 CPU 6 independently measured 1.856x/1.778x for byte/halfword. CPU 7 reported online but
+  A710 CPU 6 independently measured 1.856x/1.778x for byte/halfword. CPU 7 reported online but
   rejected both the benchmark and `/system/bin/true` with a single-bit affinity mask as `EINVAL`;
   no X3 measurement is claimed for this run.
 - Permanent guest coverage executes A32 `SXTB`, `SXTH`, and `SMULBB` with dirty upper bits, plus a
@@ -3471,11 +3471,11 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | LSL old -> new | ASR old -> new |
   | --- | --- | --- |
   | A510 CPU 0 | 2.136812 -> 1.510237 ns/op; 1.415x; 29.32% less time | 2.640345 -> 2.135542; 1.236x; 19.12% |
-  | A710 CPU 3 | 0.535285 -> 0.417087; 1.283x; 22.08% | 0.499109 -> 0.388098; 1.286x; 22.24% |
-  | A715 CPU 5 | 0.501662 -> 0.422252; 1.188x; 15.83% | 0.485471 -> 0.390124; 1.244x; 19.64% |
+  | A715 CPU 3 | 0.535285 -> 0.417087; 1.283x; 22.08% | 0.499109 -> 0.388098; 1.286x; 22.24% |
+  | A710 CPU 5 | 0.501662 -> 0.422252; 1.188x; 15.83% | 0.485471 -> 0.390124; 1.244x; 19.64% |
 
   CPU 6 and CPU 7 reported online but rejected harmless single-bit affinity probes during the
-  final run, so no second-A715 or X3 measurement is claimed.
+  final run, so no second-A710 or X3 measurement is claimed.
 - Permanent guest coverage executes non-flags LSL, LSR, ASR, and ROR plus carry-producing LSLS for
   dirty-upper-bit shift registers whose low bytes are 0, 1, 31, 32, 33, and 255. It verifies the
   complete result and carry semantics at every ARM edge. Thor passed 106 assertions in six focused
@@ -3514,7 +3514,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and recognizes only LSL/LSR/ROR. Shared values, stores, extensions, unknown consumers, and generic
   U8 producers retain `UXTB` and their masks. ASR deliberately retains optimization 83's canonical
   path: a candidate `MOV 31; TST #0xe0; CSEL; ASRV` sequence helped A510 by roughly 23%, but repeated
-  A710 runs were 0.9%-4.9% slower and A715 improved by only 0.6%-1.1%.
+  A715 runs were 0.9%-4.9% slower and A710 improved by only 0.6%-1.1%.
 - The checked manual tables list basic/flag-setting logical operations on X3 page 15, A715/A710
   page 17, and A510 page 14. `UBFM`/`UXTB` and variable shifts are on X3 page 18, A715 page 20,
   A710 page 27, and A510 page 22. These are real integer/ALU operations on every Thor core class;
@@ -3526,11 +3526,11 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | LSL old -> new | LSR old -> new | ROR old -> new |
   | --- | --- | --- | --- |
   | A510 CPU 0 | 1.509530 -> 0.752534 ns/op; 2.006x; 50.15% less time | 1.506653 -> 0.627943; 2.399x; 58.32% | 1.132371 -> 0.250024; 4.529x; 77.92% |
-  | A710 CPU 3 | 0.392147 -> 0.314307; 1.248x; 19.85% | 0.392278 -> 0.314244; 1.248x; 19.89% | 0.209037 -> 0.160285; 1.304x; 23.32% |
-  | A715 CPU 5 | 0.388550 -> 0.320123; 1.214x; 17.61% | 0.388614 -> 0.320318; 1.213x; 17.57% | 0.204095 -> 0.150064; 1.360x; 26.47% |
+  | A715 CPU 3 | 0.392147 -> 0.314307; 1.248x; 19.85% | 0.392278 -> 0.314244; 1.248x; 19.89% | 0.209037 -> 0.160285; 1.304x; 23.32% |
+  | A710 CPU 5 | 0.388550 -> 0.320123; 1.214x; 17.61% | 0.388614 -> 0.320318; 1.213x; 17.57% | 0.204095 -> 0.150064; 1.360x; 26.47% |
 
   CPU 6 and CPU 7 reported online but rejected harmless single-bit affinity probes with `EINVAL`,
-  so no second-A715 or X3 result is claimed.
+  so no second-A710 or X3 result is claimed.
 - Permanent guest coverage now checks carry-producing LSLS, LSRS, ASRS, and RORS separately for
   dirty-upper-bit count registers whose low bytes are 0, 1, 31, 32, 33, and 255, in addition to
   the no-flags coverage. The final ARM64 build passed in one minute. Thor passed 154 assertions in
@@ -3576,11 +3576,11 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | 16-bit `UMOV; DUP` -> element `DUP` | 32-bit `UMOV; DUP` -> element `DUP` |
   | --- | --- | --- |
   | A510 CPU 0 | 3.016938 -> 0.502268; 6.007x; 83.35% less time | 3.019914 -> 0.503150; 6.002x; 83.34% |
-  | A710 CPU 3 | 0.358605 -> 0.179209; 2.001x; 50.03% | 0.358586 -> 0.179214; 2.001x; 50.02% |
-  | A710 CPU 4 | 0.358444 -> 0.179187; 2.000x; 50.01% | 0.358347 -> 0.179237; 1.999x; 49.98% |
+  | A715 CPU 3 | 0.358605 -> 0.179209; 2.001x; 50.03% | 0.358586 -> 0.179214; 2.001x; 50.02% |
+  | A715 CPU 4 | 0.358444 -> 0.179187; 2.000x; 50.01% | 0.358347 -> 0.179237; 1.999x; 49.98% |
 
   CPUs 5 and 7 reported online at 2.8032 and 3.1872 GHz but rejected both direct and Android
-  `taskset` single-bit affinity with `EINVAL`; no A715 or X3 benchmark number is claimed for this
+  `taskset` single-bit affinity with `EINVAL`; no A710 or X3 benchmark number is claimed for this
   run.
 - Permanent guest coverage executes `VMULL.S16`, `VMLAL.U16`, `VMLSL.S32`, and `VMULL.U32` with
   different scalar-lane indices, signed extremes, unsigned accumulator wrap, subtraction, and
@@ -3632,10 +3632,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   | Thor core | Old -> new | Local result-path gain |
   | --- | --- | --- |
   | A510 CPU 0 | 6.665553 -> 4.020711 ns/op | 1.658x; 39.68% less time |
-  | A710 CPU 3 | 1.066110 -> 0.728358 ns/op | 1.464x; 31.68% less time |
-  | A710 CPU 4 | 1.066017 -> 0.733805 ns/op | 1.453x; 31.16% less time |
+  | A715 CPU 3 | 1.066110 -> 0.728358 ns/op | 1.464x; 31.68% less time |
+  | A715 CPU 4 | 1.066017 -> 0.733805 ns/op | 1.453x; 31.16% less time |
 
-  Only the currently usable CPU 0/3/4 single-bit affinity masks were measured; no A715 or X3
+  Only the currently usable CPU 0/3/4 single-bit affinity masks were measured; no A710 or X3
   number is claimed for this run.
 - Permanent guest coverage executes low-register `VZIP.8 D0, D1` and high-register
   `VZIP.16 D30, D31` with non-repeating lanes and verifies all four complete 64-bit outputs. Thor
@@ -3658,6 +3658,63 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   trigger at different frequencies, and cannot be added. Whole-game FPS, sustained watts,
   frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/resolution/
   layout/mode/fan/brightness A/B run.
+
+## 2026-08-18 Dynarmic Native Widening Absolute Difference
+
+- A32 guest `VABDL`/`VABAL` first extracted each 64-bit source from its SIMD register with
+  `VectorGetElement(64)`, reconstructed a D value with `ZeroExtendToQuad()`, and widened it with
+  `VectorZeroExtend()` before taking the absolute difference. The ARM64 emitter therefore paid
+  `UMOV; FMOV; UXTL` for each source plus `SABD`/`UABD`: seven host instructions with two round
+  trips across the SIMD/GPR register banks. The equivalent A64 guest path used two separate
+  extensions plus the difference.
+- Dynarmic now has signed and unsigned 8/16/32-bit widening-absolute-difference IR operations. A32
+  feeds the original D-register values directly; A64 feeds the selected low/high 64-bit part; and
+  accumulation remains a widened-lane `VectorAdd()` after the difference. The ARM64 backend emits
+  one baseline `SABDL`/`UABDL`. x64 expands the new operation back into the established same-width
+  difference plus zero extension, preserving portability without requiring an x64-specific ISA.
+- The actual Snapdragon core guides were rendered and visually checked. The low-half
+  `SABDL`/`UABDL` form is listed at latency 2 / throughput 4 on Cortex-X3 issue 4.0 page 25,
+  latency 2 / throughput 2 on Cortex-A715 issue 5.0 page 28 and Cortex-A710 issue 4.0 page 42, and
+  latency 3 with the table's low/high-form throughput notation `2,1` on Cortex-A510 issue 6.0 page
+  35. The implementation uses the faster low-half form because the selected guest D value is
+  already in the low 64 bits.
+- A disassembly-checked benchmark compared eight independent repetitions of the exact old
+  `UMOV; FMOV; UXTL; UMOV; FMOV; UXTL; UABD` path with eight native `UABDL` instructions. It ran
+  2,000,000 loop iterations per sample (16,000,000 operations), alternated A/B order over seven
+  rounds, selected each best sample, and required identical nonzero `0x00fe000000fe0001` results:
+
+  | Thor core | Old -> new | Local widening-difference gain |
+  | --- | --- | --- |
+  | A510 CPU 0 | 7.998265 -> 0.500492 ns/op | 15.981x; 93.74% less time |
+  | A715 CPU 3 | 1.030244 -> 0.178369 ns/op | 5.776x; 82.69% less time |
+  | A715 CPU 4 | 1.020482 -> 0.178372 ns/op | 5.721x; 82.52% less time |
+  | A710 CPU 6 | 1.457829 -> 0.178369 ns/op | 8.173x; 87.76% less time |
+
+  The device MIDRs identified CPU 0 as part `0xd46`, CPUs 3/4 as `0xd4d`, CPU 6 as `0xd47`, and
+  CPU 7 as `0xd4e`. The current ADB-shell scheduler mask rejected single-bit affinity for CPU 7,
+  so no X3 benchmark number is claimed.
+- Permanent A32 guest tests cover `VABDL.S8`, `VABDL.U16`, `VABDL.S32`, `VABAL.U8`, `VABAL.S16`,
+  and `VABAL.U32` with signed extremes, every widening size, complete destination lanes, and
+  accumulator wraparound. Thor passed 198 assertions in 11 focused `[core][arm][dynarmic]` cases
+  and 3,065 assertions in 26 broader `[core]~[file_sys]` cases. The full ARM64 native build passed
+  in 1 minute 46 seconds. Source/test commit `1907b5129` was pushed directly to `origin/master`
+  over command-line Git SSH before packaging.
+- JDK 17 release packaging passed in 1 minute 54 seconds. The ARM64-only, v2-signed APK is
+  28,980,344 bytes, reports `1907b5129-vanilla-thor`, and has SHA-256
+  `B678724C5811203E83E64EEF9377E7615017748092A086FBED75D58971D46223`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and
+  20.0 C, so the charging snapshot is not battery-discharge watt evidence.
+- Temporary test/benchmark binaries and rendered manual pages were removed from host and Thor.
+  Post-verification cleanup removed 2,021,390,819 logical bytes of Gradle/JNI/native staging and
+  raised C: free space by 1,580,883,968 bytes to 82,019,672,064. `app/build` retains only the
+  28,980,344-byte APK and 476-byte metadata; the 3,246,345,900-byte active ARM64 RelWithDebInfo
+  CMake/Ninja cache remains for incremental work.
+- This is optimization 87 in the Thor work tally. Its 5.72x-15.98x result applies only to the
+  widening-absolute-difference host sequence used by guest `VABDL`/`VABAL`; instruction frequency
+  is title-dependent. The 87 items overlap and cannot be added. Whole-game FPS, sustained watts,
+  frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/resolution/
+  layout/mode/fan/brightness/duration A/B run.
 
 ## High-Value Optimization Places
 

@@ -40,6 +40,9 @@
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
 - Android work lives under `src/android`; keep cheat-build branding and UI changes scoped there when possible.
 - Performance work targets AYN Thor Base/Pro/Max: Snapdragon 8 Gen 2, Adreno 740, active cooling, LPDDR5X, and UFS 3.1 storage according to AYN's current product page. The mirrored Thor manual claims UFS 4.0, so do not use storage generation as an optimization premise without verifying the physical device. Do not tune defaults around Thor Lite / Snapdragon 865 unless the user explicitly asks.
+- Label Thor CPU-affinity measurements from the device MIDRs, not assumed Linux numbering: CPUs
+  0-2 are Cortex-A510 (`0xd46`), CPUs 3-4 are Cortex-A715 (`0xd4d`), CPUs 5-6 are Cortex-A710
+  (`0xd47`), and CPU 7 is Cortex-X3 (`0xd4e`).
 - The primary engineering goal is higher sustained Azahar performance at lower battery power on AYN Thor. Treat average FPS, frametime distribution, battery power, temperature, thermal slope, visual correctness, and stability as joint acceptance criteria; a short FPS-only improvement is not a win.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
@@ -75,7 +78,7 @@
   LSR, or ROR. For no-carry LSL/LSR, preserve `TST #0xe0` plus EQ selection: AArch64 consumes only
   bits 4:0, while bits 7:5 distinguish the A32 0..31 range from 32..255. ROR may use the raw source
   directly because both architectures rotate by the low five bits; its carry path must retain the
-  low-byte zero test. Do not extend this alias to ASR: its raw-count clamp regressed on A710, so ASR
+  low-byte zero test. Do not extend this alias to ASR: its raw-count clamp regressed on A715, so ASR
   retains `UXTB` and the established canonical path. Preserve generic U8 masks and the complete
   carry lowerings. Keep real guest coverage for dirty-upper-bit amounts 0, 1, 31, 32, 33, and 255
   across no-flags and carry-producing LSL/LSR/ASR/ROR.
@@ -91,6 +94,14 @@
   `SetVector()`. Do not restore `VectorGetElement(64)` plus `SetExtendedRegister()`: the ARM64
   backend turns each half into `UMOV` to a GPR followed by `FMOV` back to a D register. Preserve
   low/high D-register encoding coverage, both legal element sizes, and the existing Q-form path.
+- A32/A64 `VABDL` and `VABAL` must express the widening absolute difference with
+  `VectorSignedAbsoluteDifferenceWiden()` or `VectorUnsignedAbsoluteDifferenceWiden()` before any
+  accumulation. The ARM64 backend must lower those IR operations directly to `SABDL`/`UABDL` on
+  the selected 64-bit source half. Do not restore the A32 `VectorGetElement(64)` ->
+  `ZeroExtendToQuad()` -> `VectorZeroExtend()` chain or the A64 pair of pre-extensions; they turn a
+  native one-instruction operation into cross-register-bank transfers and separate widening.
+  Keep the x64 polyfill and signed/unsigned 8/16/32-bit guest coverage, including signed extremes
+  and widened-lane accumulator wraparound.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

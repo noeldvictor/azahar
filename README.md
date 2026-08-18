@@ -215,16 +215,21 @@ include:
   the complete A32 byte-count rules. This removes one more host instruction from LSL/LSR and the
   complete `UXTB` from ROR. Exact-sequence Thor measurements were **1.21x-2.41x for LSL/LSR** and
   **1.30x-4.53x for ROR** on measured A510/A710/A715 cores. An ASR variant was rejected after a
-  repeatable A710 regression, so ASR keeps the prior canonical path;
+  repeatable A715 regression, so ASR keeps the prior canonical path;
 - scalar NEON `VMULL`/`VMLAL`/`VMLSL` lowering that broadcasts the selected source lane directly
   inside SIMD. It replaces an element-to-GPR `UMOV` followed by a GPR-to-SIMD `DUP` with one
   element `DUP`. Disassembly-checked 16/32-bit broadcast measurements were **6.00x faster on the
-  Cortex-A510** and **2.00x on both measured Cortex-A710 cores** for this exact preparation
+  Cortex-A510** and **2.00x on both measured Cortex-A715 cores** for this exact preparation
   sequence;
 - D-register `VZIP.8`/`VZIP.16` lowering that keeps both interleaved results in SIMD. The ARM64
   result path falls from `ZIP1 + 2x UMOV + 2x FMOV` to `ZIP1 + EXT`, avoiding four cross-register-
   bank transfers. A checksum-locked exact-sequence benchmark measured **1.66x on Cortex-A510** and
-  **1.45x-1.46x on the two usable Cortex-A710 cores**; and
+  **1.45x-1.46x on the two usable Cortex-A715 cores**;
+- native widening absolute difference for guest `VABDL`/`VABAL`. A32 previously crossed from SIMD
+  to GPR and back twice, widened both inputs separately, then subtracted: seven ARM64 instructions.
+  The new widening-difference IR lowers directly to one baseline `SABDL`/`UABDL`. A checksum-locked
+  exact-sequence benchmark measured **15.98x on Cortex-A510**, **5.72x-5.78x on Cortex-A715**, and
+  **8.17x on the usable Cortex-A710 core** for that preparation; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
