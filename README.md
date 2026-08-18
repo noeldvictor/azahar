@@ -804,6 +804,15 @@ also rejected after regressing X3 by up to 10.6%. The new 6,801-assertion test p
 all four Thor CPU classes, and the full focused suite passed 60,529 assertions in 32 cases. This is
 optimization 110; the measurements are path-local, not whole-game FPS or battery-watt results.
 
+A32 ARM/Thumb-2 `RBIT` now remains first-class through Dynarmic IR as `ReverseBits32`. ARM64 emits
+one native `RBIT` instead of the old 17-instruction mask/shift/OR network; x64 and RISC-V expand the
+new semantic operation back to that exact portable network. A disassembly-checked, 16-million-
+operation Thor benchmark measured **11.31x-17.58x** for four independent chains and
+**7.02x-9.64x** for a sequential dependency chain across A510, A715, A710, and X3. The new test
+passed 612 assertions on every Thor CPU class, and the full focused suite passed 61,141 assertions
+in 33 cases. This is optimization 111; it is an exact instruction-path result, not a whole-game
+FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

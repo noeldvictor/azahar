@@ -212,6 +212,11 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   `MOV`/`FMOV` therefore reduces dependency and issue work on every Thor core class without relying
   on an optional ISA feature. Preserve the original low word before `BFI`, exact per-byte GE
   selection through `BSL`, and the copy fallback whenever the mask or low operand is still shared.
+- Prefer a first-class semantic operation over a synthesized mask network when the host ISA has an
+  exact scalar match. The AArch64 `RBIT` rows are A510 page 22, A710 page 27, A715 page 20, and X3
+  page 18. Keep A32 ARM/Thumb-2 bit reversal as IR until ARM64 can emit one `RBIT`, retain portable
+  polyfills elsewhere, and require disassembly plus exact-path measurements on every Thor core
+  class before acceptance.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,

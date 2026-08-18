@@ -644,6 +644,13 @@
   and unchanged FPSCR. The accepted ROR8 path measured 1.050745x-1.065097x on A510,
   1.159406x-1.159727x on A715, 1.089628x-1.120201x on A710, and 1.067154x-1.076240x on X3. Keep
   these claims path-local until a matched title and battery-power A/B exists.
+- A32 ARM/Thumb-2 `RBIT` must retain the first-class `ReverseBits32` IR operation. ARM64 must emit
+  one native `RBIT`; x64 and RISC-V must polyfill it back to the exact mask/shift/OR network. Keep
+  permanent ARM and Thumb coverage for distinct operands and source/destination aliases while
+  proving untouched GPRs, unchanged NZCV/Q/GE, and unchanged FPSCR. The old 17-instruction ARM64
+  path fell to one instruction and measured 11.306165x-17.584485x for independent chains and
+  7.024895x-9.644375x for a sequential dependency chain across all four Thor CPU classes. Keep
+  these claims path-local until a matched title and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

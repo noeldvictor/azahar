@@ -5030,6 +5030,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   frametime, or thermal result. Those still require a matched title/scene/cache/renderer/driver/
   resolution/layout/mode/fan/brightness/duration A/B run.
 
+## ARM64 A32 Native Bit Reversal (2026-08-18)
+
+- A32 ARM/Thumb-2 `RBIT` previously expanded in the frontend to a portable mask/shift/OR network:
+  two AND-and-shift pairs plus OR, followed by four AND-and-shift pairs plus three ORs. The ARM64
+  backend consequently emitted 17 host instructions for a guest operation with a native scalar
+  instruction.
+- Dynarmic now retains the operation as first-class `ReverseBits32` IR. ARM64 emits one native
+  `RBIT`; the unmodified x64 and RISC-V semantics are preserved by polyfilling the IR operation
+  back to the exact old network. The A32 A64-guest frontend was intentionally left unchanged.
+- The locally reviewed Cortex manuals list AArch64 `RBIT` at latency/throughput 2/3 on A510 page
+  22, 1/4 on A710 page 27, 1/4 on A715 page 20, and 1/6 on X3 page 18. This made the semantic IR
+  route a strong candidate, but the Thor benchmark remained the acceptance test. No manual PDF or
+  rendered page was copied into the repository.
+- Standalone disassembly verified the exact old 17-instruction loop and new single-`RBIT` loop.
+  The benchmark ran four independent operations or one sequential dependent chain repeated four
+  times per loop. Each sample executed 16,000,000 affected operations; 11 samples alternated
+  old/new order, and medians are reported below.
+
+  | Dependency pattern | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | Four independent chains | 17.584485x | 12.871236x | 11.306165x | 15.101148x |
+  | Sequential chain | 7.024895x | 9.056788x | 9.644375x | 9.113942x |
+
+- Permanent ARM and Thumb-2 coverage checks nine values, distinct operands, source/destination
+  aliases, every unrelated GPR, NZCV/Q/GE, and FPSCR. The new test passed 612 assertions when
+  pinned separately to CPU 0/A510, CPU 3/A715, CPU 5/A710, and CPU 7/X3. The full focused
+  `[core][arm][dynarmic]` suite passed 61,141 assertions in 33 cases. Source/test commit
+  `ff4994c54` was pushed directly to `origin/master` using command-line Git SSH.
+- The exact post-source-commit `:app:assembleVanillaRelWithDebInfoLite` build with
+  `--no-configuration-cache` passed with JDK 17. The retained ARM64-only APK is 28,998,524
+  bytes, reports `ff4994c54-vanilla-thor`, and has SHA-256
+  `D3D965EC21CC0D3FF5E94B4D1B8842AF00E2102FC84036E8F59FA38F5CBF3CAF`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 57%, 3.847 V, and 23.0 C, so
+  this is not battery-discharge watt evidence.
+- Cleanup removed 2,492,895,929 logical host bytes of temporary benchmark/test and reproducible
+  Gradle/JNI/R8/native-symbol/mapping staging while retaining the APK, its 476-byte metadata, and
+  the active ARM64 CMake/Ninja cache. C: recovered 2,051,411,968 physical bytes and reported
+  79,644,041,216 bytes free immediately afterward. Temporary device helpers were also removed; no
+  PDF, manual page, benchmark binary, or scratch note was committed.
+- This is optimization 111 in the overlapping Thor work tally. The 7.02x-17.58x measurements apply
+  only while executing this exact bit-reversal path. They cannot be added to the other 110 items
+  or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result. Those
+  still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
