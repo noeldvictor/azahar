@@ -196,15 +196,7 @@ bool TranslatorVisitor::arm_QASX(Cond cond, Reg n, Reg d, Reg m) {
         return true;
     }
 
-    const auto Rn = ir.GetRegister(n);
-    const auto Rm = ir.GetRegister(m);
-    const auto Rn_lo = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(Rn));
-    const auto Rn_hi = ir.SignExtendHalfToWord(MostSignificantHalf(ir, Rn));
-    const auto Rm_lo = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(Rm));
-    const auto Rm_hi = ir.SignExtendHalfToWord(MostSignificantHalf(ir, Rm));
-    const auto diff = ir.SignedSaturation(ir.Sub(Rn_lo, Rm_hi), 16).result;
-    const auto sum = ir.SignedSaturation(ir.Add(Rn_hi, Rm_lo), 16).result;
-    const auto result = Pack2x16To1x32(ir, diff, sum);
+    const auto result = ir.PackedSaturatedAddSubS16(ir.GetRegister(n), ir.GetRegister(m));
 
     ir.SetRegister(d, result);
     return true;
@@ -220,15 +212,7 @@ bool TranslatorVisitor::arm_QSAX(Cond cond, Reg n, Reg d, Reg m) {
         return true;
     }
 
-    const auto Rn = ir.GetRegister(n);
-    const auto Rm = ir.GetRegister(m);
-    const auto Rn_lo = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(Rn));
-    const auto Rn_hi = ir.SignExtendHalfToWord(MostSignificantHalf(ir, Rn));
-    const auto Rm_lo = ir.SignExtendHalfToWord(ir.LeastSignificantHalf(Rm));
-    const auto Rm_hi = ir.SignExtendHalfToWord(MostSignificantHalf(ir, Rm));
-    const auto sum = ir.SignedSaturation(ir.Add(Rn_lo, Rm_hi), 16).result;
-    const auto diff = ir.SignedSaturation(ir.Sub(Rn_hi, Rm_lo), 16).result;
-    const auto result = Pack2x16To1x32(ir, sum, diff);
+    const auto result = ir.PackedSaturatedSubAddS16(ir.GetRegister(n), ir.GetRegister(m));
 
     ir.SetRegister(d, result);
     return true;
@@ -244,15 +228,7 @@ bool TranslatorVisitor::arm_UQASX(Cond cond, Reg n, Reg d, Reg m) {
         return true;
     }
 
-    const auto Rn = ir.GetRegister(n);
-    const auto Rm = ir.GetRegister(m);
-    const auto Rn_lo = ir.ZeroExtendHalfToWord(ir.LeastSignificantHalf(Rn));
-    const auto Rn_hi = ir.ZeroExtendHalfToWord(MostSignificantHalf(ir, Rn));
-    const auto Rm_lo = ir.ZeroExtendHalfToWord(ir.LeastSignificantHalf(Rm));
-    const auto Rm_hi = ir.ZeroExtendHalfToWord(MostSignificantHalf(ir, Rm));
-    const auto diff = ir.UnsignedSaturation(ir.Sub(Rn_lo, Rm_hi), 16).result;
-    const auto sum = ir.UnsignedSaturation(ir.Add(Rn_hi, Rm_lo), 16).result;
-    const auto result = Pack2x16To1x32(ir, diff, sum);
+    const auto result = ir.PackedSaturatedAddSubU16(ir.GetRegister(n), ir.GetRegister(m));
 
     ir.SetRegister(d, result);
     return true;
@@ -268,15 +244,7 @@ bool TranslatorVisitor::arm_UQSAX(Cond cond, Reg n, Reg d, Reg m) {
         return true;
     }
 
-    const auto Rn = ir.GetRegister(n);
-    const auto Rm = ir.GetRegister(m);
-    const auto Rn_lo = ir.ZeroExtendHalfToWord(ir.LeastSignificantHalf(Rn));
-    const auto Rn_hi = ir.ZeroExtendHalfToWord(MostSignificantHalf(ir, Rn));
-    const auto Rm_lo = ir.ZeroExtendHalfToWord(ir.LeastSignificantHalf(Rm));
-    const auto Rm_hi = ir.ZeroExtendHalfToWord(MostSignificantHalf(ir, Rm));
-    const auto sum = ir.UnsignedSaturation(ir.Add(Rn_lo, Rm_hi), 16).result;
-    const auto diff = ir.UnsignedSaturation(ir.Sub(Rn_hi, Rm_lo), 16).result;
-    const auto result = Pack2x16To1x32(ir, sum, diff);
+    const auto result = ir.PackedSaturatedSubAddU16(ir.GetRegister(n), ir.GetRegister(m));
 
     ir.SetRegister(d, result);
     return true;

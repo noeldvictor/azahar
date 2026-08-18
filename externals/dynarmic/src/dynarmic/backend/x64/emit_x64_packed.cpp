@@ -635,6 +635,61 @@ void EmitX64::EmitPackedSaturatedSubS16(EmitContext& ctx, IR::Inst* inst) {
     EmitPackedOperation(code, ctx, inst, &Xbyak::CodeGenerator::psubsw);
 }
 
+static void EmitPackedSaturatedSubAdd(BlockOfCode& code, EmitContext& ctx, IR::Inst* inst, bool hi_is_sum, bool is_signed) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    const Xbyak::Xmm result = ctx.reg_alloc.UseScratchXmm(args[0]);
+    const Xbyak::Xmm swapped_b = ctx.reg_alloc.UseScratchXmm(args[1]);
+    const Xbyak::Xmm alternate = ctx.reg_alloc.ScratchXmm();
+
+    code.pshuflw(swapped_b, swapped_b, 0b10110001);
+    code.movaps(alternate, result);
+
+    if (hi_is_sum) {
+        if (is_signed) {
+            code.paddsw(result, swapped_b);
+            code.psubsw(alternate, swapped_b);
+        } else {
+            code.paddusw(result, swapped_b);
+            code.psubusw(alternate, swapped_b);
+        }
+    } else {
+        if (is_signed) {
+            code.psubsw(result, swapped_b);
+            code.paddsw(alternate, swapped_b);
+        } else {
+            code.psubusw(result, swapped_b);
+            code.paddusw(alternate, swapped_b);
+        }
+    }
+
+    if (code.HasHostFeature(HostFeature::SSE41)) {
+        code.pblendw(result, alternate, 0b00000001);
+    } else {
+        const Xbyak::Reg32 low_lane = ctx.reg_alloc.ScratchGpr().cvt32();
+        code.pextrw(low_lane, alternate, 0);
+        code.pinsrw(result, low_lane, 0);
+    }
+
+    ctx.reg_alloc.DefineValue(inst, result);
+}
+
+void EmitX64::EmitPackedSaturatedAddSubU16(EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedSubAdd(code, ctx, inst, true, false);
+}
+
+void EmitX64::EmitPackedSaturatedAddSubS16(EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedSubAdd(code, ctx, inst, true, true);
+}
+
+void EmitX64::EmitPackedSaturatedSubAddU16(EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedSubAdd(code, ctx, inst, false, false);
+}
+
+void EmitX64::EmitPackedSaturatedSubAddS16(EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedSubAdd(code, ctx, inst, false, true);
+}
+
 void EmitX64::EmitPackedAbsDiffSumU8(EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 

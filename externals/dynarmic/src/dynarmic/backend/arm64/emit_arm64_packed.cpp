@@ -401,6 +401,60 @@ void EmitIR<IR::Opcode::PackedSaturatedSubS16>(oaknut::CodeGenerator& code, Emit
     EmitSaturatedPackedOp(code, ctx, inst, [&](auto& Vresult, auto& Va, auto& Vb) { code.SQSUB(Vresult->H4(), Va->H4(), Vb->H4()); });
 }
 
+template<bool add_is_hi, bool is_signed>
+static void EmitPackedSaturatedAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    auto Vresult = ctx.reg_alloc.WriteD(inst);
+    auto Va = ctx.reg_alloc.ReadD(args[0]);
+    auto Vb = ctx.reg_alloc.ReadD(args[1]);
+    RegAlloc::Realize(Vresult, Va, Vb);
+    ctx.fpsr.Spill();
+
+    // ASX/SAX exchange source halfwords before applying opposite saturating operations. Compute
+    // both native two-lane candidates, then replace only the low lane; lanes 2-3 are irrelevant
+    // because the IR result is U32.
+    code.REV32(V0.H4(), Vb->H4());
+    if constexpr (add_is_hi) {
+        if constexpr (is_signed) {
+            code.SQADD(Vresult->H4(), Va->H4(), V0.H4());
+            code.SQSUB(V1.H4(), Va->H4(), V0.H4());
+        } else {
+            code.UQADD(Vresult->H4(), Va->H4(), V0.H4());
+            code.UQSUB(V1.H4(), Va->H4(), V0.H4());
+        }
+    } else {
+        if constexpr (is_signed) {
+            code.SQSUB(Vresult->H4(), Va->H4(), V0.H4());
+            code.SQADD(V1.H4(), Va->H4(), V0.H4());
+        } else {
+            code.UQSUB(Vresult->H4(), Va->H4(), V0.H4());
+            code.UQADD(V1.H4(), Va->H4(), V0.H4());
+        }
+    }
+    code.MOV(Vresult->Helem()[0], V1.H()[0]);
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedAddSubU16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedAddSub<true, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedAddSubS16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedAddSub<true, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedSubAddU16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedAddSub<false, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedSubAddS16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitPackedSaturatedAddSub<false, true>(code, ctx, inst);
+}
+
 template<>
 void EmitIR<IR::Opcode::PackedAbsDiffSumU8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitPackedOp(code, ctx, inst, [&](auto& Vresult, auto& Va, auto& Vb) {

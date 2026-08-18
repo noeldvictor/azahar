@@ -856,6 +856,22 @@ U32 IREmitter::PackedSaturatedSubS16(const U32& a, const U32& b) {
     return Inst<U32>(Opcode::PackedSaturatedSubS16, a, b);
 }
 
+U32 IREmitter::PackedSaturatedAddSubU16(const U32& a, const U32& b) {
+    return Inst<U32>(Opcode::PackedSaturatedAddSubU16, a, b);
+}
+
+U32 IREmitter::PackedSaturatedAddSubS16(const U32& a, const U32& b) {
+    return Inst<U32>(Opcode::PackedSaturatedAddSubS16, a, b);
+}
+
+U32 IREmitter::PackedSaturatedSubAddU16(const U32& a, const U32& b) {
+    return Inst<U32>(Opcode::PackedSaturatedSubAddU16, a, b);
+}
+
+U32 IREmitter::PackedSaturatedSubAddS16(const U32& a, const U32& b) {
+    return Inst<U32>(Opcode::PackedSaturatedSubAddS16, a, b);
+}
+
 U32 IREmitter::PackedAbsDiffSumU8(const U32& a, const U32& b) {
     return Inst<U32>(Opcode::PackedAbsDiffSumU8, a, b);
 }

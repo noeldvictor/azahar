@@ -694,6 +694,42 @@ TEST_CASE("Dynarmic A32 mixed halving add-sub preserves rounding and underflow",
     CHECK(jit.Regs()[9] == 0x80007fff);
 }
 
+TEST_CASE("Dynarmic A32 mixed saturated add-sub preserves lanes and flags",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe6210f32,  // QASX R0, R1, R2
+        0xe6243f55,  // QSAX R3, R4, R5
+        0xe6676f38,  // UQASX R6, R7, R8
+        0xe66a9f5b,  // UQSAX R9, R10, R11
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    jit.Regs() = {};
+    jit.Regs()[1] = 0x7fff8000;
+    jit.Regs()[2] = 0x7fff7fff;
+    jit.Regs()[4] = 0x80007fff;
+    jit.Regs()[5] = 0x7fff7fff;
+    jit.Regs()[7] = 0xffff0000;
+    jit.Regs()[8] = 0xffff0001;
+    jit.Regs()[10] = 0x0000ffff;
+    jit.Regs()[11] = 0x0001ffff;
+    constexpr std::uint32_t initial_cpsr = 0xf80f01d0;  // NZCV/Q/GE plus User mode
+    jit.SetCpsr(initial_cpsr);
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    CHECK(jit.Regs()[0] == 0x7fff8000);
+    CHECK(jit.Regs()[3] == 0x80007fff);
+    CHECK(jit.Regs()[6] == 0xffff0000);
+    CHECK(jit.Regs()[9] == 0x0000ffff);
+    CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
+}
+
 TEST_CASE("Dynarmic A32 signed narrowing preserves extension and shift semantics",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

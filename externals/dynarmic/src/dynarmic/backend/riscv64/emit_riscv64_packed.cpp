@@ -178,6 +178,26 @@ void EmitIR<IR::Opcode::PackedSaturatedSubS16>(biscuit::Assembler&, EmitContext&
 }
 
 template<>
+void EmitIR<IR::Opcode::PackedSaturatedAddSubU16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedAddSubS16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedSubAddU16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::PackedSaturatedSubAddS16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::PackedAbsDiffSumU8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
