@@ -701,6 +701,17 @@ A510**, **2.00x on A715/A710**, and **2.80x on X3** for this instruction sequenc
 on-device suite passes 1,766 assertions in 23 cases, including partial register overlap. This is
 optimization 100, not a 100x emulator or whole-game speed claim.
 
+A32 NEON non-rounding shift-and-narrow operations now fuse too. `VSHRN`, `VQSHRN.S`,
+`VQSHRN.U`, and `VQSHRUN.S` across 16-to-8, 32-to-16, and 64-to-32-bit lanes replace the old
+`SSHR`/`USHR` plus `XTN`/`SQXTN`/`UQXTN`/`SQXTUN` pairs with native AArch64 `SHRN`, `SQSHRN`,
+`UQSHRN`, or `SQSHRUN`. The fusion requires an immediately adjacent exact sole consumer and a
+legal constant shift; all other IR keeps the established fallback. Exact Thor measurements for
+the saturated forms were **about 4x on A510**, **2x on A715/A710**, and **2.8x on X3**. Plain
+`VSHRN` was about **4x on A510** and throughput-neutral on the larger cores while still halving its
+vector instruction count. The expanded on-device suite passes 1,823 assertions in 24 cases. This
+is optimization 101, and its path-local results must not be added to the other 100 items or treated
+as a whole-game FPS or battery-watt result.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

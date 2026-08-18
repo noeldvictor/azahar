@@ -542,6 +542,17 @@
   A32 `VSHLL` coverage, architectural maximum-width `VSHLL.I8/I16/I32`, high registers, source/
   destination overlap, untouched SIMD state, and unchanged CPSR flags. Treat the measured result
   as path-local until a matched game and power A/B exists.
+- ARM64 Dynarmic may fuse a sole-use, immediately adjacent `VectorLogicalShiftRight16/32/64`
+  followed by matching `VectorNarrow` or `VectorUnsignedSaturatedNarrow`, or
+  `VectorArithmeticShiftRight16/32/64` followed by matching
+  `VectorSignedSaturatedNarrowToSigned`/`ToUnsigned`. The narrow consumer must be argument zero,
+  the immediate must be 1 through half the source width, and the producer/consumer predicates must
+  remain symmetrical. Emit `SHRN`, `UQSHRN`, `SQSHRN`, or `SQSHRUN` respectively; saturating forms
+  must load the host FPSR so guest FPSCR.QC remains sticky. Shared, non-adjacent, mismatched,
+  non-immediate, zero, or out-of-range forms retain the generic shift plus narrow path. Preserve
+  all 16/32/64-bit source widths, high registers, partial/full overlap, unrelated SIMD state, CPSR,
+  FPSCR state, and QC behavior in permanent tests. Do not extend this rule to rounding forms until
+  their different frontend correction DAG has an exact proven fusion.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

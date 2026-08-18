@@ -4408,6 +4408,70 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   sustained watts, frametimes, and thermals still require a matched title/scene/cache/renderer/
   driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Shift-Right Narrowing
+
+- Before this sprint, `upstream/master` was fetched and merged. The only new upstream commit was
+  `db15d78fe`, a runtime-neutral copyright-header sweep across 764 files; merge commit `fe9136656`
+  was pushed to `origin/master`. It changes no emulator hot path, so no speed or power result is
+  attributed to the sync.
+- A32 NEON `VSHRN`, `VQSHRN.S`, `VQSHRN.U`, and `VQSHRUN.S` for 16-to-8, 32-to-16, and 64-to-32-bit
+  elements previously lowered to a vector right shift followed by a separate narrow. ARM64 emitted
+  `USHR + XTN`, `SSHR + SQXTN`, `USHR + UQXTN`, or `SSHR + SQXTUN`. AArch64 directly represents
+  these exact non-rounding pairs as `SHRN`, `SQSHRN`, `UQSHRN`, and `SQSHRUN`.
+- The recorded Cortex manuals support measuring this fusion on each Thor core class. A510 lists
+  basic and saturating fused shift-narrow families at latency 4 with `2,1` throughput notation.
+  A710 and A715 list basic `SHRN` at latency 2/throughput 1 and the saturating family at latency
+  4/throughput 1. X3 lists the basic family at latency 2/throughput 2 and the saturating family at
+  latency 4/throughput 2. These tables motivated the experiment; the physical-device results below
+  determine the claim.
+- `llvm-objdump` verified all 24 exact loop bodies: the baseline has the expected shift plus narrow,
+  the candidate has one fused instruction, and loop control is otherwise identical. Each timed
+  sample ran four independent vector operations for 5,000,000 iterations, or 20,000,000 affected
+  operations, across nine alternating-order rounds. Warmup and timed checksums matched and remained
+  nonzero. Median speedups were:
+
+  | Guest form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VSHRN.I16/I32/I64` | 4.029602x / 4.002076x / 3.988138x | 0.999242x / 1.002312x / 0.999635x | 1.000478x-1.001940x | 0.999432x-1.000630x |
+  | `VQSHRN.S16/S32/S64` | 4.009519x / 3.994325x / 4.178109x | 1.9977x-2.0031x | 1.995907x-2.002566x | 2.798938x-2.804810x |
+  | `VQSHRN.U16/U32/U64` | 3.731329x / 4.357201x / 3.858466x | 1.9977x-2.0031x | 1.995907x-2.002566x | 2.798938x-2.804810x |
+  | `VQSHRUN.S16/S32/S64` | 3.773881x / 4.001312x / 4.404425x | 1.9977x-2.0031x | 1.995907x-2.002566x | 2.798938x-2.804810x |
+
+  The grouped ranges are retained where the individual captured values were not needed to select
+  the same all-width lowering. Plain `VSHRN` is throughput-neutral on A715/A710/X3 but still halves
+  its vector instruction count; its roughly 4x A510 result makes it worthwhile without sacrificing
+  larger-core throughput.
+- ARM64 Dynarmic now aliases the shift to its raw source only when it has one use, the immediately
+  following exact-width narrow consumes it as argument zero, and the constant shift is 1 through
+  half the source width. The consumer emits the matching fused instruction. Saturating forms load
+  FPSR before emission so the guest sticky FPSCR.QC behavior remains intact. Shared, non-adjacent,
+  mismatched, non-immediate, zero, or out-of-range IR retains the original two-instruction path.
+  Rounding forms are deliberately excluded because their frontend includes a different rounding-
+  correction DAG and needs its own correctness proof.
+- The permanent regression covers all four instruction families and all three widths, low and high
+  registers, partial destination/source overlap at D31/Q15, unrelated-register preservation, exact
+  results, CPSR preservation, initial FPSCR state, and sticky QC. The release build passed in 7
+  minutes 58 seconds after the broad upstream header rebuild, Thor passed all 1,823 assertions in
+  24 focused `[core][arm][dynarmic]` cases, and the exact post-commit rebuild passed in 2 minutes 14
+  seconds. Source/test commit `83483cbbd` was pushed directly to `origin/master` with command-line
+  Git over SSH.
+- The installed ARM64 APK is 28,988,724 bytes, reports `83483cbbd-vanilla-thor`, and has SHA-256
+  `CA833539D408CD92631115F6F16E86328ACD4D1E8A8A793F642F08B4E1810992`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor reported USB power, no AC/wireless power, 77%
+  battery, 3.982 V, and 23.0 C. That charging context is not a battery-discharge watt measurement.
+- Cleanup deleted both temporary device binaries, the 26,007,784-byte stripped host test copy,
+  local benchmark/object/source scratch, eight rendered manual pages, the 447,866,752-byte native
+  test ELF, `.cxx` tool metadata, and reproducible Gradle/JNI/R8/native-symbol staging. It retained
+  the 28,988,724-byte APK plus 476-byte metadata and the 2,794,679,241-byte active ARM64 CMake/Ninja
+  cache. Total logical host removal was 2,500,714,051 bytes; C: recovered 2,060,034,048 physical
+  bytes and reported 81,544,265,728 bytes free afterward.
+- This is optimization 101 in the overlapping Thor work tally. The approximately 1.00x-4.40x
+  figures apply only when the guest executes these exact shift-right-narrow forms and cannot be
+  added to the other 100 items. Whole-game FPS, sustained watts, frametimes, and thermals still
+  require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
