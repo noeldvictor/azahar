@@ -591,6 +591,16 @@
   unchanged NZCV/Q/GE flags in permanent tests. The exact four-to-two instruction path measured
   1.759435x on Thor A510, 2.515585x on A715, 2.505252x on A710, and 2.806593x on X3. Keep these
   claims path-local until a matched title and battery-power A/B exists.
+- A32 ARMv6 `PKHBT`/`PKHTB` must retain the first-class `PackHalfwordBottom`/`PackHalfwordTop` IR.
+  ARM64 must reuse the top source with `BFXIL` for bottom shift 0, reuse the bottom source with
+  `BFI` for bottom shift 16, otherwise use at most `LSL` plus `BFXIL`; top shifts 1-16 use one
+  `BFXIL`, while shifts 17-32 use `ASR` plus `BFXIL` with ASR #32 represented by #31. x64 and
+  RISC-V must polyfill these operations back to the exact shift/two-mask/OR DAG. Preserve ARM and
+  Thumb encodings, bottom shifts 0-31, top shifts 1-32, destination/source/all-source aliases,
+  unrelated registers, and unchanged NZCV/Q/GE flags in permanent tests. The seven exact forms
+  measured 1.196462x-3.014697x on Thor A510, 1.750912x-2.460514x on A715,
+  1.344066x-2.163796x on A710, and 1.489624x-2.232581x on X3. Keep these claims path-local until a
+  matched title and battery-power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

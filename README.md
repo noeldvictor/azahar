@@ -751,6 +751,15 @@ assertions in 27 focused cases pass on Thor, including ARM/Thumb forms, accumula
 aliases, maximum differences, untouched registers, and flags. This is optimization 105 in the
 overlapping tally; the measurements are path-local and are not a whole-game FPS or watt claim.
 
+A32 ARMv6 `PKHBT`/`PKHTB`, also part of the 3DS ARM11 guest ISA, now remain first-class through
+Dynarmic IR. Their generic shift, two masks, and OR become a native ARM64 `BFI`/`BFXIL`, with one
+immediate shift only for non-aligned bottom fields or top fields crossing bit 31. That cuts the
+measured forms from three or four host instructions to one or two. Thor exact-path medians ranged
+from **1.20x-3.01x on A510, 1.75x-2.46x on A715, 1.34x-2.16x on A710, and 1.49x-2.23x on X3** across
+seven representative bottom/top and shift-boundary forms. All 3,646 assertions in 28 focused cases
+pass on Thor, including ARM/Thumb encodings and destination/source aliases. This is optimization
+106; the results cover only these guest instructions, not whole-game FPS or battery watts.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

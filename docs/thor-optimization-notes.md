@@ -4701,6 +4701,72 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
   brightness/duration A/B run.
 
+## ARM64 A32 Halfword Packing (2026-08-18)
+
+- A32 ARMv6 `PKHBT` and `PKHTB` are part of the 3DS ARM11 guest instruction set. The ARM and Thumb
+  frontends previously expanded each operation into an immediate shift, two masks, and an OR.
+  Dynarmic now retains `PackHalfwordBottom` and `PackHalfwordTop` as first-class IR operations.
+  ARM64 emits one `BFXIL` for bottom shift 0, one `BFI` for bottom shift 16, and `LSL` plus `BFXIL`
+  for other bottom shifts. Top shifts 1-16 use one `BFXIL`; shifts 17-32 use `ASR` plus `BFXIL`,
+  with ASR #32 represented exactly by ASR #31. This changes the measured forms from three or four
+  host instructions to one or two. x64 and RISC-V reconstruct the established exact DAG through a
+  polyfill.
+- The semantic shortcut is exact. `BFXIL` replaces only the low destination halfword, while `BFI`
+  at bit 16 replaces only the high destination halfword. For a top shift no greater than 16, the
+  low 16 bits of arithmetic shift right are the source field beginning at that shift, so sign
+  extension is irrelevant. Larger shifts first materialize the sign-extended low field; shift 32
+  is all copies of bit 31. Dynarmic's read-write allocator copies a source when it is still live,
+  so reusing it as the result does not alter shared IR values.
+- The complete instruction-characteristics pages in the Cortex-A510, A710, A715, and X3 software
+  optimization guides were rendered and visually checked before measurement. A510 lists bitfield
+  moves at latency 2 and throughput 3, with immediate LSL/ASR aliases at latency 1 and throughput
+  3. A710 lists bitfield moves at 2/2 on M and immediate shifts at 1/4 on I. A715 lists both at
+  latency 1 and throughput 4 on I. X3 lists bitfield moves at 2/2 on M and immediate shifts at 1/6
+  on I. These different pipelines supported measuring every Thor core class instead of
+  extrapolating from the prime core.
+- `llvm-objdump` verified identical loop control around the intended candidates: `PKHBT` shift 0
+  changed 3 -> 1 instructions, shift 7 changed 4 -> 2, and shift 16 changed 4 -> 1;
+  `PKHTB` shifts 7 and 16 changed 4 -> 1, while shifts 24 and 32 changed 4 -> 2. The harness used
+  four independent operations for 1,000,000 iterations, or 4,000,000 affected operations, over
+  nine alternating-order rounds per core. Every warmup and timed checksum matched and remained
+  nonzero.
+
+  | Guest-equivalent form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `PKHBT`, LSL #0 | 2.545486x | 1.884437x | 1.803578x | 1.489624x |
+  | `PKHBT`, LSL #7 | 1.209718x | 1.750912x | 1.344066x | 1.499972x |
+  | `PKHBT`, LSL #16 | 3.014697x | 2.460514x | 2.162188x | 2.232581x |
+  | `PKHTB`, ASR #7 | 2.969528x | 2.443599x | 2.155619x | 2.005063x |
+  | `PKHTB`, ASR #16 | 2.825604x | 2.438770x | 2.163796x | 2.003154x |
+  | `PKHTB`, ASR #24 | 1.221914x | 1.861854x | 1.912342x | 1.756898x |
+  | `PKHTB`, ASR #32 | 1.196462x | 1.861727x | 1.905815x | 1.776214x |
+
+- Permanent tests execute both ARM and Thumb encodings at bottom shifts 0, 1, 7, 15, 16, 17,
+  and 31 and top shifts 1, 7, 15, 16, 17, 24, 31, and 32. They cover distinct registers,
+  destination equal to either source, all three registers equal, positive and negative sources,
+  unrelated-register preservation, and unchanged NZCV/Q/GE flags. The complete native ARM64 build
+  passed with JDK 17 in 2 minutes 2 seconds, and Thor passed all 3,646 assertions in 28 focused
+  `[core][arm][dynarmic]` cases. Source/test commit `f016be8b3` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 3 minutes 17 seconds. Its ARM64-only APK is 28,997,592 bytes, reports
+  `f016be8b3-vanilla-thor`, and has SHA-256
+  `0DF0F881D9F2E06F45FC487A65430FFFA64471878B303ACB8D4F74EBE97D2252`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 50%, 3.861 V, and 21.0 C, so
+  this is not battery-discharge watt evidence. Both temporary device binaries were removed.
+- Cleanup removed 2,502,513,652 logical bytes: the 448,422,216-byte native test ELF, stripped test
+  copy, benchmark/encoding scratch, four rendered manual pages, copied JNI dependencies, and
+  reproducible Gradle/JNI/R8/native-symbol staging. It retained the 28,997,592-byte APK plus
+  476-byte metadata and the 2,789,489,413-byte active ARM64 CMake/Ninja cache. C: recovered
+  2,059,714,560 physical bytes and reported 81,224,990,720 bytes free immediately afterward. No
+  PDF or rendered manual artifact was committed.
+- This is optimization 106 in the overlapping Thor work tally. The 1.20x-3.01x measurements apply
+  only while executing these exact halfword-pack forms. They cannot be added to the other 105
+  items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result. Those
+  still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
+  duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
