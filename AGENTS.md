@@ -651,6 +651,15 @@
   path fell to one instruction and measured 11.306165x-17.584485x for independent chains and
   7.024895x-9.644375x for a sequential dependency chain across all four Thor CPU classes. Keep
   these claims path-local until a matched title and battery-power A/B exists.
+- A32 ARM/Thumb-16/Thumb-2 `REV16` must retain the first-class `ByteReverseHalfwords32` IR
+  operation. ARM64 must emit one native `REV16`; x64 and RISC-V must polyfill it back to the exact
+  shift/mask/OR network. Do not restore Thumb-16's separate upper/lower-half extraction, reversal,
+  extension, shift, and OR graph. Preserve all three guest encodings, distinct operands, source/
+  destination aliases, untouched GPRs, unchanged NZCV/Q/GE, and unchanged FPSCR in permanent
+  tests. The measured five-instruction ARM/Thumb-2 body fell to one and measured
+  3.605787x-4.435562x for independent chains and 3.096017x-5.122643x for a sequential dependency
+  chain across all four Thor CPU classes. Keep these claims path-local until a matched title and
+  battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

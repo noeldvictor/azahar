@@ -813,6 +813,16 @@ passed 612 assertions on every Thor CPU class, and the full focused suite passed
 in 33 cases. This is optimization 111; it is an exact instruction-path result, not a whole-game
 FPS or battery-watt claim.
 
+A32 ARM/Thumb-16/Thumb-2 `REV16` now remains first-class through Dynarmic IR as
+`ByteReverseHalfwords32`. ARM64 emits one native `REV16`; x64 and RISC-V expand the operation back
+to the exact shift/mask/OR network. The measured five-instruction ARM/Thumb-2 body fell to one,
+while Thumb-16 also stopped rebuilding the two halfwords separately. A disassembly-checked,
+16-million-operation Thor benchmark measured **3.61x-4.44x** for four independent chains and
+**3.10x-5.12x** for a sequential dependency chain across A510, A715, A710, and X3. The new test
+passed 918 assertions separately on every Thor CPU class, and the full focused suite passed 62,059
+assertions in 34 cases. This is optimization 112; it is an exact instruction-path result, not a
+whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

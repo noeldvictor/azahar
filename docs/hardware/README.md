@@ -217,6 +217,10 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   page 18. Keep A32 ARM/Thumb-2 bit reversal as IR until ARM64 can emit one `RBIT`, retain portable
   polyfills elsewhere, and require disassembly plus exact-path measurements on every Thor core
   class before acceptance.
+- The same pages list AArch64 `REV16` at latency/throughput 1/3 on A510, 1/4 on A710, 1/4 on A715,
+  and 1/6 on X3. Keep A32 ARM/Thumb-16/Thumb-2 halfword-byte reversal as
+  `ByteReverseHalfwords32` until ARM64 emits one `REV16`; preserve portable polyfills and require
+  all-core disassembly-checked measurement rather than accepting the shorter sequence by inspection.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,
