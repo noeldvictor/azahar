@@ -55,6 +55,12 @@
   location metadata to the output, and the `RAReg` lifetime must unlock that new value without
   clearing its reused location. Preserve the allocate-and-copy fallback for every other case and
   retain the A32 VTBX read/write regression on a real ARM64 host.
+- Preserve the move-free ARM64 Dynarmic lowerings built on that final-use contract:
+  `Pack2x32To1x64` must reuse the low operand and insert the high word with `BFI`,
+  `LeastSignificantWord` must remain a zero-code low-word alias through `DefineAsExisting()`, and
+  `PackedSelect` must reuse the final-use GE mask as `BSL`'s destination. Keep the real A32 `UMLAL`
+  packed-word regression and the A32 `SEL` regression over all 16 GE masks; shared values must
+  continue through the allocator's conservative copy fallback.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

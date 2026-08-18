@@ -33,6 +33,9 @@ Dynarmic remote.
   Vector FMA, VTBX defaults, saturating accumulation, vector-element insertion, FP16 absolute,
   and SHA-256 helpers avoid a full-register copy when the source has one remaining use and one
   lock; all other lifetimes keep the original allocate-and-copy path.
+- Reuse that final-use path for `Pack2x32To1x64` and `PackedSelect`, removing their preceding
+  `MOV`/`FMOV`, and represent `LeastSignificantWord` as an alias of the source's low 32 bits. Real
+  A32 `UMLAL` and all 16 A32 `SEL` GE masks provide permanent guest-level regression coverage.
 
 The FastDispatch table is 65,536 16-byte entries (1 MiB per A32 address space). Its
 hash mixes the upper location descriptor into the guest PC and discards the always-zero
@@ -53,6 +56,13 @@ disassembly that the old loop copied a full vector before each FMLA or BIC while
 did not. Best-of-nine Thor results measured 1.86x to 3.50x throughput, equivalent to 46.1% to 71.5%
 less time in those synthetic recurring sequences. This does not predict whole-game FPS or watts;
 the affected opcode mix and register lifetimes vary by title.
+
+The follow-on packing/select benchmark also used four independent chains, 16,777,216 useful
+operations, alternating order over nine rounds, best samples, equal checksums, and final
+disassembly. Removing one move measured 1.05x-2.51x across the three exact sequences and four Thor
+core classes. The A510 results were 2.51x for 32-bit packing, 2.12x for low-word extraction, and
+1.38x for packed select; A710/A715/X3 results ranged from 1.05x to 1.50x. These are generated-code
+microbenchmarks rather than emulator-wide speed or power measurements.
 
 The imported upstream `master` was checked again on 2026-08-17 and still resolved to
 `e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was

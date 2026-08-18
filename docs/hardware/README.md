@@ -206,6 +206,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   for shared, locked, immediate, spilled, or already-realized values, then prove the result with
   final disassembly, independent dependency chains, and guest-instruction correctness tests on
   every Thor core class.
+- Apply the same rule to bitfield packing and byte selection. The X3 page 18, A715 page 20, A710
+  page 27, and A510 page 22 tables list `BFM`/`BFI` as real integer-pipeline work; the corresponding
+  `BSL` rows are X3 page 31, A715 page 34, A710 page 52, and A510 page 43. Removing a preceding
+  `MOV`/`FMOV` therefore reduces dependency and issue work on every Thor core class without relying
+  on an optional ISA feature. Preserve the original low word before `BFI`, exact per-byte GE
+  selection through `BSL`, and the copy fallback whenever the mask or low operand is still shared.
 - Preserve signedness when moving x86 integer-to-float lowering to AArch64. PICA `LG2` subtracts the
   IEEE-754 exponent bias, so values below one produce a negative GPR exponent and require `SCVTF`,
   not `UCVTF`. Convert directly from the GPR instead of first moving the bits into a SIMD lane. The

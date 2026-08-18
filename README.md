@@ -195,7 +195,12 @@ include:
 - final-use read/write coalescing that lets eligible vector operations update their existing host
   SIMD register instead of allocating another register and copying 128 bits first. Corrected
   independent-chain FMLA/BIC microbenchmarks measured **1.86x-3.50x isolated throughput**, or
-  **46.1%-71.5% less time** in those exact recurring sequences; and
+  **46.1%-71.5% less time** in those exact recurring sequences;
+- follow-on packing and select move elimination: final-use `Pack2x32To1x64` writes its upper word
+  directly with `BFI`, `LeastSignificantWord` aliases the source's low 32 bits, and `PackedSelect`
+  consumes its final-use GE mask in place with `BSL`. Disassembly-checked four-chain Thor
+  microbenchmarks measured **1.05x-2.51x** for those exact sequences, with the largest improvement
+  on the Cortex-A510 efficiency core; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.

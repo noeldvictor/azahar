@@ -3354,6 +3354,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   final-use lifetimes occur. It cannot be added to the other 79 items. Whole-game FPS, sustained
   watts, frametimes, and thermals still require a matched title/scene A/B.
 
+## 2026-08-17 Dynarmic ARM64 Packing and Select Move Elimination
+
+- Three remaining ARM64 lowerings still paid for x86-shaped result materialization after final-use
+  coalescing landed. `Pack2x32To1x64` copied its low word before `BFI`, `LeastSignificantWord`
+  copied the low 32 bits of an existing 64-bit value, and `PackedSelect` copied its GE mask before
+  destructive `BSL`. The first and third now use the conservative final-use read/write allocator;
+  the low-word operation is a zero-code `DefineAsExisting()` alias. Shared or otherwise ineligible
+  values retain the allocate-and-copy fallback.
+- The Arm manuals confirm that the surviving operations use baseline pipelines on every Thor core.
+  `BFM`/`BFI` is documented on X3 page 18, A715 page 20, A710 page 27, and A510 page 22; `BSL` is
+  on X3 page 31, A715 page 34, A710 page 52, and A510 page 43. Removing the preceding move avoids
+  real dependency/issue work and assumes no optional ISA extension.
+- A disassembly-checked AArch64 benchmark ran 16,777,216 useful operations over four independent
+  chains, alternated old/new order across nine rounds, took the best sample, and verified equal
+  checksums. An initial packed-select version violated AAPCS64 by clobbering callee-saved SIMD
+  registers; those numbers were discarded, the helper was corrected to caller-saved registers,
+  and final disassembly verified the exact old and new sequences. Results were:
+
+  | Thor core | Pack 32x2 old -> new | Low word old -> new | Packed SEL old -> new |
+  | --- | --- | --- | --- |
+  | A510 CPU 0 | 0.625756 -> 0.249660 ns/op; 2.506x | 0.624926 -> 0.294328; 2.123x | 2.763567 -> 2.008003; 1.376x |
+  | A710 CPU 3 | 0.225835 -> 0.159822; 1.413x | 0.244629 -> 0.165706; 1.476x | 0.539208 -> 0.370929; 1.454x |
+  | A715 CPU 5 | 0.208508 -> 0.184927; 1.128x | 0.209658 -> 0.162218; 1.292x | 0.556094 -> 0.370510; 1.501x |
+  | X3 CPU 7 | 0.178597 -> 0.169376; 1.054x | 0.148312 -> 0.102176; 1.452x | 0.254074 -> 0.231546; 1.097x |
+
+- Permanent tests execute real A32 `UMLAL` to cover packed low/high results and real A32 `SEL`
+  across all 16 GE masks, including GE preservation. The focused device suite passed 66 assertions
+  in four cases; the broader `[core]~[file_sys]` run passed 2,933 assertions in 19 cases. Two
+  incremental ARM64 native builds passed in 1 minute 28 seconds and 1 minute 7 seconds. Temporary
+  benchmark/test sources and binaries were removed from both host and Thor. Source/test commit
+  `fecae1a30` was pushed directly to `origin/master` over command-line Git SSH before packaging.
+- The JDK 17 release-style package passed in 2 minutes 36 seconds. The ARM64-only, v2-signed APK is
+  28,976,828 bytes, reports `fecae1a30-vanilla-thor`, and has SHA-256
+  `DE4D278DCD87BB81056990CEC6FEED366CEB4C2261EA3A8FBC79838130293157`. Wireless ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reports `primaryCpuAbi=arm64-v8a`, `stopped=true`, and
+  no process ID. No UI or game was launched. Thor reported USB power, no AC/wireless power, 79%
+  battery, 4.145 V, and 22.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Post-verification cleanup removed 2,017,554,358 logical bytes from `app/build` and increased C:
+  free space by 1,589,624,832 bytes. The build directory retains only the APK and its 476-byte
+  metadata; the 3,243,488,163-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains for
+  incremental work.
+- This is optimization 81 in the current Thor work tally. Its measured 1.05x-2.51x result applies
+  only to these exact generated sequences. The 81 items overlap, trigger in different workloads,
+  and include rejected, UX, and power-oriented work; their gains cannot be added. Whole-game FPS,
+  sustained watts, frametimes, and thermals still require a matched title/scene A/B.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
