@@ -4472,6 +4472,65 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
   duration A/B run.
 
+## ARM64 Rounding Shift-Right Narrow Fusion (2026-08-18)
+
+- A32 NEON `VRSHRN`, `VQRSHRN.S`, `VQRSHRN.U`, and `VQRSHRUN.S` for 16-to-8, 32-to-16, and
+  64-to-32-bit elements previously used an overflow-safe rounding correction before narrowing.
+  The frontend emitted a right shift, broadcast rounding bit, AND, equality mask, subtract-as-add,
+  and the selected narrow. ARM64 materialized that as `MOV + DUP + USHR/SSHR + AND + CMEQ + SUB`
+  followed by `XTN`, `SQXTN`, `UQXTN`, or `SQXTUN`. AArch64 directly represents the exact operation
+  as `RSHRN`, `SQRSHRN`, `UQRSHRN`, or `SQRSHRUN`.
+- The recorded Cortex manuals explicitly list the native rounding forms. A510 lists the A64
+  complex immediate-shift family at latency 4 with `2,1` throughput notation; its A32 table lists
+  `VRSHRN` at latency 3 and the saturating rounding forms at latency 4. A710 and A715 list the A64
+  complex family at latency 4/throughput 1, while X3 lists latency 4/throughput 2. These tables
+  justified an exact all-core experiment; they are not substitutes for the physical result.
+- `llvm-objdump` verified every baseline and candidate body. Each sample ran four independent
+  vector operations for 1,000,000 iterations, or 4,000,000 affected guest operations, across nine
+  alternating-order rounds. Warmup and timed checksums matched and remained nonzero. Median
+  speedups were:
+
+  | Guest form | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | `VRSHRN.I16` | 13.885256x | 3.001884x | 3.472421x | 3.598723x |
+  | `VRSHRN.I32` | 14.116638x | 3.004390x | 3.435994x | 3.507308x |
+  | `VRSHRN.I64` | 14.715745x | 2.911880x | 3.310005x | 3.520017x |
+  | `VQRSHRN.S16` | 14.225325x | 3.343469x | 3.587415x | 3.771264x |
+  | `VQRSHRN.S32` | 14.667758x | 3.419528x | 3.472222x | 3.823051x |
+  | `VQRSHRN.S64` | 14.499985x | 3.160713x | 3.250409x | 3.959625x |
+  | `VQRSHRN.U16` | 13.547762x | 3.316225x | 3.398665x | 3.778699x |
+  | `VQRSHRN.U32` | 13.654684x | 3.528960x | 3.560860x | 3.847900x |
+  | `VQRSHRN.U64` | 13.132014x | 3.541497x | 3.389130x | 3.712468x |
+  | `VQRSHRUN.S16` | 13.846615x | 3.097625x | 3.475383x | 3.904464x |
+  | `VQRSHRUN.S32` | 14.809991x | 3.456508x | 3.234291x | 3.695996x |
+  | `VQRSHRUN.S64` | 14.697800x | 2.807415x | 3.491155x | 3.776349x |
+
+- Dynarmic now represents the four rounding modes with first-class, exact-width IR operations.
+  ARM64 lowers them directly to the matching native instruction and loads FPSR for saturating
+  forms. x64 and RISC-V request a polyfill that reconstructs the established overflow-safe DAG,
+  preserving non-ARM64 behavior without making the ARM64 backend recognize a fragile multi-node
+  pattern.
+- Permanent A32 coverage executes all four families and all three source widths. It covers low and
+  high registers, partial destination/source overlap at D31/Q15, exact positive and negative
+  rounding, unrelated SIMD state, CPSR/FPSCR preservation, saturation, and sticky QC. The first
+  release-style ARM64 build passed in 3 minutes 36 seconds; Thor then passed all 1,880 assertions
+  in 24 focused `[core][arm][dynarmic]` cases. Source/test commit `596a28aab` was pushed directly to
+  `origin/master` over SSH, and the exact post-commit APK build passed in 1 minute 43 seconds.
+- The ARM64-only APK is 28,992,796 bytes, reports `596a28aab-vanilla-thor`, and has SHA-256
+  `DC5E4F03165E7F7161CD66123468B5E4DFEE85682B476AD6B6846926AD23EF4D`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Both temporary Thor test/benchmark binaries were
+  removed immediately after use.
+- Cleanup removed 2,469,307,555 logical bytes: the 448,016,304-byte native test ELF, benchmark and
+  A32-encoding scratch, eight rendered manual pages, copied validation layers, and reproducible
+  Gradle/JNI/R8/native-symbol staging. It retained the 28,992,796-byte APK plus 476-byte metadata
+  and the 2,802,108,385-byte active ARM64 CMake/Ninja cache. C: recovered 2,026,508,288 physical
+  bytes and reported 81,532,805,120 bytes free afterward.
+- This is optimization 102 in the overlapping Thor work tally. The 2.81x-14.81x measurements apply
+  only while executing these exact rounding shift-right-narrow forms. They cannot be added to the
+  other 101 items or treated as a whole-game FPS, battery-watt, or thermal result; those require a
+  matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

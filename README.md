@@ -712,6 +712,17 @@ vector instruction count. The expanded on-device suite passes 1,823 assertions i
 is optimization 101, and its path-local results must not be added to the other 100 items or treated
 as a whole-game FPS or battery-watt result.
 
+The four rounding shift-and-narrow families now use native AArch64 too. A32 `VRSHRN`,
+`VQRSHRN.S`, `VQRSHRN.U`, and `VQRSHRUN.S` across 16-to-8, 32-to-16, and 64-to-32-bit lanes used
+an overflow-safe rounding expansion followed by a separate narrow. Dynarmic now carries that exact
+operation in first-class IR and ARM64 emits one `RSHRN`, `SQRSHRN`, `UQRSHRN`, or `SQRSHRUN`;
+x64 and RISC-V retain the established correction sequence through a polyfill. Exact Thor
+microbenchmarks measured **13.13x-14.81x on A510**, **2.81x-3.54x on A715**,
+**3.23x-3.59x on A710**, and **3.51x-3.96x on X3** for these specific operations. The complete
+on-device suite passes 1,880 assertions in 24 cases. This is optimization 102, not an emulator-wide
+13x result: whole-game FPS and watts depend on each title's dynamic instruction mix and still need
+a matched gameplay A/B.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

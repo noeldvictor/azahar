@@ -551,8 +551,18 @@
   must load the host FPSR so guest FPSCR.QC remains sticky. Shared, non-adjacent, mismatched,
   non-immediate, zero, or out-of-range forms retain the generic shift plus narrow path. Preserve
   all 16/32/64-bit source widths, high registers, partial/full overlap, unrelated SIMD state, CPSR,
-  FPSCR state, and QC behavior in permanent tests. Do not extend this rule to rounding forms until
-  their different frontend correction DAG has an exact proven fusion.
+  FPSCR state, and QC behavior in permanent tests.
+- A32/A64 vector rounding shift-right narrowing must use the first-class
+  `VectorRoundingNarrow`, `VectorSignedSaturatedRoundingNarrowToSigned`/`ToUnsigned`, or
+  `VectorUnsignedSaturatedRoundingNarrow` IR operation. ARM64 must emit one `RSHRN`, `SQRSHRN`,
+  `SQRSHRUN`, or `UQRSHRN`; saturating forms must load host FPSR so guest FPSCR.QC remains sticky.
+  Do not restore the frontend's shift/broadcast/AND/equal/subtract/narrow DAG on ARM64: the exact
+  fused paths measured 13.13x-14.81x on Thor A510, 2.81x-3.54x on A715, 3.23x-3.59x on A710,
+  and 3.51x-3.96x on X3. x64 and RISC-V must polyfill the first-class operation back into that
+  overflow-safe DAG. Preserve all four rounding instruction families, 16/32/64-bit sources,
+  legal shifts, high registers, source/destination overlap, exact negative rounding, saturation,
+  unrelated SIMD state, CPSR/FPSCR state, and QC behavior in permanent tests. Keep the claim
+  path-local until a matched title and power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
