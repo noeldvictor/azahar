@@ -79,6 +79,13 @@
   retains `UXTB` and the established canonical path. Preserve generic U8 masks and the complete
   carry lowerings. Keep real guest coverage for dirty-upper-bit amounts 0, 1, 31, 32, 33, and 255
   across no-flags and carry-producing LSL/LSR/ASR/ROR.
+- A32 scalar NEON long multiply must broadcast its selected 16-bit or 32-bit source lane with
+  `VectorBroadcastElement()` before `VectorMultiplySignedWiden()` or
+  `VectorMultiplyUnsignedWiden()`. Do not restore the x86-shaped
+  `VectorGetElement()` plus `VectorBroadcast()` pair: on ARM64 it lowers to an element-to-GPR
+  `UMOV` followed by a GPR-to-SIMD `DUP`, while the direct form is one element `DUP`. Retain real
+  guest `VMULL.S16`, `VMLAL.U16`, `VMLSL.S32`, and `VMULL.U32` coverage with distinct lane indices,
+  signed extremes, accumulator wrapping, and complete 64-bit results.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

@@ -3552,6 +3552,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   scene, cache state, renderer, driver, resolution, layout, performance mode, fan, and brightness
   A/B run.
 
+## 2026-08-18 Dynarmic A32 Scalar Long-Multiply Lane Broadcast
+
+- A32 scalar `VMULL`, `VMLAL`, and `VMLSL` previously constructed their scalar operand as
+  `VectorGetElement()` followed immediately by `VectorBroadcast()`. On the ARM64 backend that
+  crossed from SIMD to a general register with `UMOV` and then crossed back with the general-
+  register form of `DUP`. The other scalar NEON multiply families already used the direct
+  `VectorBroadcastElement()` form.
+- The long-multiply translator now uses that direct element broadcast too. The selected 16-bit or
+  32-bit lane and the replicated vector are bit-identical; the signed/unsigned widening multiply
+  and optional vector add/subtract remain unchanged. Generated preparation falls from
+  `UMOV; DUP (general register)` to one `DUP (element)`, eliminating a cross-register-bank
+  dependency and one host instruction without an optional ISA feature.
+- The complete relevant timing-table pages were rendered and visually checked. X3 pages 31-32,
+  A715 pages 34-35, and A710 pages 52-53 list element `DUP` at two-cycle latency, while the old
+  route adds a two-cycle `UMOV` and uses the three-cycle, one-per-cycle general-register `DUP`.
+  A510 pages 43-44 list three cycles for element `DUP`, `UMOV`, and general-register `DUP`, with
+  the direct element form also avoiding the second instruction and general-register handoff.
+- A disassembly-checked benchmark executed eight independent broadcasts per loop for 16,777,216
+  iterations, alternated old/new order across nine rounds, selected each best sample, and required
+  equal nonzero checksums. Nanoseconds per useful broadcast were:
+
+  | Thor core | 16-bit `UMOV; DUP` -> element `DUP` | 32-bit `UMOV; DUP` -> element `DUP` |
+  | --- | --- | --- |
+  | A510 CPU 0 | 3.016938 -> 0.502268; 6.007x; 83.35% less time | 3.019914 -> 0.503150; 6.002x; 83.34% |
+  | A710 CPU 3 | 0.358605 -> 0.179209; 2.001x; 50.03% | 0.358586 -> 0.179214; 2.001x; 50.02% |
+  | A710 CPU 4 | 0.358444 -> 0.179187; 2.000x; 50.01% | 0.358347 -> 0.179237; 1.999x; 49.98% |
+
+  CPUs 5 and 7 reported online at 2.8032 and 3.1872 GHz but rejected both direct and Android
+  `taskset` single-bit affinity with `EINVAL`; no A715 or X3 benchmark number is claimed for this
+  run.
+- Permanent guest coverage executes `VMULL.S16`, `VMLAL.U16`, `VMLSL.S32`, and `VMULL.U32` with
+  different scalar-lane indices, signed extremes, unsigned accumulator wrap, subtraction, and
+  complete 64-bit results. Thor passed 166 assertions in eight focused `[core][arm][dynarmic]`
+  cases and 3,033 assertions in 23 broader `[core]~[file_sys]` cases. The ARM64 native build linked
+  the test ELF and `libcitra-android.so` in 1 minute 21 seconds. Source/test commit `f63697ee0` was
+  pushed directly to `origin/master` over command-line Git SSH before packaging.
+- JDK 17 release packaging passed in 2 minutes 32 seconds. The ARM64-only, v2-signed APK is
+  28,976,576 bytes, reports `f63697ee0-vanilla-thor`, and has SHA-256
+  `0132573765AAAB8E4D188AE3FE43F836137300D5EEAD79213270406D58AD5FAF`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.154 V, and
+  20.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Temporary test/benchmark binaries and rendered manual pages were removed from host and Thor.
+  Post-verification cleanup removed 2,017,682,102 logical bytes of Gradle/JNI/native staging and
+  raised C: free space by 1,608,740,864 bytes. `app/build` retains only the 28,976,576-byte APK and
+  476-byte metadata; the 3,238,891,722-byte active ARM64 RelWithDebInfo CMake/Ninja cache remains
+  for incremental work.
+- This is optimization 85 in the Thor work tally. Its 2.00x-6.01x result applies only to the scalar
+  lane-broadcast preparation used by these guest long multiplies. The 85 items overlap, trigger in
+  different workloads, and cannot be added. Whole-game FPS, sustained watts, frametime, and thermal
+  gains still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
+  brightness A/B.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

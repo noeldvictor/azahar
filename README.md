@@ -215,7 +215,12 @@ include:
   the complete A32 byte-count rules. This removes one more host instruction from LSL/LSR and the
   complete `UXTB` from ROR. Exact-sequence Thor measurements were **1.21x-2.41x for LSL/LSR** and
   **1.30x-4.53x for ROR** on measured A510/A710/A715 cores. An ASR variant was rejected after a
-  repeatable A710 regression, so ASR keeps the prior canonical path; and
+  repeatable A710 regression, so ASR keeps the prior canonical path;
+- scalar NEON `VMULL`/`VMLAL`/`VMLSL` lowering that broadcasts the selected source lane directly
+  inside SIMD. It replaces an element-to-GPR `UMOV` followed by a GPR-to-SIMD `DUP` with one
+  element `DUP`. Disassembly-checked 16/32-bit broadcast measurements were **6.00x faster on the
+  Cortex-A510** and **2.00x on both measured Cortex-A710 cores** for this exact preparation
+  sequence; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
