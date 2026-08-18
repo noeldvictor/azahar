@@ -510,6 +510,16 @@
   classes. Preserve exact signed 32x32-to-64 arithmetic, ARM `S`-bit N/Z updates, unchanged
   C/V/Q/GE, Thumb behavior, signed extremes/zero, and every source/destination alias in permanent
   tests.
+- ARM and Thumb-2 `SMMUL{R}`/`SMMLA{R}`/`SMMLS{R}` must retain the signed long operations in
+  generic Dynarmic IR. Keep `SMMUL` on `SignedMultiplyLong`; form the accumulator as a zero-extended
+  word shifted left 32 bits and use `SignedMultiplyAddLong` or `SignedMultiplySubtractLong` for
+  `SMMLA`/`SMMLS`. ARM64 must emit `SMULL`, or `LSL` plus `SMADDL`/`SMSUBL`. Do not restore the two
+  `SXTW` operations, X-form `MUL`, generic add/subtract, or zero-plus-`BFI` accumulator pack: exact
+  Thor sequences measured 1.586x-2.000x for `SMMUL` and 1.573x-2.130x for the fused forms across
+  measured A510/A715/A710 cores. Preserve modulo-64-bit add/subtract, the unrounded high word,
+  rounding from intermediate bit 31 with 32-bit wrap, unchanged NZCV/Q/GE, Thumb behavior, signed
+  extremes, and source/destination aliases in permanent tests. Keep the claim path-local until a
+  matched game/power A/B exists.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

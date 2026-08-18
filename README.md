@@ -254,7 +254,12 @@ include:
   operation now lowers to `REV32`, native `SQADD`/`SQSUB` or `UQADD`/`UQSUB`, and one lane insert
   instead of scalar extraction, extension, two clamp sequences, and repacking. The recurring host
   path falls from 21 to four instructions and measured **1.11x on A510**, **2.12x-2.14x on A715**,
-  and **1.81x on A710** in the dependency-chain benchmark; and
+  and **1.81x on A710** in the dependency-chain benchmark;
+- native signed high-word multiply for ARM and Thumb-2 `SMMUL{R}`, `SMMLA{R}`, and `SMMLS{R}`.
+  ARM64 now uses `SMULL`, or `LSL` plus fused `SMADDL`/`SMSUBL`, instead of two sign extensions,
+  X-form `MUL`, generic add/subtract, and zero-plus-`BFI` accumulator packing. Checksum-locked
+  exact-sequence measurements were **1.586x-2.000x for SMMUL** and **1.573x-2.130x for the fused
+  accumulate/subtract forms** across the measured Cortex-A510/A715/A710 cores; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
