@@ -823,6 +823,16 @@ passed 918 assertions separately on every Thor CPU class, and the full focused s
 assertions in 34 cases. This is optimization 112; it is an exact instruction-path result, not a
 whole-game FPS or battery-watt claim.
 
+A32 ARM/Thumb-16/Thumb-2 `REVSH` now remains first-class through Dynarmic IR as
+`ByteReverseSignedHalf32`. ARM64 emits `REV; ASR #16` instead of `UXTH; REV16; SXTH`; x64 and
+RISC-V expand the semantic operation back to that exact portable graph. A disassembly-checked,
+16-million-operation Thor benchmark measured **1.55x-2.62x** for four independent chains and
+**1.50x-2.63x** for a sequential dependency chain across A510, A715, A710, and X3. The alternative
+`REV16; SXTH` sequence was rejected because its A510 dependency result was materially slower. The
+new test passed 918 assertions separately on every Thor CPU class, and the full focused suite
+passed 62,977 assertions in 35 cases. This is optimization 113; it is an exact instruction-path
+result, not a whole-game FPS or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

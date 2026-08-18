@@ -660,6 +660,16 @@
   3.605787x-4.435562x for independent chains and 3.096017x-5.122643x for a sequential dependency
   chain across all four Thor CPU classes. Keep these claims path-local until a matched title and
   battery-power A/B exists.
+- A32 ARM/Thumb-16/Thumb-2 `REVSH` must retain the first-class `ByteReverseSignedHalf32` IR
+  operation. ARM64 must emit `REV; ASR #16`; x64 and RISC-V must polyfill it back to
+  `LeastSignificantHalf`, `ByteReverseHalf`, and `SignExtendHalfToWord`. Do not restore the old
+  ARM64 `UXTH; REV16; SXTH` sequence or substitute `REV16; SXTH`: the latter was materially slower
+  on the A510 dependency chain. Preserve all three guest encodings, distinct operands, source/
+  destination aliases, dirty upper-half inputs, untouched GPRs, unchanged NZCV/Q/GE, and unchanged
+  FPSCR in permanent tests. The three-instruction body fell to two and measured
+  1.550576x-2.621212x for independent chains and 1.499462x-2.631136x for a sequential dependency
+  chain across all four Thor CPU classes. Keep these claims path-local until a matched title and
+  battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

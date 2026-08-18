@@ -221,6 +221,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   and 1/6 on X3. Keep A32 ARM/Thumb-16/Thumb-2 halfword-byte reversal as
   `ByteReverseHalfwords32` until ARM64 emits one `REV16`; preserve portable polyfills and require
   all-core disassembly-checked measurement rather than accepting the shorter sequence by inspection.
+- Those pages also show why signed halfword reversal needs a measured compound choice rather than
+  an instruction-count guess. `REV`/`REV16` has latency/throughput 1/3 on A510, 1/4 on A710 and
+  A715, and 1/6 on X3. The `SBFM` family containing `SXTH` is 2/3 on A510 and 1/4 on the other
+  cores, while the A510 guide's immediate-`ASR` alias has latency 1. Keep A32 ARM/Thumb-16/Thumb-2
+  `REVSH` as `ByteReverseSignedHalf32`, emit the all-core winner `REV; ASR #16` on ARM64, and
+  retain the exact `UXTH; REV16; SXTH` semantic polyfill on other hosts. Do not replace it with
+  `REV16; SXTH`; that candidate lost materially on the A510 dependency chain.
 - Fuse redundant unsigned-then-signed narrowing only when IR use data proves the signed extension
   immediately consumes the sole byte/halfword result. `UXTB`/`UXTH` and `SXTB`/`SXTH` are aliases
   of the baseline `UBFM`/`SBFM` family documented on X3 page 18, A715 page 20, A710 pages 27-28,
