@@ -110,6 +110,15 @@
   `VectorAdd()`/`VectorSub()` sequences: those expand native long forms from one host instruction
   to three and wide forms to two. Keep the x64 polyfill and A32 signed/unsigned long/wide tests,
   including signed extremes and modular destination-lane wraparound.
+- A32/A64 vector and by-element `VMLAL`/`VMLSL` or `SMLAL`/`UMLAL`/`SMLSL`/`UMLSL` must retain
+  `VectorSignedMultiplyAccumulateWiden()`/`VectorUnsignedMultiplyAccumulateWiden()` through IR.
+  The ARM64 backend must consume the accumulator with `ReadWriteQ()` and emit the matching native
+  long multiply-accumulate/subtract. Do not split this back into widening multiply plus generic
+  add/sub: that doubles recurring host instructions and measured 5.017x slower on Cortex-A510.
+  Eight-independent-chain timing was otherwise tied within 0.6% on A710/A715/X3, so describe this
+  as an exact-path instruction/efficiency win rather than an emulator-wide speedup. Preserve the
+  x64 polyfill, direct SIMD lane broadcast before the fused operation, signed/unsigned 8/16/32-bit
+  semantics, modular accumulator wraparound, and the A32 full-vector plus scalar-lane tests.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

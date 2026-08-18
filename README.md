@@ -234,7 +234,12 @@ include:
   host path now emits one `SADDL`/`UADDL`/`SSUBL`/`USUBL` instead of two extensions plus add/sub,
   or one `SADDW`/`UADDW`/`SSUBW`/`USUBW` instead of extension plus add/sub. Disassembly-checked
   exact-path measurements were **4.00x-4.51x for long forms** and **2.00x-4.01x for wide forms**
-  across the measured Cortex-A510/A715/A710 cores; and
+  across the measured Cortex-A510/A715/A710 cores;
+- native widening multiply-accumulate/subtract for guest vector and scalar-by-lane
+  `VMLAL`/`VMLSL`. The ARM64 host now emits one `SMLAL`/`UMLAL`/`SMLSL`/`UMLSL` instead of a long
+  multiply followed by add/sub. An eight-chain disassembly-checked exact-path benchmark measured
+  **5.017x on Cortex-A510** and tied within **0.6%** on the measured Cortex-A710/A715/X3 cores,
+  while halving the recurring instruction count; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.

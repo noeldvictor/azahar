@@ -3769,6 +3769,65 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   cannot be added. Whole-game FPS, sustained watts, frametime, and thermal gains still require a
   matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Widening Multiply-Accumulate
+
+- A32 vector and scalar-by-lane `VMLAL`/`VMLSL`, plus the corresponding A64 vector and indexed
+  forms, previously produced a signed/unsigned widening multiply IR followed by generic vector
+  add/sub IR. The ARM64 host therefore executed `SMULL`/`UMULL` and `ADD`/`SUB`. Scalar-by-lane
+  forms also retain their already optimized direct SIMD `DUP`, but paid the same two-instruction
+  arithmetic cost after that broadcast.
+- Dynarmic now retains signed/unsigned widening multiply-accumulate/subtract as one IR operation.
+  ARM64 consumes the accumulator with `ReadWriteQ()` and emits one baseline
+  `SMLAL`/`UMLAL`/`SMLSL`/`UMLSL` for 8-, 16-, and 32-bit narrow lanes. x64 polyfills the new IR
+  to the established extend, multiply, and modular add/sub operations; direct Windows-target
+  syntax checks covered the x64 emitter and A32/A64 interface configuration. RISC-V keeps explicit
+  unimplemented handlers consistent with its existing vector backend. Both modified A64 frontend
+  files also passed direct Android-target syntax checks even though Azahar builds only A32 guest
+  support.
+- The Snapdragon core manuals were rendered and visually checked rather than assuming fewer
+  instructions always meant more throughput. Cortex-X3 issue 4.0 page 27 lists long multiply at
+  latency 3 / throughput 2 and long multiply-accumulate at latency `4(1)` / throughput 2, with page
+  28 explaining late forwarding of the accumulate operand. Cortex-A715 issue 5.0 page 29 and
+  Cortex-A710 issue 4.0 page 43 list long multiply at latency 3 / throughput 2 but long
+  multiply-accumulate at latency `4(1)` / throughput 1. Cortex-A510 issue 6.0 page 36 lists both at
+  latency 4 with the table's `2,1` throughput notation on VMAC. Those A710/A715 issue-rate tables
+  made a real-device regression check mandatory.
+- A disassembly-checked benchmark compared eight independent exact old `SMULL; ADD` chains with
+  eight native `SMLAL` chains. It ran 2,000,000 loop iterations per sample, alternated order for
+  seven rounds, selected the best sample, and required the same nonzero checksum (`400420`):
+
+  | Thor core | `SMULL + ADD` -> `SMLAL` | Result |
+  | --- | --- | --- |
+  | A510 CPU 0 | 2.510622 -> 0.500417 ns/op | 5.017x; 80.07% less time |
+  | A715 CPU 3 | 0.357171 -> 0.357210 ns/op | 1.000x; tied |
+  | A715 CPU 4 | 0.358467 -> 0.357314 ns/op | 1.003x; tied |
+  | A710 CPU 5 | 0.357298 -> 0.357217 ns/op | 1.000x; tied (1.003x repeat) |
+  | X3 CPU 7 | 0.157848 -> 0.156878 ns/op | 1.006x; tied |
+
+  CPU 6 rejected the harmless single-bit affinity request during this run. The fused path has no
+  measured throughput regression and halves recurring arithmetic instructions on all core classes;
+  reduced decode/rename/temporary-register work is a credible power-efficiency direction, but no
+  watt reduction is claimed without a matched game-scene battery-discharge test.
+- Permanent A32 tests cover signed and unsigned full-vector `VMLAL`/`VMLSL` across every widening
+  size, extremes, and modular wraparound. Existing scalar-by-lane tests cover unsigned accumulate
+  and signed subtract. Thor passed 228 assertions in 14 focused `[core][arm][dynarmic]` cases and
+  3,095 assertions in 29 broader `[core]~[file_sys]` cases. The initial full ARM64 release build
+  passed in 3 minutes 30 seconds, and the exact committed revision rebuilt in 1 minute 37 seconds.
+  Source/test commit `edeb3bb7c` was pushed directly to `origin/master` over command-line Git SSH.
+- The ARM64-only, v2-signed APK is 28,985,156 bytes, reports `edeb3bb7c-vanilla-thor`, and has
+  SHA-256 `70556050B64F810CAFFC365F8C1E27186635A8DB739E5CD1541B21008C42BDDE`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and
+  20.0 C, so this charging snapshot is not battery-discharge watt evidence.
+- Post-build cleanup preserved that hash-verified APK plus `output-metadata.json` and retained the
+  reusable `.cxx` compiler cache, while reducing `app/build` from 2,047,775,686 to 28,985,632
+  logical bytes. That removed 2,018,790,054 logical bytes of intermediates and Windows reported
+  1,576,771,584 additional free bytes on C:.
+- This is optimization 89 in the Thor work tally. Its 5.017x figure applies only to the exact A510
+  multiply-accumulate sequence; the measured larger cores were ties. The 89 items overlap and
+  cannot be added. Whole-game FPS, sustained watts, frametime, and thermal gains still require a
+  matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
