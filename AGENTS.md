@@ -126,6 +126,17 @@
   A510/A715/A710 cores. Preserve signed floor rounding, unsigned underflow, both ASX/SAX lane
   arrangements, and the permanent A32 edge-case test. This is a hot-path result, not a whole-game
   FPS or watt claim.
+- A32 `SASX`/`SSAX`/`UASX`/`USAX` mixed wrapping operations must keep the ARM64 backend's `REV32`,
+  narrow `ADD`/`SUB`, and element-to-element low-lane insert. When GE is live, preserve signed GE
+  through `SHADD`/`SHSUB` plus `CMGE`, unsigned addition carry through `CMHI`, and unsigned
+  subtraction no-borrow through `UHSUB` plus `CMGE`; when GE is dead, retain the four-instruction
+  result-only path. Do not restore the extension/extract/sign-mask/narrow sequence: it uses 10
+  signed or 11 unsigned instructions instead of eight and measured 1.024x-1.334x slower across
+  tested Thor A510/A715/A710/X3 cores. Do not substitute the rejected seven-instruction widening
+  candidate: its final `XTN` lengthened the dependency chain and regressed tested A715/A710 cores
+  by 5.4%-10.9%. Preserve both ASX/SAX layouts, signed non-negative GE, unsigned carry/no-borrow,
+  NZCV/Q, and the permanent multi-edge A32 test. Keep this result path-local until a matched game
+  and power A/B exists.
 - A32 `QASX`/`QSAX`/`UQASX`/`UQSAX` must remain packed through
   `PackedSaturatedAddSubU16/S16` or `PackedSaturatedSubAddU16/S16`. The ARM64 backend must spill
   lazy host FPSR state before using `SQADD`/`SQSUB` or `UQADD`/`UQSUB`, exchange the second source

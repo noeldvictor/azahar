@@ -3929,6 +3929,69 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   FPS, sustained watts, frametimes, and thermals still require a matched title/scene/cache/
   renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Mixed Add/Subtract With GE
+
+- ARM and Thumb-2 `SASX`/`SSAX`/`UASX`/`USAX` already reached packed mixed-halfword IR, but ARM64
+  widened both inputs, exchanged 32-bit lanes, synthesized per-lane add/sub signs with an immediate
+  mask, subtracted, generated GE in the wide lanes, and narrowed. The recurring path was 10
+  instructions for signed operations and 11 for unsigned operations when GE was live.
+- ARM64 now uses `REV32`, narrow `ADD` and `SUB` candidates, and one halfword insert for the wrapped
+  result. Signed GE uses the sign of `SHADD`/`SHSUB`, which matches the sign of the full mathematical
+  result; unsigned addition uses `CMHI` for carry and unsigned subtraction uses the sign of `UHSUB`
+  for no-borrow. The live-GE path is eight instructions for signed and unsigned operations. If GE
+  is dead, the result-only path returns after four instructions.
+- A first seven-instruction widening candidate was compiled, correctness-tested, disassembled, and
+  rejected. It measured 1.384x faster on A510 CPU 0 but regressed A715 CPU 3/4 by 5.4%/6.1% and
+  A710 CPU 5 by 10.9%. Its lane insert followed by `XTN` lengthened the loop-carried dependency.
+  The retained eight-instruction path keeps the recurring result in halfword lanes and removes that
+  final narrow.
+- The complete relevant manual pages were rendered and visually checked. Cortex-X3 issue 4.0 page
+  26 lists basic arithmetic and compare at latency 2 / throughput 4; pages 31-32 list element insert
+  and `REV32` at latency 2 / throughput 4. Cortex-A715 issue 5.0 pages 28 and 34 list these groups at
+  latency 2 / throughput 2. Cortex-A710 issue 4.0 pages 42-43 and 52 likewise list latency 2 /
+  throughput 2. Cortex-A510 issue 6.0 pages 35-36 and 43 list the basic arithmetic, compare, insert,
+  and reverse groups at latency 3 with the guide's `2,1` throughput notation, while `XTN` is latency
+  4; this supports retaining the narrow result path and explains the rejected widening candidate.
+- A disassembly-checked benchmark compared the exact old 10-instruction signed sequence with the
+  retained eight-instruction sequence, unrolled eight dependency-linked operations per loop, ran
+  8,000,000 operations per sample over four alternating-order rounds, selected the best samples,
+  and required equal nonzero low-32-bit checksum `92009200`:
+
+  | Thor core | 10 old instructions -> eight narrow/GE instructions | Result |
+  | --- | --- | --- |
+  | A510 CPU 0 | 10.063119 -> 7.542331 ns/op | 1.334x; 25.05% less time |
+  | A715 CPU 3 | 2.407200 -> 1.858789 ns/op | 1.295x; 22.78% less time |
+  | A715 CPU 4 | 2.365501 -> 1.842767 ns/op | 1.284x; 22.10% less time |
+  | A710 CPU 5 | 2.327070 -> 2.085534 ns/op | 1.116x; 10.38% less time |
+  | A710 CPU 6 | 2.327468 -> 2.272181 ns/op | 1.024x; 2.38% less time |
+  | X3 CPU 7 | 2.064089 -> 1.819824 ns/op | 1.134x; 11.83% less time |
+
+  This measures the signed live-GE sequence. The unsigned path has the same eight recurring
+  instructions but different flag operations, so no unmeasured unsigned speed ratio is claimed.
+  The source/test commit is `01a24248f`, pushed directly to `origin/master` over command-line Git
+  SSH.
+- Thor passed all 301 assertions in 17 focused `[core][arm][dynarmic]` cases. The permanent test
+  covers all four instructions across 32 zero, signed-extreme, unsigned carry/borrow, and mixed-bit
+  input combinations, checking wrapped results, every GE pair, and unchanged NZCV/Q. The full
+  native binary executed 187,848 assertions: 187,844 passed; the same four unrelated device-
+  environment failures remain (three missing build-flavor/DSP hooks and the Vulkan resource-pool
+  device mismatch). The final ARM64 compile/link passed in 1 minute 2 seconds.
+- The exact committed JDK 17 release build passed in 1 minute 43 seconds. Its ARM64-only APK is
+  28,984,020 bytes, reports `01a24248f-vanilla-thor`, and has SHA-256
+  `F7F18F9D42E8FB8A2011BD916313009193182D9C5782CCE5D4177EE0330BCA7D`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.155 V, and 20.0 C,
+  so this charging snapshot is not battery-discharge watt evidence.
+- Cleanup retained only the hash-verified APK and its 476-byte metadata in `app/build`, retained the
+  2,793,887,598-byte active ARM64 `.cxx` cache, removed 2,018,862,040 logical bytes of reproducible
+  Gradle/JNI staging plus the 447,537,968-byte test ELF, and deleted temporary benchmark/test
+  binaries and rendered manual pages from host and Thor. Windows reported 82,422,992,896 free bytes
+  on C: afterward.
+- This is optimization 92 in the Thor work tally. Its 1.024x-1.334x result applies only to the
+  recurring signed mixed add/subtract host sequence and cannot be added to the other 91 items.
+  Whole-game FPS, sustained watts, frametimes, and thermals still require a matched title/scene/
+  cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles

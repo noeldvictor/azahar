@@ -240,6 +240,12 @@ include:
   multiply followed by add/sub. An eight-chain disassembly-checked exact-path benchmark measured
   **5.017x on Cortex-A510** and tied within **0.6%** on the measured Cortex-A710/A715/X3 cores,
   while halving the recurring instruction count;
+- native mixed wrapping add/subtract and GE generation for ARM11 `SASX`/`SSAX`/`UASX`/`USAX`.
+  ARM64 now exchanges halfwords with `REV32`, computes the wrapped result directly with narrow
+  `ADD`/`SUB`, and derives exact signed/unsigned GE bits with native halving arithmetic and compares.
+  The recurring path falls from 10 signed or 11 unsigned instructions to eight when GE is live,
+  and to four when it is dead. The signed dependency-chain benchmark measured **1.024x-1.334x**
+  across the Thor's tested A510/A715/A710/X3 cores;
 - native mixed halving add/subtract for ARM11 `SHASX`/`SHSAX`/`UHASX`/`UHSAX`. ARM64 now emits
   `REV32`, native halving add/subtract, and one lane insert instead of widening both operands,
   synthesizing signs, shifting, and narrowing. The recurring path falls from nine to four host
