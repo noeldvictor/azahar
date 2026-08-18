@@ -1,6 +1,7 @@
 // Copyright Azahar Emulator Project / Azahar Thor Experiment
 // Licensed under GPLv2 or any later version
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -388,6 +389,85 @@ TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its l
         const auto actual = static_cast<std::uint64_t>(jit.ExtRegs()[48 + lane * 2]) |
                             static_cast<std::uint64_t>(jit.ExtRegs()[49 + lane * 2]) << 32;
         CHECK(actual == expected);
+    }
+}
+
+TEST_CASE("Dynarmic A32 VSHLL fuses widening and immediate shift on ARM64",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::size_t destination_s;
+        std::size_t source_s;
+        std::uint8_t element_bits;
+        std::uint8_t shift;
+        bool is_signed;
+    };
+    constexpr std::array operations{
+        Operation{0xf2890a12, 0, 4, 8, 1, true},      // VSHLL.S8 Q0, D2, #1
+        Operation{0xf38f8a1a, 16, 20, 8, 7, false},   // VSHLL.U8 Q4, D10, #7
+        Operation{0xf2d30a32, 32, 36, 16, 3, true},   // VSHLL.S16 Q8, D18, #3
+        Operation{0xf3df8a3a, 48, 52, 16, 15, false}, // VSHLL.U16 Q12, D26, #15
+        Operation{0xf2a12a12, 4, 4, 32, 1, true},     // VSHLL.S32 Q1, D2, #1 (overlap)
+        Operation{0xf3ffea3f, 60, 62, 32, 31, false}, // VSHLL.U32 Q15, D31, #31 (overlap)
+    };
+
+    constexpr std::uint64_t source_bits = 0x800000017fff80ff;
+    constexpr std::uint32_t initial_cpsr = 0xa80f01d0; // N/C/Q/GE, user mode
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination_s, operation.source_s,
+                operation.element_bits, operation.shift, operation.is_signed);
+
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        jit.ExtRegs().fill(0xa5a5a5a5);
+        jit.ExtRegs()[operation.source_s] = static_cast<std::uint32_t>(source_bits);
+        jit.ExtRegs()[operation.source_s + 1] = static_cast<std::uint32_t>(source_bits >> 32);
+
+        const auto expected_vector = [&] {
+            std::array<std::uint8_t, 16> result_bytes{};
+            const std::uint8_t output_bits = operation.element_bits * 2;
+            const std::uint64_t input_mask = (std::uint64_t{1} << operation.element_bits) - 1;
+            const std::uint64_t output_mask =
+                output_bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << output_bits) - 1;
+            const std::size_t lane_count = 64 / operation.element_bits;
+
+            for (std::size_t lane = 0; lane < lane_count; ++lane) {
+                const std::uint64_t input =
+                    (source_bits >> (lane * operation.element_bits)) & input_mask;
+                std::uint64_t extended = input;
+                if (operation.is_signed &&
+                    (input & (std::uint64_t{1} << (operation.element_bits - 1))) != 0) {
+                    extended |= ~input_mask;
+                }
+                const std::uint64_t shifted = (extended << operation.shift) & output_mask;
+                for (std::size_t byte = 0; byte < output_bits / 8; ++byte) {
+                    result_bytes[lane * output_bits / 8 + byte] =
+                        static_cast<std::uint8_t>(shifted >> (byte * 8));
+                }
+            }
+
+            std::array<std::uint32_t, 4> result{};
+            std::memcpy(result.data(), result_bytes.data(), result_bytes.size());
+            return result;
+        }();
+
+        auto expected_regs = jit.ExtRegs();
+        std::copy(expected_vector.begin(), expected_vector.end(),
+                  expected_regs.begin() + operation.destination_s);
+
+        jit.SetCpsr(initial_cpsr);
+        callbacks.ticks_left = 2;
+        jit.Run();
+
+        CHECK(jit.ExtRegs() == expected_regs);
+        CHECK((jit.Cpsr() & 0xf80f0000) == (initial_cpsr & 0xf80f0000));
     }
 }
 

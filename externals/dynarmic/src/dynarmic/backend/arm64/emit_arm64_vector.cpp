@@ -327,6 +327,92 @@ static void EmitImmShift(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* ins
     }
 }
 
+template<size_t narrow_size>
+static bool IsImmediatelyWidenShifted(const IR::Inst* extension, IR::Opcode shift_opcode) {
+    if (extension->UseCount() != 1) {
+        return false;
+    }
+
+    const IR::Inst* shift = extension->GetNextInstruction();
+    if (!shift || shift->GetOpcode() != shift_opcode) {
+        return false;
+    }
+
+    const IR::Value operand = shift->GetArg(0);
+    const IR::Value shift_amount = shift->GetArg(1);
+    return !operand.IsImmediate() && operand.GetInst() == extension && shift_amount.IsImmediate() &&
+           shift_amount.GetU8() < narrow_size;
+}
+
+template<size_t size>
+static bool TryEmitImmShiftWiden(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    static_assert(size == 16 || size == 32 || size == 64);
+
+    const IR::Value operand = inst->GetArg(0);
+    if (operand.IsImmediate()) {
+        return false;
+    }
+
+    const IR::Inst* extension = operand.GetInst();
+    if (!extension || !IsImmediatelyWidenShifted<size / 2>(extension, inst->GetOpcode())) {
+        return false;
+    }
+
+    bool is_signed;
+    if constexpr (size == 16) {
+        if (extension->GetOpcode() == IR::Opcode::VectorSignExtend8) {
+            is_signed = true;
+        } else if (extension->GetOpcode() == IR::Opcode::VectorZeroExtend8) {
+            is_signed = false;
+        } else {
+            return false;
+        }
+    } else if constexpr (size == 32) {
+        if (extension->GetOpcode() == IR::Opcode::VectorSignExtend16) {
+            is_signed = true;
+        } else if (extension->GetOpcode() == IR::Opcode::VectorZeroExtend16) {
+            is_signed = false;
+        } else {
+            return false;
+        }
+    } else {
+        if (extension->GetOpcode() == IR::Opcode::VectorSignExtend32) {
+            is_signed = true;
+        } else if (extension->GetOpcode() == IR::Opcode::VectorZeroExtend32) {
+            is_signed = false;
+        } else {
+            return false;
+        }
+    }
+
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    const u8 shift_amount = args[1].GetImmediateU8();
+    auto Qresult = ctx.reg_alloc.WriteQ(inst);
+    auto Qoperand = ctx.reg_alloc.ReadQ(args[0]);
+    RegAlloc::Realize(Qresult, Qoperand);
+
+    if constexpr (size == 16) {
+        if (is_signed) {
+            code.SSHLL(Qresult->H8(), Qoperand->toD().B8(), shift_amount);
+        } else {
+            code.USHLL(Qresult->H8(), Qoperand->toD().B8(), shift_amount);
+        }
+    } else if constexpr (size == 32) {
+        if (is_signed) {
+            code.SSHLL(Qresult->S4(), Qoperand->toD().H4(), shift_amount);
+        } else {
+            code.USHLL(Qresult->S4(), Qoperand->toD().H4(), shift_amount);
+        }
+    } else {
+        if (is_signed) {
+            code.SSHLL(Qresult->D2(), Qoperand->toD().S2(), shift_amount);
+        } else {
+            code.USHLL(Qresult->D2(), Qoperand->toD().S2(), shift_amount);
+        }
+    }
+    return true;
+}
+
 template<size_t size, typename EmitFn>
 static void EmitImmShiftSaturated(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst, EmitFn emit) {
     EmitImmShift<size>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) {
@@ -969,16 +1055,25 @@ void EmitIR<IR::Opcode::VectorLogicalShiftLeft8>(oaknut::CodeGenerator& code, Em
 
 template<>
 void EmitIR<IR::Opcode::VectorLogicalShiftLeft16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmShiftWiden<16>(code, ctx, inst)) {
+        return;
+    }
     EmitImmShift<16>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SHL(Vresult, Voperand, shift_amount); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorLogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmShiftWiden<32>(code, ctx, inst)) {
+        return;
+    }
     EmitImmShift<32>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SHL(Vresult, Voperand, shift_amount); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorLogicalShiftLeft64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmShiftWiden<64>(code, ctx, inst)) {
+        return;
+    }
     EmitImmShift<64>(code, ctx, inst, [&](auto Vresult, auto Voperand, u8 shift_amount) { code.SHL(Vresult, Voperand, shift_amount); });
 }
 
@@ -1540,16 +1635,31 @@ void EmitIR<IR::Opcode::VectorRoundingShiftLeftU64>(oaknut::CodeGenerator& code,
 
 template<>
 void EmitIR<IR::Opcode::VectorSignExtend8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<8>(inst, IR::Opcode::VectorLogicalShiftLeft16)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<8>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.SXTL(Vresult, Voperand); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorSignExtend16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<16>(inst, IR::Opcode::VectorLogicalShiftLeft32)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<16>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.SXTL(Vresult, Voperand); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorSignExtend32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<32>(inst, IR::Opcode::VectorLogicalShiftLeft64)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<32>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.SXTL(Vresult, Voperand); });
 }
 
@@ -2061,16 +2171,31 @@ void EmitIR<IR::Opcode::VectorUnsignedSaturatedShiftLeft64>(oaknut::CodeGenerato
 
 template<>
 void EmitIR<IR::Opcode::VectorZeroExtend8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<8>(inst, IR::Opcode::VectorLogicalShiftLeft16)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<8>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.UXTL(Vresult, Voperand); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorZeroExtend16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<16>(inst, IR::Opcode::VectorLogicalShiftLeft32)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<16>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.UXTL(Vresult, Voperand); });
 }
 
 template<>
 void EmitIR<IR::Opcode::VectorZeroExtend32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelyWidenShifted<32>(inst, IR::Opcode::VectorLogicalShiftLeft64)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
     EmitTwoOpArrangedWiden<32>(code, ctx, inst, [&](auto Vresult, auto Voperand) { code.UXTL(Vresult, Voperand); });
 }
 
