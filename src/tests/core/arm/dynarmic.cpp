@@ -2488,3 +2488,136 @@ TEST_CASE("Dynarmic A32 SXTB16 preserves rotations, aliases, flags, and FPSCR",
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 SXTAB16 preserves rotations, aliases, flags, and FPSCR",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t rotation;
+        std::uint8_t destination;
+        std::uint8_t addend;
+        std::uint8_t source;
+        bool thumb;
+    };
+
+    struct Registers {
+        std::uint8_t destination;
+        std::uint8_t addend;
+        std::uint8_t source;
+    };
+    constexpr std::array register_sets{
+        Registers{0, 1, 2}, // All distinct.
+        Registers{4, 4, 2}, // Destination aliases addend.
+        Registers{4, 1, 4}, // Destination aliases source.
+        Registers{0, 2, 2}, // Addend aliases source.
+        Registers{4, 4, 4}, // All operands alias.
+    };
+
+    std::array<Operation, 40> operations{};
+    std::size_t operation_index = 0;
+    for (const bool thumb : {false, true}) {
+        for (const auto& registers : register_sets) {
+            for (std::uint8_t rotate = 0; rotate < 4; ++rotate) {
+                const std::uint32_t instruction = [&] {
+                    if (!thumb) {
+                        return 0xe6800070U |
+                               (static_cast<std::uint32_t>(registers.addend) << 16) |
+                               (static_cast<std::uint32_t>(registers.destination) << 12) |
+                               (static_cast<std::uint32_t>(rotate) << 10) | registers.source;
+                    }
+                    const std::uint32_t first_half = 0xfa20 | registers.addend;
+                    const std::uint32_t second_half =
+                        0xf080 | (static_cast<std::uint32_t>(registers.destination) << 8) |
+                        (static_cast<std::uint32_t>(rotate) << 4) | registers.source;
+                    return (second_half << 16) | first_half;
+                }();
+                operations[operation_index++] = Operation{
+                    instruction,
+                    static_cast<std::uint8_t>(rotate * 8),
+                    registers.destination,
+                    registers.addend,
+                    registers.source,
+                    thumb,
+                };
+            }
+        }
+    }
+    REQUIRE(operation_index == operations.size());
+
+    struct Inputs {
+        std::uint32_t addend;
+        std::uint32_t source;
+    };
+    constexpr std::array inputs{
+        Inputs{0x00000000, 0x00000000},
+        Inputs{0x00010001, 0x0080007f},
+        Inputs{0x7fff7fff, 0x007f0080},
+        Inputs{0x80008000, 0xff80aa7f},
+        Inputs{0xffff0001, 0x7f0180fe},
+        Inputs{0x0000ffff, 0x1234abcd},
+        Inputs{0x7fff8000, 0x80007fff},
+        Inputs{0x80007fff, 0xffffffff},
+        Inputs{0xdeadbeef, 0x01020304},
+        Inputs{0x13579bdf, 0xfedcba98},
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.rotation, operation.destination, operation.addend,
+                operation.source, operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const auto& input : inputs) {
+            std::array<std::uint32_t, 16> initial_regs{
+                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+            };
+            initial_regs[operation.addend] = input.addend;
+            initial_regs[operation.source] = input.source;
+
+            const std::uint32_t source = initial_regs[operation.source];
+            const std::uint32_t addend = initial_regs[operation.addend];
+            const std::uint32_t rotated =
+                operation.rotation == 0
+                    ? source
+                    : (source >> operation.rotation) | (source << (32 - operation.rotation));
+            const auto sign_extend_byte = [](std::uint8_t value) {
+                return static_cast<std::uint16_t>(
+                    value | (value & 0x80 ? 0xff00 : 0x0000));
+            };
+            const std::uint16_t low = static_cast<std::uint16_t>(
+                static_cast<std::uint16_t>(addend) +
+                sign_extend_byte(static_cast<std::uint8_t>(rotated)));
+            const std::uint16_t high = static_cast<std::uint16_t>(
+                static_cast<std::uint16_t>(addend >> 16) +
+                sign_extend_byte(static_cast<std::uint8_t>(rotated >> 16)));
+            const std::uint32_t expected = low | (static_cast<std::uint32_t>(high) << 16);
+
+            jit.Regs() = initial_regs;
+            jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            jit.SetFpscr(initial_fpscr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[operation.destination] == expected);
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.destination) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}

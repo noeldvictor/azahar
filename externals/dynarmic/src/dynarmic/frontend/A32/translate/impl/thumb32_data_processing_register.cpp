@@ -97,6 +97,13 @@ bool TranslatorVisitor::thumb32_SXTAB16(Reg n, Reg d, SignExtendRotation rotate,
     }
 
     const auto rotated = Rotate(ir, m, rotate);
+    if (rotate != SignExtendRotation::ROR_0) {
+        const auto addend = ir.PackedSignExtendByteToHalf(rotated);
+        const auto result = ir.PackedAddU16(addend, ir.GetRegister(n)).result;
+        ir.SetRegister(d, result);
+        return true;
+    }
+
     const auto low_byte = ir.And(rotated, ir.Imm32(0x00FF00FF));
     const auto sign_bit = ir.And(rotated, ir.Imm32(0x00800080));
     const auto addend = ir.Or(low_byte, ir.Mul(sign_bit, ir.Imm32(0x1FE)));
