@@ -932,6 +932,101 @@ TEST_CASE("Dynarmic A32 signed dual multiply-long preserves 64-bit edge semantic
     }
 }
 
+TEST_CASE("Dynarmic A32 signed multiply-accumulate-long preserves 64-bit edge semantics",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        bool halfword;
+        bool n_top;
+        bool m_top;
+        bool source_alias;
+        bool thumb;
+        bool update_flags;
+    };
+    constexpr std::array operations{
+        Operation{0xe0e10392, false, false, false, false, false, false},  // ARM SMLAL R0, R1, R2, R3
+        Operation{0xe0f10392, false, false, false, false, false, true},   // ARM SMLALS R0, R1, R2, R3
+        Operation{0xe0e10190, false, false, false, true, false, false},   // ARM SMLAL R0, R1, R0, R1
+        Operation{0x0103fbc2, false, false, false, false, true, false},  // Thumb SMLAL R0, R1, R2, R3
+        Operation{0x0101fbc0, false, false, false, true, true, false},   // Thumb SMLAL R0, R1, R0, R1
+        Operation{0xe1410382, true, false, false, false, false, false},  // ARM SMLALBB R0, R1, R2, R3
+        Operation{0xe14103e2, true, true, true, false, false, false},    // ARM SMLALTT R0, R1, R2, R3
+        Operation{0xe1410180, true, false, false, true, false, false},   // ARM SMLALBB R0, R1, R0, R1
+        Operation{0x0183fbc2, true, false, false, false, true, false},  // Thumb SMLALBB R0, R1, R2, R3
+        Operation{0x01b3fbc2, true, true, true, false, true, false},    // Thumb SMLALTT R0, R1, R2, R3
+        Operation{0x0181fbc0, true, false, false, true, true, false},   // Thumb SMLALBB R0, R1, R0, R1
+    };
+    struct Inputs {
+        std::uint64_t addend;
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x0123456789abcdef, 0x80017fff, 0x7fff8001},
+        Inputs{0, 0x80000000, 0xffffffff},
+        Inputs{0xffffffffffffffff, 0x7fffffff, 0x7fffffff},
+        Inputs{0x8000000000000000, 0xffffffff, 0x00010001},
+        Inputs{0x7fffffffffffffff, 0x80008000, 0x80008000},
+        Inputs{0xdeadbeef01234567, 0x00010002, 0xfffeffff},
+    };
+    const auto reference = [](std::uint64_t addend, std::uint32_t n, std::uint32_t m,
+                              const Operation& operation) {
+        const auto signed_n = operation.halfword
+                                  ? static_cast<std::int64_t>(static_cast<std::int16_t>(
+                                        n >> (operation.n_top ? 16 : 0)))
+                                  : static_cast<std::int64_t>(static_cast<std::int32_t>(n));
+        const auto signed_m = operation.halfword
+                                  ? static_cast<std::int64_t>(static_cast<std::int16_t>(
+                                        m >> (operation.m_top ? 16 : 0)))
+                                  : static_cast<std::int64_t>(static_cast<std::int32_t>(m));
+        return addend + static_cast<std::uint64_t>(signed_n * signed_m);
+    };
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, input.addend, input.n, input.m);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe,  // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+            const std::uint32_t n = operation.source_alias
+                                        ? static_cast<std::uint32_t>(input.addend)
+                                        : input.n;
+            const std::uint32_t m = operation.source_alias
+                                        ? static_cast<std::uint32_t>(input.addend >> 32)
+                                        : input.m;
+            const std::uint64_t expected = reference(input.addend, n, m, operation);
+            jit.Regs() = {};
+            jit.Regs()[0] = static_cast<std::uint32_t>(input.addend);
+            jit.Regs()[1] = static_cast<std::uint32_t>(input.addend >> 32);
+            jit.Regs()[2] = input.n;
+            jit.Regs()[3] = input.m;
+            constexpr std::uint32_t initial_flags = 0x780f0000;  // ZCV/Q/GE
+            const std::uint32_t initial_cpsr =
+                initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0);
+            jit.SetCpsr(initial_cpsr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == static_cast<std::uint32_t>(expected));
+            CHECK(jit.Regs()[1] == static_cast<std::uint32_t>(expected >> 32));
+            if (!operation.source_alias) {
+                CHECK(jit.Regs()[2] == input.n);
+                CHECK(jit.Regs()[3] == input.m);
+            }
+            const std::uint32_t expected_flags = operation.update_flags
+                                                     ? (initial_flags & 0x380f0000) |
+                                                           (expected == 0 ? 0x40000000 : 0) |
+                                                           (expected >> 63 != 0 ? 0x80000000 : 0)
+                                                     : initial_flags;
+            CHECK((jit.Cpsr() & 0xf80f0000) == expected_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
