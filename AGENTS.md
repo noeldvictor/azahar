@@ -119,6 +119,13 @@
   as an exact-path instruction/efficiency win rather than an emulator-wide speedup. Preserve the
   x64 polyfill, direct SIMD lane broadcast before the fused operation, signed/unsigned 8/16/32-bit
   semantics, modular accumulator wraparound, and the A32 full-vector plus scalar-lane tests.
+- A32 `SHASX`/`SHSAX`/`UHASX`/`UHSAX` mixed halving operations must keep the ARM64 backend's
+  `REV32` plus native `SHADD`/`SHSUB` or `UHADD`/`UHSUB` and element-to-element lane insert. Do not
+  restore the widening/sign-mask/shift/narrow sequence: that expands each recurring guest operation
+  from four host instructions to nine and measured 2.316x-2.506x slower on the tested Thor
+  A510/A715/A710 cores. Preserve signed floor rounding, unsigned underflow, both ASX/SAX lane
+  arrangements, and the permanent A32 edge-case test. This is a hot-path result, not a whole-game
+  FPS or watt claim.
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.

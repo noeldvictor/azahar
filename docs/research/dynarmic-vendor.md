@@ -101,9 +101,18 @@ An ASR candidate helped A510 by about 23% but repeatedly ranged from 0.9% to 4.9
 it was rejected. These figures apply only to the isolated emitted sequences, not whole-game FPS or
 battery watts.
 
-The imported upstream `master` was checked again on 2026-08-17 and still resolved to
-`e77b1ba0b7da7cbe93021b01a663acfe7c4dd516`, so no later upstream Dynarmic change was
-available to replace these local A32 ARM64 changes.
+The mixed-halving benchmark reproduced Dynarmic's exact old nine-instruction A32
+`SHASX`/`SHSAX` lowering and the new four-instruction `REV32`, native halving add/subtract, and
+element insert path. Eight recurring operations, 2,000,000 iterations, seven alternating-order
+rounds, disassembly inspection, and checksum `0040003f` measured 2.506x on A510 CPU 0, 2.336x and
+2.316x on A715 CPUs 3 and 4, and 2.334x on A710 CPU 6. CPUs 5 and 7 rejected the harmless affinity
+request, so no second-A710 or X3 result is claimed. These are exact generated-sequence timings, not
+whole-game FPS or battery watts.
+
+Command-line Git checked upstream `master` again on 2026-08-18. It resolved to
+`fb1c1a7104fae94c670e2ea1e2a6bf09e99379c2`, and `git merge-base master upstream/master`
+returned that same revision. The fork therefore already contains the latest upstream source; no
+merge or second repository was needed.
 
 ## Updating
 

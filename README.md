@@ -239,7 +239,11 @@ include:
   `VMLAL`/`VMLSL`. The ARM64 host now emits one `SMLAL`/`UMLAL`/`SMLSL`/`UMLSL` instead of a long
   multiply followed by add/sub. An eight-chain disassembly-checked exact-path benchmark measured
   **5.017x on Cortex-A510** and tied within **0.6%** on the measured Cortex-A710/A715/X3 cores,
-  while halving the recurring instruction count; and
+  while halving the recurring instruction count;
+- native mixed halving add/subtract for ARM11 `SHASX`/`SHSAX`/`UHASX`/`UHSAX`. ARM64 now emits
+  `REV32`, native halving add/subtract, and one lane insert instead of widening both operands,
+  synthesizing signs, shifting, and narrowing. The recurring path falls from nine to four host
+  instructions and measured **2.316x-2.506x faster** across the tested A510/A715/A710 cores; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.

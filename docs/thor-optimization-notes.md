@@ -3828,6 +3828,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   cannot be added. Whole-game FPS, sustained watts, frametime, and thermal gains still require a
   matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/duration A/B run.
 
+## 2026-08-18 Dynarmic Native Mixed Halving Add/Subtract
+
+- A32 ARM11 `SHASX`/`SHSAX`/`UHASX`/`UHSAX` previously widened both halfword inputs, exchanged the
+  second operand with `EXT`, synthesized add-versus-subtract signs with an immediate mask plus
+  `EOR`/`SUB`, performed a 32-bit subtraction, shifted for halving, and narrowed. The recurring
+  ARM64 path was nine instructions per guest operation.
+- The ARM64 backend now exchanges halfwords with `REV32`, computes both exact lane-wise candidates
+  with native `SHADD`/`SHSUB` or `UHADD`/`UHSUB`, and inserts the required low halfword. This is four
+  baseline AdvSIMD instructions, preserves signed floor rounding and unsigned underflow, and leaves
+  x64 and other backend fallbacks unchanged.
+- The complete relevant manual pages were rendered and visually checked. Cortex-X3 issue 4.0 pages
+  26 and 31-32 list halving arithmetic, element `INS`, and `REV32` at latency 2 / throughput 4.
+  Cortex-A715 issue 5.0 pages 28 and 34 and Cortex-A710 issue 4.0 pages 42 and 52 list the same
+  operations at latency 2 / throughput 2. Cortex-A510 issue 6.0 pages 35 and 43 list latency 3 with
+  the guide's `2,1` throughput notation. All are normal AdvSIMD operations available on every Thor
+  core class; no global X3 target or optional ISA feature is used.
+- A disassembly-checked benchmark reproduced eight recurring exact old/new sequences, ran 2,000,000
+  loop iterations per sample, alternated order over seven rounds, selected the best sample, and
+  required identical nonzero checksum `0040003f`:
+
+  | Thor core | Nine instructions -> four instructions | Result |
+  | --- | --- | --- |
+  | A510 CPU 0 | 10.061357 -> 4.015094 ns/op | 2.506x; 60.09% less time |
+  | A715 CPU 3 | 1.671787 -> 0.715713 ns/op | 2.336x; 57.19% less time |
+  | A715 CPU 4 | 1.672887 -> 0.722370 ns/op | 2.316x; 56.82% less time |
+  | A710 CPU 6 | 1.670498 -> 0.715609 ns/op | 2.334x; 57.16% less time |
+
+  CPUs 5 and 7 rejected the harmless single-bit affinity request, so no second-A710 or X3 timing is
+  claimed. The source commit is `118b6beaa`, pushed directly to `origin/master` over command-line
+  Git SSH.
+- Thor passed 232 assertions in 15 focused `[core][arm][dynarmic]` cases and 3,099 assertions in 30
+  broader `[core]~[file_sys]` cases. The permanent edge-case test covers both ASX/SAX layouts,
+  negative signed halving, and unsigned subtraction underflow. The initial JDK 17 release build
+  passed in 2 minutes 53 seconds; the exact committed revision rebuilt in 1 minute 31 seconds.
+- The ARM64-only, v2-signed APK is 28,985,040 bytes, reports `118b6beaa-vanilla-thor`, and has
+  SHA-256 `19EC345F297656964C3866F096EE5AE326929BEE303912319A5997F64500350A`. It installed over
+  `org.azahar_emu.azahar.debug` by Wi-Fi ADB and was force-stopped with no process ID; no app UI or
+  game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and 20.0 C,
+  so this charging snapshot is not battery-discharge watt evidence.
+- Cleanup preserved only that hash-verified APK plus its 476-byte metadata in `app/build`, retained
+  the 3,234,326,241-byte active ARM64 `.cxx` cache, and removed 2,018,784,591 logical bytes of
+  reproducible Gradle/JNI staging. Windows reported 1,576,751,104 additional free bytes on C:, to
+  81,986,957,312 bytes. Temporary benchmark/test binaries and rendered manual pages were deleted
+  from both host and Thor.
+- This is optimization 90 in the Thor work tally. Its 2.316x-2.506x result applies only to this exact
+  recurring host sequence. The 90 items overlap and cannot be added. Whole-game FPS, sustained
+  watts, frametime, and thermal gains still require a matched title/scene/cache/renderer/driver/
+  resolution/layout/mode/fan/brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
