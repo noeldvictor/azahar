@@ -128,10 +128,8 @@ bool TranslatorVisitor::thumb32_SMMLA(Reg n, Reg a, Reg d, bool R, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.SignExtendWordToLong(ir.GetRegister(m));
-    const auto a64 = ir.Pack2x32To1x64(ir.Imm32(0), ir.GetRegister(a));
-    const auto temp = ir.Add(a64, ir.Mul(n64, m64));
+    const auto a64 = ir.LogicalShiftLeft(ir.ZeroExtendWordToLong(ir.GetRegister(a)), ir.Imm8(32));
+    const auto temp = ir.SignedMultiplyAddLong(ir.GetRegister(n), ir.GetRegister(m), a64);
     const auto result_carry = ir.MostSignificantWord(temp);
     auto result = result_carry.result;
     if (R) {
@@ -147,10 +145,8 @@ bool TranslatorVisitor::thumb32_SMMLS(Reg n, Reg a, Reg d, bool R, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.SignExtendWordToLong(ir.GetRegister(m));
-    const auto a64 = ir.Pack2x32To1x64(ir.Imm32(0), ir.GetRegister(a));
-    const auto temp = ir.Sub(a64, ir.Mul(n64, m64));
+    const auto a64 = ir.LogicalShiftLeft(ir.ZeroExtendWordToLong(ir.GetRegister(a)), ir.Imm8(32));
+    const auto temp = ir.SignedMultiplySubtractLong(ir.GetRegister(n), ir.GetRegister(m), a64);
     const auto result_carry = ir.MostSignificantWord(temp);
     auto result = result_carry.result;
     if (R) {
@@ -166,9 +162,7 @@ bool TranslatorVisitor::thumb32_SMMUL(Reg n, Reg d, bool R, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto n64 = ir.SignExtendWordToLong(ir.GetRegister(n));
-    const auto m64 = ir.SignExtendWordToLong(ir.GetRegister(m));
-    const auto product = ir.Mul(n64, m64);
+    const auto product = ir.SignedMultiplyLong(ir.GetRegister(n), ir.GetRegister(m));
     const auto result_carry = ir.MostSignificantWord(product);
     auto result = result_carry.result;
     if (R) {

@@ -1145,6 +1145,110 @@ TEST_CASE("Dynarmic A32 signed multiply-accumulate-long preserves 64-bit edge se
     }
 }
 
+TEST_CASE("Dynarmic A32 signed most-significant-word multiplies preserve edge semantics",
+          "[core][arm][dynarmic]") {
+    enum class MultiplyKind {
+        Smmul,
+        Smmla,
+        Smmls,
+    };
+    struct Operation {
+        std::uint32_t instruction;
+        MultiplyKind kind;
+        bool rounded;
+        bool source_alias;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe750f312, MultiplyKind::Smmul, false, false, false}, // ARM SMMUL R0, R2, R3
+        Operation{0xe750f332, MultiplyKind::Smmul, true, false, false},  // ARM SMMULR R0, R2, R3
+        Operation{0xe7504312, MultiplyKind::Smmla, false, false, false}, // ARM SMMLA R0, R2, R3, R4
+        Operation{0xe7504332, MultiplyKind::Smmla, true, false, false}, // ARM SMMLAR R0, R2, R3, R4
+        Operation{0xe75043d2, MultiplyKind::Smmls, false, false, false}, // ARM SMMLS R0, R2, R3, R4
+        Operation{0xe75043f2, MultiplyKind::Smmls, true, false, false}, // ARM SMMLSR R0, R2, R3, R4
+        Operation{0xe750f110, MultiplyKind::Smmul, false, true, false}, // ARM SMMUL R0, R0, R1
+        Operation{0xe7500110, MultiplyKind::Smmla, false, true, false}, // ARM SMMLA R0, R0, R1, R0
+        Operation{0xe75001d0, MultiplyKind::Smmls, false, true, false}, // ARM SMMLS R0, R0, R1, R0
+        Operation{0xf003fb52, MultiplyKind::Smmul, false, false, true}, // Thumb SMMUL R0, R2, R3
+        Operation{0xf013fb52, MultiplyKind::Smmul, true, false, true},  // Thumb SMMULR R0, R2, R3
+        Operation{0x4003fb52, MultiplyKind::Smmla, false, false,
+                  true}, // Thumb SMMLA R0, R2, R3, R4
+        Operation{0x4013fb52, MultiplyKind::Smmla, true, false,
+                  true}, // Thumb SMMLAR R0, R2, R3, R4
+        Operation{0x4003fb62, MultiplyKind::Smmls, false, false,
+                  true}, // Thumb SMMLS R0, R2, R3, R4
+        Operation{0x4013fb62, MultiplyKind::Smmls, true, false,
+                  true}, // Thumb SMMLSR R0, R2, R3, R4
+        Operation{0xf001fb50, MultiplyKind::Smmul, false, true, true}, // Thumb SMMUL R0, R0, R1
+        Operation{0x0001fb50, MultiplyKind::Smmla, false, true, true}, // Thumb SMMLA R0, R0, R1, R0
+        Operation{0x0001fb60, MultiplyKind::Smmls, false, true, true}, // Thumb SMMLS R0, R0, R1, R0
+    };
+    struct Inputs {
+        std::uint32_t a;
+        std::uint32_t n;
+        std::uint32_t m;
+    };
+    constexpr std::array inputs{
+        Inputs{0x00000000, 0x80000000, 0xffffffff}, Inputs{0x00000000, 0x7fffffff, 0x7fffffff},
+        Inputs{0xffffffff, 0x80000000, 0x00000002}, Inputs{0x80000000, 0x80000000, 0x80000000},
+        Inputs{0x7fffffff, 0xffffffff, 0x7fffffff}, Inputs{0x12345678, 0x87654321, 0xfedcba98},
+    };
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            CAPTURE(operation.instruction, input.a, input.n, input.m);
+            ArmTestCallbacks callbacks;
+            callbacks.code = {
+                operation.instruction,
+                operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+            };
+            Dynarmic::A32::UserConfig config{&callbacks};
+            Dynarmic::A32::Jit jit{config};
+
+            const std::uint32_t n =
+                operation.source_alias && operation.kind != MultiplyKind::Smmul ? input.a : input.n;
+            const auto signed_n = static_cast<std::int64_t>(static_cast<std::int32_t>(n));
+            const auto signed_m = static_cast<std::int64_t>(static_cast<std::int32_t>(input.m));
+            const std::uint64_t product = static_cast<std::uint64_t>(signed_n * signed_m);
+            const std::uint64_t addend = static_cast<std::uint64_t>(input.a) << 32;
+            std::uint64_t intermediate{};
+            switch (operation.kind) {
+            case MultiplyKind::Smmul:
+                intermediate = product;
+                break;
+            case MultiplyKind::Smmla:
+                intermediate = addend + product;
+                break;
+            case MultiplyKind::Smmls:
+                intermediate = addend - product;
+                break;
+            }
+            std::uint32_t expected = static_cast<std::uint32_t>(intermediate >> 32);
+            if (operation.rounded) {
+                expected += static_cast<std::uint32_t>((intermediate >> 31) & 1);
+            }
+
+            jit.Regs() = {};
+            if (operation.source_alias) {
+                jit.Regs()[0] = operation.kind == MultiplyKind::Smmul ? input.n : input.a;
+                jit.Regs()[1] = input.m;
+            } else {
+                jit.Regs()[0] = 0xdeadbeef;
+                jit.Regs()[2] = input.n;
+                jit.Regs()[3] = input.m;
+                jit.Regs()[4] = input.a;
+            }
+            constexpr std::uint32_t initial_flags = 0xf80f0000; // NZCV/Q/GE
+            jit.SetCpsr(initial_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            CHECK(jit.Regs()[0] == expected);
+            CHECK((jit.Cpsr() & 0xf80f0000) == initial_flags);
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
