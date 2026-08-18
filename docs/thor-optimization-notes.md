@@ -4036,7 +4036,7 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   game was launched. Thor reported USB power, no AC/wireless power, 80% battery, 4.153 V, and
   20.0 C, so this charging snapshot is not battery-discharge watt evidence.
 - Cleanup retained only the hash-verified APK and its 476-byte metadata in `app/build`, retained the
-  3,242,288,561-byte active ARM64 `.cxx` cache, removed 2,018,871,738 logical bytes of reproducible
+  2,794,713,569-byte active ARM64 `.cxx` cache, removed 2,018,871,738 logical bytes of reproducible
   Gradle/JNI staging plus the 447,574,992-byte test ELF and 55,154,008 bytes of temporary host
   benchmarks/manual renders, and deleted all temporary benchmark/test binaries from Thor. Windows
   recovered 2,079,604,736 physical bytes and reported 82,166,231,040 bytes free on C: afterward.
