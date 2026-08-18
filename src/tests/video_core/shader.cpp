@@ -246,6 +246,10 @@ SHADER_TEST_CASE("DP3", "[video_core][shader]") {
     REQUIRE(std::isnan(shader.Run({vec4_nan, vec4_zero}).x));
 
     REQUIRE(shader.Run({vec4_one, vec4_one}).x == 3.0f);
+
+    const Common::Vec4f lhs = {2.0f, -3.0f, 4.0f, NAN};
+    const Common::Vec4f rhs = {5.0f, 6.0f, -7.0f, NAN};
+    REQUIRE(shader.Run({lhs, rhs}) == Common::Vec4f::AssignToAll(-36.0f));
 }
 
 SHADER_TEST_CASE("DP4", "[video_core][shader]") {
@@ -702,6 +706,36 @@ SHADER_TEST_CASE("PICA State Access", "[video_core][shader]") {
         REQUIRE(shader_unit.address_registers[0] == 9);
         REQUIRE(shader_unit.address_registers[1] == 23);
         REQUIRE(shader_unit.address_registers[2] == -37);
+    }
+
+    SECTION("MOVA truncates both consumed lanes and ignores Z/W") {
+        auto shader = TestType({
+            {OpCode::Id::MOVA, DestRegister{}, "xy", sh_input, "xy"},
+            {OpCode::Id::END},
+        });
+
+        struct TestCase {
+            Common::Vec4f input;
+            s32 expected_x;
+            s32 expected_y;
+        };
+        const std::array cases = {
+            TestCase{{9.75f, -9.75f, INFINITY, NAN}, 9, -9},
+            TestCase{{0.99f, -0.99f, NAN, -INFINITY}, 0, 0},
+            TestCase{{127.75f, -127.75f, -INFINITY, INFINITY}, 127, -127},
+        };
+
+        for (const auto& test : cases) {
+            Pica::ShaderUnit shader_unit;
+            shader_unit.address_registers[0] = -1;
+            shader_unit.address_registers[1] = 1;
+            shader_unit.address_registers[2] = -37;
+            shader.RunShader(shader_unit, {&test.input, 1});
+
+            REQUIRE(shader_unit.address_registers[0] == test.expected_x);
+            REQUIRE(shader_unit.address_registers[1] == test.expected_y);
+            REQUIRE(shader_unit.address_registers[2] == -37);
+        }
     }
 
     SECTION("Relative uniform reads initial address state") {
