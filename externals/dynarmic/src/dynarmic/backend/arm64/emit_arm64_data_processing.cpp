@@ -48,12 +48,10 @@ template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    auto Wlo = ctx.reg_alloc.ReadW(args[0]);
+    auto Xresult = ctx.reg_alloc.ReadWriteX(args[0], inst);
     auto Whi = ctx.reg_alloc.ReadW(args[1]);
-    auto Xresult = ctx.reg_alloc.WriteX(inst);
-    RegAlloc::Realize(Wlo, Whi, Xresult);
+    RegAlloc::Realize(Xresult, Whi);
 
-    code.MOV(Xresult->toW(), Wlo);  // TODO: Move eliminiation
     code.BFI(Xresult, Whi->toX(), 32, 32);
 }
 
@@ -97,14 +95,9 @@ void EmitIR<IR::Opcode::Pack2x64To1x128>(oaknut::CodeGenerator& code, EmitContex
 }
 
 template<>
-void EmitIR<IR::Opcode::LeastSignificantWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+void EmitIR<IR::Opcode::LeastSignificantWord>(oaknut::CodeGenerator&, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
-
-    auto Wresult = ctx.reg_alloc.WriteW(inst);
-    auto Xoperand = ctx.reg_alloc.ReadX(args[0]);
-    RegAlloc::Realize(Wresult, Xoperand);
-
-    code.MOV(Wresult, Xoperand->toW());  // TODO: Zext elimination
+    ctx.reg_alloc.DefineAsExisting(inst, args[0]);
 }
 
 template<>

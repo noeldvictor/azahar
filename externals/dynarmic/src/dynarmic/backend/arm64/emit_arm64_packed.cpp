@@ -396,13 +396,11 @@ template<>
 void EmitIR<IR::Opcode::PackedSelect>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    auto Vresult = ctx.reg_alloc.WriteD(inst);
-    auto Vge = ctx.reg_alloc.ReadD(args[0]);
+    auto Vresult = ctx.reg_alloc.ReadWriteD(args[0], inst);
     auto Va = ctx.reg_alloc.ReadD(args[1]);
     auto Vb = ctx.reg_alloc.ReadD(args[2]);
-    RegAlloc::Realize(Vresult, Vge, Va, Vb);
+    RegAlloc::Realize(Vresult, Va, Vb);
 
-    code.FMOV(Vresult, Vge);  // TODO: Move elimination
     code.BSL(Vresult->B8(), Vb->B8(), Va->B8());
 }
 

@@ -146,3 +146,75 @@ TEST_CASE("Dynarmic preserves VTBX defaults through ARM64 read-write coalescing"
         CHECK(jit.ExtRegs()[reg * 2 + 1] == 0x20'1F'10'0F);
     }
 }
+
+TEST_CASE("Dynarmic A32 long multiply preserves packed low and high words",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe0a21493,  // UMLAL R1, R2, R3, R4
+        0xeafffffe,  // B .
+        0xeafffffe,
+        0xeafffffe,
+        0xeafffffe,
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    constexpr std::uint32_t lo = 0x89abcdef;
+    constexpr std::uint32_t hi = 0x01234567;
+    constexpr std::uint32_t lhs = 0xfedcba98;
+    constexpr std::uint32_t rhs = 0x76543210;
+    constexpr std::uint64_t expected =
+        (static_cast<std::uint64_t>(hi) << 32 | lo) +
+        static_cast<std::uint64_t>(lhs) * static_cast<std::uint64_t>(rhs);
+
+    jit.Regs() = {};
+    jit.Regs()[1] = lo;
+    jit.Regs()[2] = hi;
+    jit.Regs()[3] = lhs;
+    jit.Regs()[4] = rhs;
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 2;
+    jit.Run();
+
+    CHECK(jit.Regs()[1] == static_cast<std::uint32_t>(expected));
+    CHECK(jit.Regs()[2] == static_cast<std::uint32_t>(expected >> 32));
+}
+
+TEST_CASE("Dynarmic A32 SEL preserves per-byte GE selection", "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xe6810fb2,  // SEL R0, R1, R2
+        0xeafffffe,  // B .
+        0xeafffffe,
+        0xeafffffe,
+        0xeafffffe,
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+
+    constexpr std::uint32_t from = 0x11223344;
+    constexpr std::uint32_t to = 0xaabbccdd;
+    for (std::uint32_t ge = 0; ge < 16; ++ge) {
+        std::uint32_t expected = 0;
+        for (std::uint32_t byte = 0; byte < 4; ++byte) {
+            const std::uint32_t byte_mask = 0xffu << (byte * 8);
+            expected |= ((ge & (1u << byte)) != 0 ? from : to) & byte_mask;
+        }
+
+        CAPTURE(ge);
+        jit.Regs() = {};
+        jit.Regs()[1] = from;
+        jit.Regs()[2] = to;
+        jit.SetCpsr(0x000001d0 | ge << 16);  // User mode plus GE[3:0]
+        callbacks.ticks_left = 2;
+        jit.Run();
+
+        CHECK(jit.Regs()[0] == expected);
+        CHECK((jit.Cpsr() & 0x000f0000) == ge << 16);
+    }
+}
