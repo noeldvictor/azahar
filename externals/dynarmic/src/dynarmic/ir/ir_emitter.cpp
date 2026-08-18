@@ -521,6 +521,13 @@ U32U64 IREmitter::CountLeadingZeros(const U32U64& a) {
     return Inst<U64>(Opcode::CountLeadingZeros64, a);
 }
 
+U32 IREmitter::MoveTopHalf(const U32& destination, u16 immediate) {
+    if (immediate == 0) {
+        return And(destination, Imm32(0x0000ffffU));
+    }
+    return Inst<U32>(Opcode::MoveTopHalf32, destination, Imm16(immediate));
+}
+
 U32 IREmitter::BitFieldInsert(const U32& destination, const U32& source, u8 lsb, u8 width) {
     ASSERT(width >= 1 && lsb < 32 && lsb + width <= 32);
     if (width == 32) {

@@ -125,11 +125,8 @@ bool TranslatorVisitor::thumb32_MOVT(Imm<1> imm1, Imm<4> imm4, Imm<3> imm3, Reg 
         return UnpredictableInstruction();
     }
 
-    const IR::U32 imm16 = ir.Imm32(concatenate(imm4, imm1, imm3, imm8).ZeroExtend() << 16);
-    const IR::U32 operand = ir.GetRegister(d);
-    const IR::U32 result = ir.Or(ir.And(operand, ir.Imm32(0x0000FFFFU)), imm16);
-
-    ir.SetRegister(d, result);
+    const u16 imm16 = static_cast<u16>(concatenate(imm4, imm1, imm3, imm8).ZeroExtend());
+    ir.SetRegister(d, ir.MoveTopHalf(ir.GetRegister(d), imm16));
     return true;
 }
 

@@ -3095,3 +3095,88 @@ TEST_CASE("Dynarmic A32 BFI inserts fields without corrupting aliases, flags, or
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 MOVT replaces only the top half without corrupting registers or flags",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t destination;
+        std::uint16_t immediate;
+        bool thumb;
+    };
+    constexpr std::array<std::uint16_t, 9> immediates{
+        0x0000, 0x0001, 0x00ff, 0x7fff, 0x8000, 0xffff, 0xa5a5, 0x1234, 0x5aa5,
+    };
+    constexpr std::array<std::uint8_t, 4> destinations{0, 4, 8, 12};
+    std::array<Operation, 72> operations{};
+    std::size_t operation_index = 0;
+    for (const bool thumb : {false, true}) {
+        for (const std::uint8_t destination : destinations) {
+            for (const std::uint16_t immediate : immediates) {
+                const std::uint32_t instruction = [&] {
+                    const std::uint32_t imm4 = immediate >> 12;
+                    if (!thumb) {
+                        return 0xe3400000U | (imm4 << 16) |
+                               (static_cast<std::uint32_t>(destination) << 12) |
+                               (immediate & 0x0fff);
+                    }
+                    const std::uint32_t first_half =
+                        0xf2c0U | ((static_cast<std::uint32_t>(immediate) >> 11 & 1) << 10) | imm4;
+                    const std::uint32_t second_half =
+                        ((static_cast<std::uint32_t>(immediate) >> 8 & 7) << 12) |
+                        (static_cast<std::uint32_t>(destination) << 8) | (immediate & 0xff);
+                    return (second_half << 16) | first_half;
+                }();
+                operations[operation_index++] = Operation{instruction, destination, immediate, thumb};
+            }
+        }
+    }
+    REQUIRE(operation_index == operations.size());
+
+    constexpr std::array<std::uint32_t, 10> inputs{
+        0x00000000, 0xffffffff, 0x0000ffff, 0xffff0000, 0x01234567,
+        0x89abcdef, 0x80000001, 0x7ffffffe, 0xdeadbeef, 0xa5a55a5a,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        CAPTURE(operation.instruction, operation.destination, operation.immediate, operation.thumb);
+        ArmTestCallbacks callbacks;
+        callbacks.code = {
+            operation.instruction,
+            operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+        };
+        Dynarmic::A32::UserConfig config{&callbacks};
+        Dynarmic::A32::Jit jit{config};
+
+        for (const std::uint32_t input : inputs) {
+            CAPTURE(input);
+            std::array<std::uint32_t, 16> initial_regs{
+                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+            };
+            initial_regs[operation.destination] = input;
+            jit.Regs() = initial_regs;
+            jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+            jit.SetFpscr(initial_fpscr);
+            callbacks.ticks_left = 2;
+            jit.Run();
+
+            const std::uint32_t expected =
+                (input & 0x0000ffffU) | (static_cast<std::uint32_t>(operation.immediate) << 16);
+            CHECK(jit.Regs()[operation.destination] == expected);
+            for (std::size_t reg = 0; reg < 15; ++reg) {
+                if (reg == operation.destination) {
+                    continue;
+                }
+                CAPTURE(reg);
+                CHECK(jit.Regs()[reg] == initial_regs[reg]);
+            }
+            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+            CHECK(jit.Fpscr() == initial_fpscr);
+        }
+    }
+}

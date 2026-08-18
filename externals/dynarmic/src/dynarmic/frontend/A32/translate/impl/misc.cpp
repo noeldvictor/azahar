@@ -80,11 +80,8 @@ bool TranslatorVisitor::arm_MOVT(Cond cond, Imm<4> imm4, Reg d, Imm<12> imm12) {
         return true;
     }
 
-    const IR::U32 imm16 = ir.Imm32(concatenate(imm4, imm12).ZeroExtend() << 16);
-    const IR::U32 operand = ir.GetRegister(d);
-    const IR::U32 result = ir.Or(ir.And(operand, ir.Imm32(0x0000FFFFU)), imm16);
-
-    ir.SetRegister(d, result);
+    const u16 imm16 = static_cast<u16>(concatenate(imm4, imm12).ZeroExtend());
+    ir.SetRegister(d, ir.MoveTopHalf(ir.GetRegister(d), imm16));
     return true;
 }
 

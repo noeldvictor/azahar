@@ -54,6 +54,7 @@ static std::function<void(BlockOfCode&)> GenRCP(const A32::UserConfig& conf) {
 
 static Optimization::PolyfillOptions GenPolyfillOptions(const BlockOfCode& code) {
     return Optimization::PolyfillOptions{
+        .move_top_half = true,
         .bit_field_insert = true,
         .bit_field_extract = true,
         .byte_reverse_halfwords = true,

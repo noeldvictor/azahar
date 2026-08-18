@@ -415,6 +415,13 @@ void PolyfillBitFieldExtract(IR::IREmitter& ir, IR::Inst& inst) {
     }
 }
 
+void PolyfillMoveTopHalf(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U32 destination = (IR::U32)inst.GetArg(0);
+    const u32 immediate = static_cast<u32>(inst.GetArg(1).GetU16()) << 16;
+    const IR::U32 low_half = ir.And(destination, ir.Imm32(0x0000ffffU));
+    inst.ReplaceUsesWith(ir.Or(low_half, ir.Imm32(immediate)));
+}
+
 void PolyfillBitFieldInsert(IR::IREmitter& ir, IR::Inst& inst, bool is_self) {
     const IR::U32 destination = (IR::U32)inst.GetArg(0);
     const IR::U32 source = is_self ? destination : (IR::U32)inst.GetArg(1);
@@ -464,6 +471,11 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         ir.SetInsertionPointBefore(&inst);
 
         switch (inst.GetOpcode()) {
+        case IR::Opcode::MoveTopHalf32:
+            if (polyfill.move_top_half) {
+                PolyfillMoveTopHalf(ir, inst);
+            }
+            break;
         case IR::Opcode::BitFieldInsert32:
             if (polyfill.bit_field_insert) {
                 PolyfillBitFieldInsert(ir, inst, false);

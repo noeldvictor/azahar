@@ -153,6 +153,7 @@ public:
     U64 ByteReverseDual(const U64& a);
     U32 ReverseBits(const U32& a);
     U32U64 CountLeadingZeros(const U32U64& a);
+    U32 MoveTopHalf(const U32& destination, u16 immediate);
     U32 BitFieldInsert(const U32& destination, const U32& source, u8 lsb, u8 width);
     U32 BitFieldInsertSelf(const U32& source, u8 lsb, u8 width);
     U32 SignedBitFieldExtract(const U32& a, u8 lsb, u8 width);

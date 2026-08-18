@@ -1617,6 +1617,17 @@ void EmitIR<IR::Opcode::CountLeadingZeros64>(oaknut::CodeGenerator& code, EmitCo
 }
 
 template<>
+void EmitIR<IR::Opcode::MoveTopHalf32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    ASSERT(args[1].IsImmediate());
+    const u16 immediate = inst->GetArg(1).GetU16();
+
+    auto Wresult = ctx.reg_alloc.ReadWriteW(args[0], inst);
+    RegAlloc::Realize(Wresult);
+    code.MOVK(*Wresult, {immediate, oaknut::MovImm16Shift::SHL_16});
+}
+
+template<>
 void EmitIR<IR::Opcode::BitFieldInsert32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     ASSERT(args[2].IsImmediate() && args[3].IsImmediate());
