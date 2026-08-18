@@ -1585,8 +1585,9 @@ void JitShader::Compile_Log2(Label subroutine) {
     //  SRC1 now contains the mantissa of the input.
     UBFX(XSCRATCH0.toW(), XSCRATCH0.toW(), 23, 8);
     SUB(XSCRATCH0.toW(), XSCRATCH0.toW(), 0x7F);
-    MOV(VSCRATCH1.Selem()[0], XSCRATCH0.toW());
-    UCVTF(VSCRATCH1.toS(), VSCRATCH1.toS());
+    // The unbiased exponent is signed. Convert it directly from the GPR so inputs below one do
+    // not reinterpret a negative exponent as a large unsigned value, and avoid an extra lane move.
+    SCVTF(VSCRATCH1.toS(), XSCRATCH0.toW());
     // VSCRATCH1 now contains the exponent of the input.
 
     const QReg C03 = SRC2;
