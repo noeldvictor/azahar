@@ -4083,6 +4083,30 @@ void EmitX64::EmitVectorSignedAbsoluteDifferenceWiden32(EmitContext&, IR::Inst*)
     ASSERT_FALSE("Unexpected VectorSignedAbsoluteDifferenceWiden32");
 }
 
+void EmitX64::EmitVectorSignedAddSubWide8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWide8");
+}
+
+void EmitX64::EmitVectorSignedAddSubWide16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWide16");
+}
+
+void EmitX64::EmitVectorSignedAddSubWide32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWide32");
+}
+
+void EmitX64::EmitVectorSignedAddSubWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWiden8");
+}
+
+void EmitX64::EmitVectorSignedAddSubWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWiden16");
+}
+
+void EmitX64::EmitVectorSignedAddSubWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedAddSubWiden32");
+}
+
 void EmitX64::EmitVectorSignedMultiply16(EmitContext& ctx, IR::Inst* inst) {
     const auto upper_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetUpperFromOp);
     const auto lower_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetLowerFromOp);
@@ -5704,6 +5728,30 @@ void EmitX64::EmitVectorUnsignedAbsoluteDifferenceWiden16(EmitContext&, IR::Inst
 
 void EmitX64::EmitVectorUnsignedAbsoluteDifferenceWiden32(EmitContext&, IR::Inst*) {
     ASSERT_FALSE("Unexpected VectorUnsignedAbsoluteDifferenceWiden32");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWide8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWide8");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWide16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWide16");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWide32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWide32");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWiden8");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWiden16");
+}
+
+void EmitX64::EmitVectorUnsignedAddSubWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedAddSubWiden32");
 }
 
 void EmitX64::EmitVectorUnsignedMultiply16(EmitContext& ctx, IR::Inst* inst) {

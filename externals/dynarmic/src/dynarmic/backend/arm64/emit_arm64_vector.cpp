@@ -178,6 +178,57 @@ static void EmitThreeOpArrangedWiden(oaknut::CodeGenerator& code, EmitContext& c
 }
 
 template<size_t size, typename EmitFn>
+static void EmitThreeOpArrangedWide(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst, EmitFn emit) {
+    EmitThreeOp(code, ctx, inst, [&](auto& Qresult, auto& Qa, auto& Qb) {
+        if constexpr (size == 8) {
+            emit(Qresult->H8(), Qa->H8(), Qb->toD().B8());
+        } else if constexpr (size == 16) {
+            emit(Qresult->S4(), Qa->S4(), Qb->toD().H4());
+        } else if constexpr (size == 32) {
+            emit(Qresult->D2(), Qa->D2(), Qb->toD().S2());
+        } else {
+            static_assert(Common::always_false_v<mcl::mp::lift_value<size>>);
+        }
+    });
+}
+
+template<size_t size, bool is_signed, bool is_wide>
+static void EmitVectorAddSubWiden(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    const bool subtract = inst->GetArg(2).GetU1();
+    const auto emit = [&](auto Vresult, auto Va, auto Vb) {
+        if constexpr (is_signed) {
+            if (subtract) {
+                if constexpr (is_wide) {
+                    code.SSUBW(Vresult, Va, Vb);
+                } else {
+                    code.SSUBL(Vresult, Va, Vb);
+                }
+            } else if constexpr (is_wide) {
+                code.SADDW(Vresult, Va, Vb);
+            } else {
+                code.SADDL(Vresult, Va, Vb);
+            }
+        } else if (subtract) {
+            if constexpr (is_wide) {
+                code.USUBW(Vresult, Va, Vb);
+            } else {
+                code.USUBL(Vresult, Va, Vb);
+            }
+        } else if constexpr (is_wide) {
+            code.UADDW(Vresult, Va, Vb);
+        } else {
+            code.UADDL(Vresult, Va, Vb);
+        }
+    };
+
+    if constexpr (is_wide) {
+        EmitThreeOpArrangedWide<size>(code, ctx, inst, emit);
+    } else {
+        EmitThreeOpArrangedWiden<size>(code, ctx, inst, emit);
+    }
+}
+
+template<size_t size, typename EmitFn>
 static void EmitThreeOpArrangedSaturatedWiden(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst, EmitFn emit) {
     EmitThreeOpArrangedWiden<size>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) {
         ctx.fpsr.Load();
@@ -378,6 +429,66 @@ void EmitIR<IR::Opcode::VectorAdd32>(oaknut::CodeGenerator& code, EmitContext& c
 template<>
 void EmitIR<IR::Opcode::VectorAdd64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitThreeOpArranged<64>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) { code.ADD(Vresult, Va, Vb); });
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWide8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<8, true, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWide16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<16, true, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWide32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<32, true, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<8, true, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<16, true, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedAddSubWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<32, true, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWide8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<8, false, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWide16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<16, false, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWide32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<32, false, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<8, false, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<16, false, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorAddSubWiden<32, false, false>(code, ctx, inst);
 }
 
 template<>

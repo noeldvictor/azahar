@@ -150,6 +150,20 @@ void PolyfillVectorAbsoluteDifferenceWiden(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(result);
 }
 
+template<size_t esize, bool is_signed, bool is_wide>
+void PolyfillVectorAddSubWiden(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U128 n = (IR::U128)inst.GetArg(0);
+    const IR::U128 m = (IR::U128)inst.GetArg(1);
+    const IR::U128 wide_n = is_wide ? n
+                                    : (is_signed ? ir.VectorSignExtend(esize, n) : ir.VectorZeroExtend(esize, n));
+    const IR::U128 wide_m = is_signed ? ir.VectorSignExtend(esize, m) : ir.VectorZeroExtend(esize, m);
+    const bool subtract = inst.GetArg(2).GetU1();
+    const IR::U128 result = subtract ? ir.VectorSub(esize * 2, wide_n, wide_m)
+                                     : ir.VectorAdd(esize * 2, wide_n, wide_m);
+
+    inst.ReplaceUsesWith(result);
+}
+
 template<size_t esize, bool is_signed>
 void PolyfillVectorMultiplyWiden(IR::IREmitter& ir, IR::Inst& inst) {
     IR::U128 n = (IR::U128)inst.GetArg(0);
@@ -219,6 +233,66 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::VectorUnsignedAbsoluteDifferenceWiden32:
             if (polyfill.vector_absolute_difference_widen) {
                 PolyfillVectorAbsoluteDifferenceWiden<32, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWide8:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<8, true, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWide16:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<16, true, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWide32:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<32, true, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWiden8:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<8, true, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWiden16:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<16, true, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedAddSubWiden32:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<32, true, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWide8:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<8, false, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWide16:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<16, false, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWide32:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<32, false, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWiden8:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<8, false, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWiden16:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<16, false, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedAddSubWiden32:
+            if (polyfill.vector_add_sub_widen) {
+                PolyfillVectorAddSubWiden<32, false, false>(ir, inst);
             }
             break;
         case IR::Opcode::VectorMultiplySignedWiden8:

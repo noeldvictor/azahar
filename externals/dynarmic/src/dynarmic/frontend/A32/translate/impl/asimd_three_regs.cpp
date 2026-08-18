@@ -27,6 +27,11 @@ enum class WidenBehaviour {
     Both,
 };
 
+enum class AddSubBehavior {
+    Addition,
+    Subtraction,
+};
+
 template<bool WithDst, typename Callable>
 bool BitwiseInstruction(TranslatorVisitor& v, bool D, size_t Vn, size_t Vd, bool N, bool Q, bool M, size_t Vm, Callable fn) {
     if (Q && (mcl::bit::get_bit<0>(Vd) || mcl::bit::get_bit<0>(Vn) || mcl::bit::get_bit<0>(Vm))) {
@@ -211,8 +216,7 @@ bool AbsoluteDifferenceLong(TranslatorVisitor& v, bool U, bool D, size_t sz, siz
     return true;
 }
 
-template<typename Callable>
-bool WideInstruction(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm, WidenBehaviour widen_behaviour, Callable fn) {
+bool WideInstruction(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm, WidenBehaviour widen_behaviour, AddSubBehavior behavior) {
     const size_t esize = 8U << sz;
     const bool widen_first = widen_behaviour == WidenBehaviour::Both;
 
@@ -228,12 +232,18 @@ bool WideInstruction(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t Vn,
     const auto m = ToVector(false, Vm, M);
     const auto n = ToVector(!widen_first, Vn, N);
 
-    const auto reg_d = v.ir.GetVector(d);
     const auto reg_m = v.ir.GetVector(m);
     const auto reg_n = v.ir.GetVector(n);
-    const auto wide_n = U ? v.ir.VectorZeroExtend(esize, reg_n) : v.ir.VectorSignExtend(esize, reg_n);
-    const auto wide_m = U ? v.ir.VectorZeroExtend(esize, reg_m) : v.ir.VectorSignExtend(esize, reg_m);
-    const auto result = fn(esize * 2, reg_d, widen_first ? wide_n : reg_n, wide_m);
+    const bool subtract = behavior == AddSubBehavior::Subtraction;
+    const auto result = [&] {
+        if (widen_first) {
+            return U ? v.ir.VectorUnsignedAddSubWiden(esize, reg_n, reg_m, subtract)
+                     : v.ir.VectorSignedAddSubWiden(esize, reg_n, reg_m, subtract);
+        }
+
+        return U ? v.ir.VectorUnsignedAddSubWide(esize, reg_n, reg_m, subtract)
+                 : v.ir.VectorSignedAddSubWide(esize, reg_n, reg_m, subtract);
+    }();
 
     v.ir.SetVector(d, result);
     return true;
@@ -898,15 +908,11 @@ bool TranslatorVisitor::v8_SHA256SU1(bool D, size_t Vn, size_t Vd, bool N, bool 
 // ASIMD Three registers of different length
 
 bool TranslatorVisitor::asimd_VADDL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm) {
-    return WideInstruction(*this, U, D, sz, Vn, Vd, N, M, Vm, op ? WidenBehaviour::Second : WidenBehaviour::Both, [this](size_t esize, const auto&, const auto& reg_n, const auto& reg_m) {
-        return ir.VectorAdd(esize, reg_n, reg_m);
-    });
+    return WideInstruction(*this, U, D, sz, Vn, Vd, N, M, Vm, op ? WidenBehaviour::Second : WidenBehaviour::Both, AddSubBehavior::Addition);
 }
 
 bool TranslatorVisitor::asimd_VSUBL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool op, bool N, bool M, size_t Vm) {
-    return WideInstruction(*this, U, D, sz, Vn, Vd, N, M, Vm, op ? WidenBehaviour::Second : WidenBehaviour::Both, [this](size_t esize, const auto&, const auto& reg_n, const auto& reg_m) {
-        return ir.VectorSub(esize, reg_n, reg_m);
-    });
+    return WideInstruction(*this, U, D, sz, Vn, Vd, N, M, Vm, op ? WidenBehaviour::Second : WidenBehaviour::Both, AddSubBehavior::Subtraction);
 }
 
 bool TranslatorVisitor::asimd_VABAL(bool U, bool D, size_t sz, size_t Vn, size_t Vd, bool N, bool M, size_t Vm) {

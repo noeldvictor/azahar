@@ -1792,6 +1792,30 @@ U128 IREmitter::VectorSignedAbsoluteDifferenceWiden(size_t esize, const U128& a,
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorSignedAddSubWide(size_t esize, const U128& wide, const U128& narrow, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorSignedAddSubWide8, wide, narrow, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedAddSubWide16, wide, narrow, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedAddSubWide32, wide, narrow, Imm1(subtract));
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorSignedAddSubWiden(size_t esize, const U128& a, const U128& b, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorSignedAddSubWiden8, a, b, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedAddSubWiden16, a, b, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedAddSubWiden32, a, b, Imm1(subtract));
+    }
+    UNREACHABLE();
+}
+
 UpperAndLower IREmitter::VectorSignedMultiply(size_t esize, const U128& a, const U128& b) {
     const Value multiply = [&] {
         switch (esize) {
@@ -2006,6 +2030,30 @@ U128 IREmitter::VectorUnsignedAbsoluteDifferenceWiden(size_t esize, const U128& 
         return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifferenceWiden16, a, b);
     case 32:
         return Inst<U128>(Opcode::VectorUnsignedAbsoluteDifferenceWiden32, a, b);
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorUnsignedAddSubWide(size_t esize, const U128& wide, const U128& narrow, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWide8, wide, narrow, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWide16, wide, narrow, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWide32, wide, narrow, Imm1(subtract));
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorUnsignedAddSubWiden(size_t esize, const U128& a, const U128& b, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWiden8, a, b, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWiden16, a, b, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorUnsignedAddSubWiden32, a, b, Imm1(subtract));
     }
     UNREACHABLE();
 }

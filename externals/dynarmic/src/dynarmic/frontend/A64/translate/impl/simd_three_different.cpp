@@ -90,25 +90,12 @@ bool LongOperation(TranslatorVisitor& v, bool Q, Imm<2> size, Vec Vm, Vec Vn, Ve
     const size_t esize = 8 << size.ZeroExtend();
     const size_t part = Q ? 1 : 0;
 
-    const auto get_operand = [&](Vec vec) {
-        const IR::U128 tmp = v.Vpart(64, vec, part);
-
-        if (sign == Signedness::Signed) {
-            return v.ir.VectorSignExtend(esize, tmp);
-        }
-
-        return v.ir.VectorZeroExtend(esize, tmp);
-    };
-
-    const IR::U128 operand1 = get_operand(Vn);
-    const IR::U128 operand2 = get_operand(Vm);
-    const IR::U128 result = [&] {
-        if (behavior == LongOperationBehavior::Addition) {
-            return v.ir.VectorAdd(esize * 2, operand1, operand2);
-        }
-
-        return v.ir.VectorSub(esize * 2, operand1, operand2);
-    }();
+    const IR::U128 operand1 = v.Vpart(64, Vn, part);
+    const IR::U128 operand2 = v.Vpart(64, Vm, part);
+    const bool subtract = behavior == LongOperationBehavior::Subtraction;
+    const IR::U128 result = sign == Signedness::Signed
+                              ? v.ir.VectorSignedAddSubWiden(esize, operand1, operand2, subtract)
+                              : v.ir.VectorUnsignedAddSubWiden(esize, operand1, operand2, subtract);
 
     v.V(128, Vd, result);
     return true;
@@ -128,22 +115,11 @@ bool WideOperation(TranslatorVisitor& v, bool Q, Imm<2> size, Vec Vm, Vec Vn, Ve
     const size_t part = Q ? 1 : 0;
 
     const IR::U128 operand1 = v.V(128, Vn);
-    const IR::U128 operand2 = [&] {
-        const IR::U128 tmp = v.Vpart(64, Vm, part);
-
-        if (sign == Signedness::Signed) {
-            return v.ir.VectorSignExtend(esize, tmp);
-        }
-
-        return v.ir.VectorZeroExtend(esize, tmp);
-    }();
-    const IR::U128 result = [&] {
-        if (behavior == WideOperationBehavior::Addition) {
-            return v.ir.VectorAdd(esize * 2, operand1, operand2);
-        }
-
-        return v.ir.VectorSub(esize * 2, operand1, operand2);
-    }();
+    const IR::U128 operand2 = v.Vpart(64, Vm, part);
+    const bool subtract = behavior == WideOperationBehavior::Subtraction;
+    const IR::U128 result = sign == Signedness::Signed
+                              ? v.ir.VectorSignedAddSubWide(esize, operand1, operand2, subtract)
+                              : v.ir.VectorUnsignedAddSubWide(esize, operand1, operand2, subtract);
 
     v.V(128, Vd, result);
     return true;

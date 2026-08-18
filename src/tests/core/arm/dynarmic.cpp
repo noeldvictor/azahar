@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 #include <catch2/catch_test_macros.hpp>
@@ -395,6 +396,107 @@ TEST_CASE("Dynarmic A32 VABAL widens before accumulating with lane wraparound",
     CHECK(jit.ExtRegs()[57] == 0x00000000);
     CHECK(jit.ExtRegs()[58] == 0x89abcded);
     CHECK(jit.ExtRegs()[59] == 0x01234568);
+}
+
+TEST_CASE("Dynarmic A32 VADDL and VSUBL preserve signed, unsigned, and wrapping lanes",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf2820003,  // VADDL.S8 Q0, D2, D3
+        0xf3968007,  // VADDL.U16 Q4, D6, D7
+        0xf2ea020b,  // VSUBL.S32 Q8, D10, D11
+        0xf3ce820f,  // VSUBL.U8 Q12, D14, D15
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+    jit.ExtRegs() = {};
+
+    const auto set_d = [&](std::size_t d, const auto& lanes) {
+        static_assert(sizeof(lanes) == sizeof(std::uint64_t));
+        std::memcpy(jit.ExtRegs().data() + d * 2, lanes.data(), sizeof(lanes));
+    };
+
+    set_d(2, std::array<std::int8_t, 8>{-128, -1, 0, 1, 127, 64, -64, 42});
+    set_d(3, std::array<std::int8_t, 8>{127, 1, -1, -2, -128, -64, 64, 42});
+    set_d(6, std::array<std::uint16_t, 4>{0, 1, 65535, 32768});
+    set_d(7, std::array<std::uint16_t, 4>{65535, 2, 1, 32768});
+    set_d(10, std::array<std::int32_t, 2>{INT32_MIN, INT32_MAX});
+    set_d(11, std::array<std::int32_t, 2>{INT32_MAX, INT32_MIN});
+    set_d(14, std::array<std::uint8_t, 8>{0, 255, 1, 128, 42, 200, 250, 5});
+    set_d(15, std::array<std::uint8_t, 8>{255, 0, 2, 129, 100, 201, 249, 6});
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    std::array<std::int16_t, 8> signed8_result{};
+    std::array<std::uint32_t, 4> unsigned16_result{};
+    std::array<std::int64_t, 2> signed32_result{};
+    std::array<std::uint16_t, 8> unsigned8_result{};
+    std::memcpy(signed8_result.data(), jit.ExtRegs().data(), sizeof(signed8_result));
+    std::memcpy(unsigned16_result.data(), jit.ExtRegs().data() + 16, sizeof(unsigned16_result));
+    std::memcpy(signed32_result.data(), jit.ExtRegs().data() + 32, sizeof(signed32_result));
+    std::memcpy(unsigned8_result.data(), jit.ExtRegs().data() + 48, sizeof(unsigned8_result));
+
+    CHECK((signed8_result == std::array<std::int16_t, 8>{-1, 0, -1, -1, -1, 0, 0, 84}));
+    CHECK((unsigned16_result == std::array<std::uint32_t, 4>{65535, 3, 65536, 65536}));
+    CHECK((signed32_result == std::array<std::int64_t, 2>{-4294967295LL, 4294967295LL}));
+    CHECK((unsigned8_result ==
+           std::array<std::uint16_t, 8>{65281, 255, 65535, 65535, 65478, 65535, 1, 65535}));
+}
+
+TEST_CASE("Dynarmic A32 VADDW and VSUBW preserve the wide operand and lane wraparound",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf284010a,  // VADDW.S8 Q0, Q2, D10
+        0xf39c810e,  // VADDW.U16 Q4, Q6, D14
+        0xf2e403a6,  // VSUBW.S32 Q8, Q10, D22
+        0xf3cc83ae,  // VSUBW.U8 Q12, Q14, D30
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+    jit.ExtRegs() = {};
+
+    const auto set_vector = [&](std::size_t first_s_register, const auto& lanes) {
+        std::memcpy(jit.ExtRegs().data() + first_s_register, lanes.data(), sizeof(lanes));
+    };
+
+    set_vector(8, std::array<std::int16_t, 8>{-32768, -1, 0, 1, 32767, 100, -100, 30000});
+    set_vector(20, std::array<std::int8_t, 8>{-1, 1, -1, 2, 1, -100, 100, 127});
+    set_vector(24, std::array<std::uint32_t, 4>{0, UINT32_MAX, 100, 4000000000U});
+    set_vector(28, std::array<std::uint16_t, 4>{65535, 1, 65535, 65535});
+    set_vector(40, std::array<std::int64_t, 2>{INT64_MIN, INT64_MAX});
+    set_vector(44, std::array<std::int32_t, 2>{1, -1});
+    set_vector(56, std::array<std::uint16_t, 8>{0, 255, 1, 128, 65535, 1000, 5, 42});
+    set_vector(60, std::array<std::uint8_t, 8>{1, 255, 2, 129, 255, 1, 6, 42});
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    std::array<std::int16_t, 8> signed8_result{};
+    std::array<std::uint32_t, 4> unsigned16_result{};
+    std::array<std::int64_t, 2> signed32_result{};
+    std::array<std::uint16_t, 8> unsigned8_result{};
+    std::memcpy(signed8_result.data(), jit.ExtRegs().data(), sizeof(signed8_result));
+    std::memcpy(unsigned16_result.data(), jit.ExtRegs().data() + 16, sizeof(unsigned16_result));
+    std::memcpy(signed32_result.data(), jit.ExtRegs().data() + 32, sizeof(signed32_result));
+    std::memcpy(unsigned8_result.data(), jit.ExtRegs().data() + 48, sizeof(unsigned8_result));
+
+    CHECK((signed8_result ==
+           std::array<std::int16_t, 8>{32767, 0, -1, 3, -32768, 0, 0, 30127}));
+    CHECK((unsigned16_result ==
+           std::array<std::uint32_t, 4>{65535, 0, 65635, 4000065535U}));
+    CHECK((signed32_result == std::array<std::int64_t, 2>{INT64_MAX, INT64_MIN}));
+    CHECK((unsigned8_result ==
+           std::array<std::uint16_t, 8>{65535, 0, 65535, 65535, 65280, 999, 65535, 0}));
 }
 
 TEST_CASE("Dynarmic A32 VZIP keeps both D-register results in SIMD",
