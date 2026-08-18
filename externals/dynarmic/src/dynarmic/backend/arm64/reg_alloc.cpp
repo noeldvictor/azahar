@@ -104,6 +104,19 @@ void HostLocInfo::SetupLocation(const IR::Inst* value) {
     expected_uses = value->UseCount();
 }
 
+void HostLocInfo::ReplaceLastUseWith(const IR::Inst* value) {
+    ASSERT(IsOneRemainingUse());
+    ASSERT(locked == 1);
+    ASSERT(!realized);
+
+    values.clear();
+    values.push_back(value);
+    realized = true;
+    uses_this_inst = 0;
+    accumulated_uses = 0;
+    expected_uses = value->UseCount();
+}
+
 bool HostLocInfo::IsCompletelyEmpty() const {
     return values.empty() && !locked && !realized && !accumulated_uses && !expected_uses && !uses_this_inst;
 }
@@ -402,19 +415,30 @@ int RegAlloc::RealizeWriteImpl(const IR::Inst* value) {
 }
 
 template<HostLoc::Kind kind>
-int RegAlloc::RealizeReadWriteImpl(const IR::Value& read_value, const IR::Inst* write_value) {
+std::pair<int, bool> RegAlloc::RealizeReadWriteImpl(const IR::Value& read_value, const IR::Inst* write_value) {
     defined_insts.insert(write_value);
 
-    // TODO: Move elimination
+    if constexpr (kind != HostLoc::Kind::Flags) {
+        if (!read_value.IsImmediate()) {
+            const auto current_location = ValueLocation(read_value.GetInst());
+            ASSERT(current_location);
+
+            auto& current_info = ValueInfo(*current_location);
+            if (current_location->kind == kind && current_info.locked == 1 && !current_info.realized && current_info.IsOneRemainingUse()) {
+                current_info.ReplaceLastUseWith(write_value);
+                return {current_location->index, true};
+            }
+        }
+    }
 
     const int write_loc = RealizeWriteImpl<kind>(write_value);
 
     if constexpr (kind == HostLoc::Kind::Gpr) {
         LoadCopyInto(read_value, oaknut::XReg{write_loc});
-        return write_loc;
+        return {write_loc, false};
     } else if constexpr (kind == HostLoc::Kind::Fpr) {
         LoadCopyInto(read_value, oaknut::QReg{write_loc});
-        return write_loc;
+        return {write_loc, false};
     } else if constexpr (kind == HostLoc::Kind::Flags) {
         ASSERT_FALSE("Incorrect function for ReadWrite of flags");
     } else {
@@ -428,9 +452,9 @@ template int RegAlloc::RealizeReadImpl<HostLoc::Kind::Flags>(const IR::Value& va
 template int RegAlloc::RealizeWriteImpl<HostLoc::Kind::Gpr>(const IR::Inst* value);
 template int RegAlloc::RealizeWriteImpl<HostLoc::Kind::Fpr>(const IR::Inst* value);
 template int RegAlloc::RealizeWriteImpl<HostLoc::Kind::Flags>(const IR::Inst* value);
-template int RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Gpr>(const IR::Value&, const IR::Inst*);
-template int RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Fpr>(const IR::Value&, const IR::Inst*);
-template int RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Flags>(const IR::Value&, const IR::Inst*);
+template std::pair<int, bool> RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Gpr>(const IR::Value&, const IR::Inst*);
+template std::pair<int, bool> RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Fpr>(const IR::Value&, const IR::Inst*);
+template std::pair<int, bool> RegAlloc::RealizeReadWriteImpl<HostLoc::Kind::Flags>(const IR::Value&, const IR::Inst*);
 
 int RegAlloc::AllocateRegister(const std::array<HostLocInfo, 32>& regs, const std::vector<int>& order) const {
     const auto empty = std::find_if(order.begin(), order.end(), [&](int i) { return regs[i].IsCompletelyEmpty(); });

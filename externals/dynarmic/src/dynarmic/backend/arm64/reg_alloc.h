@@ -116,7 +116,8 @@ public:
             , rw{std::exchange(other.rw, RWType::Void)}
             , read_value{std::exchange(other.read_value, {})}
             , write_value{std::exchange(other.write_value, nullptr)}
-            , reg{std::exchange(other.reg, std::nullopt)} {
+            , reg{std::exchange(other.reg, std::nullopt)}
+            , reused_read_location{std::exchange(other.reused_read_location, false)} {
     }
     RAReg& operator=(RAReg&&) = delete;
 
@@ -134,6 +135,7 @@ private:
     IR::Value read_value;
     const IR::Inst* write_value;
     std::optional<T> reg;
+    bool reused_read_location = false;
 };
 
 struct HostLocInfo final {
@@ -147,6 +149,7 @@ struct HostLocInfo final {
     bool Contains(const IR::Inst*) const;
     void SetupScratchLocation();
     void SetupLocation(const IR::Inst*);
+    void ReplaceLastUseWith(const IR::Inst*);
     bool IsCompletelyEmpty() const;
     bool MaybeAllocatable() const;
     bool IsOneRemainingUse() const;
@@ -313,7 +316,7 @@ private:
     template<HostLoc::Kind kind>
     int RealizeWriteImpl(const IR::Inst* value);
     template<HostLoc::Kind kind>
-    int RealizeReadWriteImpl(const IR::Value& read_value, const IR::Inst* write_value);
+    std::pair<int, bool> RealizeReadWriteImpl(const IR::Value& read_value, const IR::Inst* write_value);
 
     int AllocateRegister(const std::array<HostLocInfo, 32>& regs, const std::vector<int>& order) const;
     void SpillGpr(int index);
@@ -353,7 +356,12 @@ RAReg<T>::RAReg(RegAlloc& reg_alloc, RWType rw, const IR::Value& read_value, con
 template<typename T>
 RAReg<T>::~RAReg() {
     if (rw != RWType::Write && !read_value.IsImmediate()) {
-        reg_alloc.ValueInfo(read_value.GetInst()).locked--;
+        if (reused_read_location) {
+            ASSERT(reg);
+            reg_alloc.ValueInfo(HostLoc{kind, reg->index()}).locked--;
+        } else {
+            reg_alloc.ValueInfo(read_value.GetInst()).locked--;
+        }
     }
     if (reg) {
         reg_alloc.ValueInfo(HostLoc{kind, reg->index()}).realized = false;
@@ -369,9 +377,12 @@ void RAReg<T>::Realize() {
     case RWType::Write:
         reg = T{reg_alloc.RealizeWriteImpl<kind>(write_value)};
         break;
-    case RWType::ReadWrite:
-        reg = T{reg_alloc.RealizeReadWriteImpl<kind>(read_value, write_value)};
+    case RWType::ReadWrite: {
+        const auto [index, reused] = reg_alloc.RealizeReadWriteImpl<kind>(read_value, write_value);
+        reg = T{index};
+        reused_read_location = reused;
         break;
+    }
     default:
         ASSERT_FALSE("Invalid RWType");
     }
