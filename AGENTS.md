@@ -623,6 +623,16 @@
   untouched registers/NZCV/GE, sticky initial Q, and unchanged FPSCR in permanent tests. The exact
   path measured 1.09x-1.31x on Thor A510, about 2.00x on A715, 1.93x-2.02x on A710, and
   1.50x-2.03x on X3. Keep these claims path-local until a matched title and battery-power A/B.
+- A32 ARM/Thumb-2 `SXTB16` must retain the first-class `PackedSignExtendByteToHalf` IR. ARM64 must
+  use `SBFX` to save the selected upper byte in a scratch register before `SXTB` writes the result,
+  then use `BFI` to insert the sign-extended upper halfword. Do not reverse the first two
+  operations: the final-use `ReadWriteW` allocation may alias the guest source and destination.
+  x64 and RISC-V must polyfill the operation back to the established two-mask, constant, multiply,
+  and OR DAG. Preserve ARM and Thumb encodings, rotations 0/8/16/24, source/destination aliases,
+  untouched GPRs, unchanged NZCV/Q/GE, and unchanged FPSCR in permanent tests. The exact path
+  measured 1.00x-1.33x on Thor A510, 1.54x-2.04x on A715, 1.24x-1.33x on A710, and 1.24x-1.62x on
+  X3; the A510 rotation-eight independent form was effectively tied at 1.000965x. Keep these claims
+  path-local until a matched title and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

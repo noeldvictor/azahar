@@ -781,6 +781,18 @@ A710, and 1.50x-2.03x on X3**. The full focused suite passed 51,007 assertions i
 new test passed 43,521 assertions when pinned separately to each Thor CPU class. This is
 optimization 108; it is a path-local result, not a whole-game FPS or battery-watt claim.
 
+A32 ARM/Thumb-2 `SXTB16` now remains first-class through Dynarmic IR as
+`PackedSignExtendByteToHalf`. ARM64 extracts the upper selected byte with `SBFX` before writing the
+sign-extended low byte with `SXTB`, then inserts the saved halfword with `BFI`; that order is
+required when the guest source and destination alias. This replaces the old two masks, constant
+materialization, multiply, and OR with three host instructions after any guest rotation. x64 and
+RISC-V retain the exact portable expansion. Thor exact-path medians ranged from **1.00x-1.33x on
+A510, 1.54x-2.04x on A715, 1.24x-1.33x on A710, and 1.24x-1.62x on X3** across independent and
+dependent rotation-zero and rotation-eight forms. The rotated-independent A510 form was effectively
+tied at 1.000965x. The new 2,721-assertion test passed separately on all four Thor CPU classes, and
+the final 53,728-assertion focused suite passed. This is optimization 109; the measurements cover
+only this guest instruction path and are not whole-game FPS or battery-watt results.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

@@ -4909,6 +4909,63 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/brightness/
   duration A/B run.
 
+## ARM64 A32 Packed Byte Sign Extension (2026-08-18)
+
+- A32 ARM/Thumb-2 `SXTB16` is part of the 3DS ARM11 guest ISA. Dynarmic previously rotated the
+  source when requested, selected bytes 0 and 2 with `0x00FF00FF`, selected their sign bits with
+  `0x00800080`, multiplied the sign bits by `0x1FE`, and ORed the pieces together. On ARM64 that
+  exact IR became `AND`, `AND`, constant materialization, `MUL`, and `ORR` after any rotate.
+- The frontend now emits first-class `PackedSignExtendByteToHalf` IR for rotations 0, 8, 16, and
+  24. ARM64 uses `SBFX` to extract and sign-extend the selected upper byte into a scratch register,
+  `SXTB` for the selected low byte, and `BFI` to insert the upper halfword. Disassembly review caught
+  the required alias order before implementation: `SBFX` must read the upper byte before `SXTB`
+  writes a final-use register that may alias the source. x64 and RISC-V polyfill the operation back
+  into the established portable mask/multiply DAG.
+- Local Cortex-A510, A710, A715, and X3 optimization-guide tables were reviewed before selecting
+  the sequence. They document the relevant `SBFM`/`SBFX`, `SXTB`, and `BFM`/`BFI` latency and
+  throughput characteristics, but the mixed results predicted by those tables were treated only as
+  a reason to benchmark every Thor core class. No manual PDF or rendered page entered the repo.
+- `llvm-objdump` verified the exact five-instruction old body and three-instruction new body. A
+  standalone ARM64 harness measured rotation-zero and rotation-eight forms with four independent
+  chains and a sequential dependent chain. Each sample executed 16,000,000 affected operations
+  (32,000,000 in the final A510 rerun), nine rounds alternated old/new order, and every checksum
+  matched and remained nonzero. Lower nanoseconds per operation are better; ratios are old/new.
+
+  | Guest-equivalent path | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 | X3 CPU 7 |
+  | --- | ---: | ---: | ---: | ---: |
+  | ROR 0, independent | 1.332951x | 1.856836x | 1.291697x | 1.615659x |
+  | ROR 0, dependent | 1.248735x | 2.042547x | 1.331349x | 1.336929x |
+  | ROR 8, independent | 1.000965x | 1.541483x | 1.235306x | 1.301351x |
+  | ROR 8, dependent | 1.198771x | 1.638419x | 1.249064x | 1.240429x |
+
+- Permanent coverage generates all 16 encoding/rotation/alias combinations: ARM and Thumb,
+  rotations 0/8/16/24, and aliased or distinct source and destination. Ten mixed inputs cover both
+  sign edges and ignored-byte garbage while verifying exact output, every unrelated GPR, unchanged
+  NZCV/Q/GE, and unchanged FPSCR. The new test passed all 2,721 assertions when pinned separately
+  to CPU 0/A510, CPU 3/A715, CPU 5/A710, and CPU 7/X3. The final focused suite passed 53,728
+  assertions in 31 cases. The final native verification build passed with JDK 17 in 1 minute 5
+  seconds. Source/test commit `e58d8e1c3` was pushed directly to `origin/master` over command-line
+  Git SSH.
+- The exact post-commit `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build
+  passed with JDK 17 in 2 minutes 23 seconds. Its ARM64-only APK is 29,001,332 bytes, reports
+  `e58d8e1c3-vanilla-thor`, and has SHA-256
+  `E89B15D0B7AFE42D2B44FE9F44B9904BD9CDBA68C68550E26036BA87BBD0AF11`. Wi-Fi ADB installed it
+  over `org.azahar_emu.azahar.debug`; Android reported `stopped=true`, the process-ID check was
+  empty, and no app UI or game was launched. Thor was USB-powered at 57%, 3.877 V, and 22.0 C, so
+  this is not battery-discharge watt evidence.
+- Cleanup removed 2,493,001,646 logical host bytes: the 447,569,976-byte native test ELF,
+  standalone benchmark and stripped test copy, rendered manual pages, and reproducible Gradle/JNI/
+  R8/native-symbol/mapping staging. It retained the 29,001,332-byte APK, 476-byte metadata, and
+  2,785,534,773-byte active ARM64 CMake/Ninja cache. C: recovered 2,053,423,104 physical bytes and
+  reported 80,681,345,024 bytes free immediately afterward. The 86,360-byte benchmark and
+  26,090,904-byte stripped test helper were also removed from the Thor; no PDF, manual page,
+  benchmark binary, or scratch note was committed.
+- This is optimization 109 in the overlapping Thor work tally. The 1.00x-2.04x measurements apply
+  only while executing these exact packed sign-extension forms. They cannot be added to the other
+  108 items or treated as a whole-game FPS, sustained battery-watt, frametime, or thermal result.
+  Those still require a matched title/scene/cache/renderer/driver/resolution/layout/mode/fan/
+  brightness/duration A/B run.
+
 ## High-Value Optimization Places
 
 1. Data-driven Thor game profiles
