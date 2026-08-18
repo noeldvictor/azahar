@@ -1093,6 +1093,21 @@ void EmitIR<IR::Opcode::VectorSignedAddSubWiden32>(biscuit::Assembler&, EmitCont
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorSignedMultiply16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
@@ -1374,6 +1389,21 @@ void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden16>(biscuit::Assembler&, EmitCo
 
 template<>
 void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden8>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden16>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
+    UNIMPLEMENTED();
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden32>(biscuit::Assembler&, EmitContext&, IR::Inst*) {
     UNIMPLEMENTED();
 }
 

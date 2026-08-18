@@ -4107,6 +4107,18 @@ void EmitX64::EmitVectorSignedAddSubWiden32(EmitContext&, IR::Inst*) {
     ASSERT_FALSE("Unexpected VectorSignedAddSubWiden32");
 }
 
+void EmitX64::EmitVectorSignedMultiplyAccumulateWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedMultiplyAccumulateWiden8");
+}
+
+void EmitX64::EmitVectorSignedMultiplyAccumulateWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedMultiplyAccumulateWiden16");
+}
+
+void EmitX64::EmitVectorSignedMultiplyAccumulateWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorSignedMultiplyAccumulateWiden32");
+}
+
 void EmitX64::EmitVectorSignedMultiply16(EmitContext& ctx, IR::Inst* inst) {
     const auto upper_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetUpperFromOp);
     const auto lower_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetLowerFromOp);
@@ -5752,6 +5764,18 @@ void EmitX64::EmitVectorUnsignedAddSubWiden16(EmitContext&, IR::Inst*) {
 
 void EmitX64::EmitVectorUnsignedAddSubWiden32(EmitContext&, IR::Inst*) {
     ASSERT_FALSE("Unexpected VectorUnsignedAddSubWiden32");
+}
+
+void EmitX64::EmitVectorUnsignedMultiplyAccumulateWiden8(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedMultiplyAccumulateWiden8");
+}
+
+void EmitX64::EmitVectorUnsignedMultiplyAccumulateWiden16(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedMultiplyAccumulateWiden16");
+}
+
+void EmitX64::EmitVectorUnsignedMultiplyAccumulateWiden32(EmitContext&, IR::Inst*) {
+    ASSERT_FALSE("Unexpected VectorUnsignedMultiplyAccumulateWiden32");
 }
 
 void EmitX64::EmitVectorUnsignedMultiply16(EmitContext& ctx, IR::Inst* inst) {

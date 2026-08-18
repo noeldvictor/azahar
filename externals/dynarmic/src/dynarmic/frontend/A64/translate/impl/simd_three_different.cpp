@@ -28,8 +28,8 @@ bool AbsoluteDifferenceLong(TranslatorVisitor& v, bool Q, Imm<2> size, Vec Vm, V
     const IR::U128 operand1 = v.Vpart(datasize, Vn, Q);
     const IR::U128 operand2 = v.Vpart(datasize, Vm, Q);
     IR::U128 result = sign == Signedness::Signed
-                       ? v.ir.VectorSignedAbsoluteDifferenceWiden(esize, operand1, operand2)
-                       : v.ir.VectorUnsignedAbsoluteDifferenceWiden(esize, operand1, operand2);
+                        ? v.ir.VectorSignedAbsoluteDifferenceWiden(esize, operand1, operand2)
+                        : v.ir.VectorUnsignedAbsoluteDifferenceWiden(esize, operand1, operand2);
 
     if (behavior == AbsoluteDifferenceBehavior::Accumulate) {
         const IR::U128 data = v.V(2 * datasize, Vd);
@@ -52,26 +52,24 @@ bool MultiplyLong(TranslatorVisitor& v, bool Q, Imm<2> size, Vec Vm, Vec Vn, Vec
     }
 
     const size_t esize = 8 << size.ZeroExtend();
-    const size_t doubled_esize = 2 * esize;
     const size_t datasize = 64;
     const size_t doubled_datasize = datasize * 2;
 
-    IR::U128 result = [&] {
-        const auto reg_n = v.Vpart(datasize, Vn, Q);
-        const auto reg_m = v.Vpart(datasize, Vm, Q);
+    const auto reg_n = v.Vpart(datasize, Vn, Q);
+    const auto reg_m = v.Vpart(datasize, Vm, Q);
+    const IR::U128 result = [&] {
+        if (behavior == MultiplyLongBehavior::None) {
+            return sign == Signedness::Signed
+                     ? v.ir.VectorMultiplySignedWiden(esize, reg_n, reg_m)
+                     : v.ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m);
+        }
 
+        const IR::U128 accumulator = v.V(doubled_datasize, Vd);
+        const bool subtract = behavior == MultiplyLongBehavior::Subtract;
         return sign == Signedness::Signed
-                 ? v.ir.VectorMultiplySignedWiden(esize, reg_n, reg_m)
-                 : v.ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m);
+                 ? v.ir.VectorSignedMultiplyAccumulateWiden(esize, accumulator, reg_n, reg_m, subtract)
+                 : v.ir.VectorUnsignedMultiplyAccumulateWiden(esize, accumulator, reg_n, reg_m, subtract);
     }();
-
-    if (behavior == MultiplyLongBehavior::Accumulate) {
-        const IR::U128 addend = v.V(doubled_datasize, Vd);
-        result = v.ir.VectorAdd(doubled_esize, addend, result);
-    } else if (behavior == MultiplyLongBehavior::Subtract) {
-        const IR::U128 minuend = v.V(doubled_datasize, Vd);
-        result = v.ir.VectorSub(doubled_esize, minuend, result);
-    }
 
     v.V(doubled_datasize, Vd, result);
     return true;

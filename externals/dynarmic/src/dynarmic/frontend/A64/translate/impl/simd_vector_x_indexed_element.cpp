@@ -171,20 +171,17 @@ bool MultiplyLong(TranslatorVisitor& v, bool Q, Imm<2> size, Imm<1> L, Imm<1> M,
     const IR::U128 index_vector = v.ir.VectorBroadcastElement(esize, operand2, index);
 
     const IR::U128 result = [&] {
-        const IR::U128 product = sign == Signedness::Signed
-                                   ? v.ir.VectorMultiplySignedWiden(esize, operand1, index_vector)
-                                   : v.ir.VectorMultiplyUnsignedWiden(esize, operand1, index_vector);
-
         if (extra_behavior == ExtraBehavior::None) {
-            return product;
+            return sign == Signedness::Signed
+                     ? v.ir.VectorMultiplySignedWiden(esize, operand1, index_vector)
+                     : v.ir.VectorMultiplyUnsignedWiden(esize, operand1, index_vector);
         }
 
-        const IR::U128 operand3 = v.V(2 * datasize, Vd);
-        if (extra_behavior == ExtraBehavior::Accumulate) {
-            return v.ir.VectorAdd(2 * esize, operand3, product);
-        }
-
-        return v.ir.VectorSub(2 * esize, operand3, product);
+        const IR::U128 accumulator = v.V(2 * datasize, Vd);
+        const bool subtract = extra_behavior == ExtraBehavior::Subtract;
+        return sign == Signedness::Signed
+                 ? v.ir.VectorSignedMultiplyAccumulateWiden(esize, accumulator, operand1, index_vector, subtract)
+                 : v.ir.VectorUnsignedMultiplyAccumulateWiden(esize, accumulator, operand1, index_vector, subtract);
     }();
 
     v.V(2 * datasize, Vd, result);

@@ -273,6 +273,93 @@ TEST_CASE("Dynarmic A32 scalar NEON long multiply broadcasts directly from its l
     }
 }
 
+TEST_CASE("Dynarmic A32 VMLAL and VMLSL widen before modular accumulation",
+          "[core][arm][dynarmic]") {
+    ArmTestCallbacks callbacks;
+    callbacks.code = {
+        0xf2820803,  // VMLAL.S8 Q0, D2, D3
+        0xf3968807,  // VMLAL.U16 Q4, D6, D7
+        0xf2ea080b,  // VMLAL.S32 Q8, D10, D11
+        0xf3ce8a0f,  // VMLSL.U8 Q12, D14, D15
+        0xeafffffe,  // B .
+        0xeafffffe,
+    };
+
+    Dynarmic::A32::UserConfig config{&callbacks};
+    Dynarmic::A32::Jit jit{config};
+    jit.ExtRegs() = {};
+
+    const auto set_vector = [&](std::size_t first_s_register, const auto& lanes) {
+        std::memcpy(jit.ExtRegs().data() + first_s_register, lanes.data(), sizeof(lanes));
+    };
+
+    constexpr std::array<std::uint16_t, 8> signed8_acc{0,      1,      0x7fff, 0x8000,
+                                                       0xfffe, 0xffff, 1234,   65000};
+    constexpr std::array<std::int8_t, 8> signed8_n{-128, -127, -1, 0, 1, 2, 100, 127};
+    constexpr std::array<std::int8_t, 8> signed8_m{-128, 127, -100, -1, 1, 100, -127, 127};
+    set_vector(0, signed8_acc);
+    set_vector(4, signed8_n);
+    set_vector(6, signed8_m);
+
+    constexpr std::array<std::uint32_t, 4> unsigned16_acc{0, 1, 0x7fffffff, 0xfffffff0};
+    constexpr std::array<std::uint16_t, 4> unsigned16_n{0, 1, 0x8000, 0xffff};
+    constexpr std::array<std::uint16_t, 4> unsigned16_m{0xffff, 0xfffe, 0x8001, 0xffff};
+    set_vector(16, unsigned16_acc);
+    set_vector(12, unsigned16_n);
+    set_vector(14, unsigned16_m);
+
+    constexpr std::array<std::uint64_t, 2> signed32_acc{0xfffffffffffffff0ULL,
+                                                        0x7fffffffffffffffULL};
+    constexpr std::array<std::int32_t, 2> signed32_n{static_cast<std::int32_t>(0x80000000),
+                                                     0x7fffffff};
+    constexpr std::array<std::int32_t, 2> signed32_m{-1, 0x7fffffff};
+    set_vector(32, signed32_acc);
+    set_vector(20, signed32_n);
+    set_vector(22, signed32_m);
+
+    constexpr std::array<std::uint16_t, 8> unsigned8_acc{0,      1,      255,    256,
+                                                         0x7fff, 0x8000, 0xfffe, 0xffff};
+    constexpr std::array<std::uint8_t, 8> unsigned8_n{0, 1, 2, 3, 127, 128, 254, 255};
+    constexpr std::array<std::uint8_t, 8> unsigned8_m{255, 254, 253, 252, 129, 128, 2, 255};
+    set_vector(48, unsigned8_acc);
+    set_vector(28, unsigned8_n);
+    set_vector(30, unsigned8_m);
+
+    jit.SetCpsr(0x000001d0);  // User mode
+    callbacks.ticks_left = 5;
+    jit.Run();
+
+    std::array<std::uint16_t, 8> signed8_result{};
+    std::array<std::uint32_t, 4> unsigned16_result{};
+    std::array<std::uint64_t, 2> signed32_result{};
+    std::array<std::uint16_t, 8> unsigned8_result{};
+    std::memcpy(signed8_result.data(), jit.ExtRegs().data(), sizeof(signed8_result));
+    std::memcpy(unsigned16_result.data(), jit.ExtRegs().data() + 16, sizeof(unsigned16_result));
+    std::memcpy(signed32_result.data(), jit.ExtRegs().data() + 32, sizeof(signed32_result));
+    std::memcpy(unsigned8_result.data(), jit.ExtRegs().data() + 48, sizeof(unsigned8_result));
+
+    for (std::size_t lane = 0; lane < signed8_result.size(); ++lane) {
+        CAPTURE(lane);
+        const auto product = static_cast<std::int16_t>(signed8_n[lane]) * signed8_m[lane];
+        CHECK(signed8_result[lane] == static_cast<std::uint16_t>(signed8_acc[lane] + product));
+    }
+    for (std::size_t lane = 0; lane < unsigned16_result.size(); ++lane) {
+        CAPTURE(lane);
+        const auto product = static_cast<std::uint32_t>(unsigned16_n[lane]) * unsigned16_m[lane];
+        CHECK(unsigned16_result[lane] == unsigned16_acc[lane] + product);
+    }
+    for (std::size_t lane = 0; lane < signed32_result.size(); ++lane) {
+        CAPTURE(lane);
+        const auto product = static_cast<std::int64_t>(signed32_n[lane]) * signed32_m[lane];
+        CHECK(signed32_result[lane] == signed32_acc[lane] + static_cast<std::uint64_t>(product));
+    }
+    for (std::size_t lane = 0; lane < unsigned8_result.size(); ++lane) {
+        CAPTURE(lane);
+        const auto product = static_cast<std::uint16_t>(unsigned8_n[lane]) * unsigned8_m[lane];
+        CHECK(unsigned8_result[lane] == static_cast<std::uint16_t>(unsigned8_acc[lane] - product));
+    }
+}
+
 TEST_CASE("Dynarmic A32 VABDL widens signed and unsigned differences",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
@@ -330,7 +417,6 @@ TEST_CASE("Dynarmic A32 VABDL widens signed and unsigned differences",
     CHECK(jit.ExtRegs()[34] == 0x0eb79a2a);
     CHECK(jit.ExtRegs()[35] == 0x00000000);
 }
-
 TEST_CASE("Dynarmic A32 VABAL widens before accumulating with lane wraparound",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;

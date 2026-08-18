@@ -177,6 +177,21 @@ void PolyfillVectorMultiplyWiden(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(result);
 }
 
+template<size_t esize, bool is_signed>
+void PolyfillVectorMultiplyAccumulateWiden(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U128 accumulator = (IR::U128)inst.GetArg(0);
+    const IR::U128 n = (IR::U128)inst.GetArg(1);
+    const IR::U128 m = (IR::U128)inst.GetArg(2);
+    const IR::U128 wide_n = is_signed ? ir.VectorSignExtend(esize, n) : ir.VectorZeroExtend(esize, n);
+    const IR::U128 wide_m = is_signed ? ir.VectorSignExtend(esize, m) : ir.VectorZeroExtend(esize, m);
+    const IR::U128 product = ir.VectorMultiply(esize * 2, wide_n, wide_m);
+    const bool subtract = inst.GetArg(3).GetU1();
+    const IR::U128 result = subtract ? ir.VectorSub(esize * 2, accumulator, product)
+                                     : ir.VectorAdd(esize * 2, accumulator, product);
+
+    inst.ReplaceUsesWith(result);
+}
+
 }  // namespace
 
 void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
@@ -323,6 +338,36 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::VectorMultiplyUnsignedWiden32:
             if (polyfill.vector_multiply_widen) {
                 PolyfillVectorMultiplyWiden<32, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedMultiplyAccumulateWiden8:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<8, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedMultiplyAccumulateWiden16:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<16, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorSignedMultiplyAccumulateWiden32:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<32, true>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedMultiplyAccumulateWiden8:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<8, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedMultiplyAccumulateWiden16:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<16, false>(ir, inst);
+            }
+            break;
+        case IR::Opcode::VectorUnsignedMultiplyAccumulateWiden32:
+            if (polyfill.vector_multiply_accumulate_widen) {
+                PolyfillVectorMultiplyAccumulateWiden<32, false>(ir, inst);
             }
             break;
         default:

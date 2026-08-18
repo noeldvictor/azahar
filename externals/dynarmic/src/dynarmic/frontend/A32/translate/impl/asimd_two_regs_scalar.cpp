@@ -86,16 +86,17 @@ bool ScalarMultiplyLong(TranslatorVisitor& v, bool U, bool D, size_t sz, size_t 
 
     const auto reg_n = v.ir.GetVector(n);
     const auto reg_m = v.ir.VectorBroadcastElement(esize, v.ir.GetVector(m), index);
-    const auto addend = U ? v.ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m)
-                          : v.ir.VectorMultiplySignedWiden(esize, reg_n, reg_m);
     const auto result = [&] {
         switch (multiply) {
         case MultiplyBehavior::Multiply:
-            return addend;
+            return U ? v.ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m)
+                     : v.ir.VectorMultiplySignedWiden(esize, reg_n, reg_m);
         case MultiplyBehavior::MultiplyAccumulate:
-            return v.ir.VectorAdd(esize * 2, v.ir.GetVector(d), addend);
+            return U ? v.ir.VectorUnsignedMultiplyAccumulateWiden(esize, v.ir.GetVector(d), reg_n, reg_m, false)
+                     : v.ir.VectorSignedMultiplyAccumulateWiden(esize, v.ir.GetVector(d), reg_n, reg_m, false);
         case MultiplyBehavior::MultiplySubtract:
-            return v.ir.VectorSub(esize * 2, v.ir.GetVector(d), addend);
+            return U ? v.ir.VectorUnsignedMultiplyAccumulateWiden(esize, v.ir.GetVector(d), reg_n, reg_m, true)
+                     : v.ir.VectorSignedMultiplyAccumulateWiden(esize, v.ir.GetVector(d), reg_n, reg_m, true);
         default:
             return IR::U128{};
         }

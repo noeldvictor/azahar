@@ -941,10 +941,8 @@ bool TranslatorVisitor::asimd_VMLAL(bool U, bool D, size_t sz, size_t Vn, size_t
     const auto reg_d = ir.GetVector(d);
     const auto reg_m = ir.GetVector(m);
     const auto reg_n = ir.GetVector(n);
-    const auto multiply = U ? ir.VectorMultiplyUnsignedWiden(esize, reg_n, reg_m)
-                            : ir.VectorMultiplySignedWiden(esize, reg_n, reg_m);
-    const auto result = op ? ir.VectorSub(esize * 2, reg_d, multiply)
-                           : ir.VectorAdd(esize * 2, reg_d, multiply);
+    const auto result = U ? ir.VectorUnsignedMultiplyAccumulateWiden(esize, reg_d, reg_n, reg_m, op)
+                          : ir.VectorSignedMultiplyAccumulateWiden(esize, reg_d, reg_n, reg_m, op);
 
     ir.SetVector(d, result);
     return true;

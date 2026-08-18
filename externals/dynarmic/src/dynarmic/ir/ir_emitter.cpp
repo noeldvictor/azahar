@@ -1816,6 +1816,18 @@ U128 IREmitter::VectorSignedAddSubWiden(size_t esize, const U128& a, const U128&
     UNREACHABLE();
 }
 
+U128 IREmitter::VectorSignedMultiplyAccumulateWiden(size_t esize, const U128& accumulator, const U128& a, const U128& b, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorSignedMultiplyAccumulateWiden8, accumulator, a, b, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorSignedMultiplyAccumulateWiden16, accumulator, a, b, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorSignedMultiplyAccumulateWiden32, accumulator, a, b, Imm1(subtract));
+    }
+    UNREACHABLE();
+}
+
 UpperAndLower IREmitter::VectorSignedMultiply(size_t esize, const U128& a, const U128& b) {
     const Value multiply = [&] {
         switch (esize) {
@@ -2054,6 +2066,18 @@ U128 IREmitter::VectorUnsignedAddSubWiden(size_t esize, const U128& a, const U12
         return Inst<U128>(Opcode::VectorUnsignedAddSubWiden16, a, b, Imm1(subtract));
     case 32:
         return Inst<U128>(Opcode::VectorUnsignedAddSubWiden32, a, b, Imm1(subtract));
+    }
+    UNREACHABLE();
+}
+
+U128 IREmitter::VectorUnsignedMultiplyAccumulateWiden(size_t esize, const U128& accumulator, const U128& a, const U128& b, bool subtract) {
+    switch (esize) {
+    case 8:
+        return Inst<U128>(Opcode::VectorUnsignedMultiplyAccumulateWiden8, accumulator, a, b, Imm1(subtract));
+    case 16:
+        return Inst<U128>(Opcode::VectorUnsignedMultiplyAccumulateWiden16, accumulator, a, b, Imm1(subtract));
+    case 32:
+        return Inst<U128>(Opcode::VectorUnsignedMultiplyAccumulateWiden32, accumulator, a, b, Imm1(subtract));
     }
     UNREACHABLE();
 }

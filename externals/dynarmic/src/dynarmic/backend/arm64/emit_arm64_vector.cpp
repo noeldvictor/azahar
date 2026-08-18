@@ -228,6 +228,40 @@ static void EmitVectorAddSubWiden(oaknut::CodeGenerator& code, EmitContext& ctx,
     }
 }
 
+template<size_t size, bool is_signed>
+static void EmitVectorMultiplyAccumulateWiden(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Qaccumulator = ctx.reg_alloc.ReadWriteQ(args[0], inst);
+    auto Qn = ctx.reg_alloc.ReadQ(args[1]);
+    auto Qm = ctx.reg_alloc.ReadQ(args[2]);
+    const bool subtract = args[3].GetImmediateU1();
+    RegAlloc::Realize(Qaccumulator, Qn, Qm);
+
+    const auto emit = [&](auto Vd, auto Vn, auto Vm) {
+        if constexpr (is_signed) {
+            if (subtract) {
+                code.SMLSL(Vd, Vn, Vm);
+            } else {
+                code.SMLAL(Vd, Vn, Vm);
+            }
+        } else if (subtract) {
+            code.UMLSL(Vd, Vn, Vm);
+        } else {
+            code.UMLAL(Vd, Vn, Vm);
+        }
+    };
+
+    if constexpr (size == 8) {
+        emit(Qaccumulator->H8(), Qn->toD().B8(), Qm->toD().B8());
+    } else if constexpr (size == 16) {
+        emit(Qaccumulator->S4(), Qn->toD().H4(), Qm->toD().H4());
+    } else if constexpr (size == 32) {
+        emit(Qaccumulator->D2(), Qn->toD().S2(), Qm->toD().S2());
+    } else {
+        static_assert(Common::always_false_v<mcl::mp::lift_value<size>>);
+    }
+}
+
 template<size_t size, typename EmitFn>
 static void EmitThreeOpArrangedSaturatedWiden(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst, EmitFn emit) {
     EmitThreeOpArrangedWiden<size>(code, ctx, inst, [&](auto Vresult, auto Va, auto Vb) {
@@ -462,6 +496,21 @@ void EmitIR<IR::Opcode::VectorSignedAddSubWiden32>(oaknut::CodeGenerator& code, 
 }
 
 template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<8, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<16, true>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorSignedMultiplyAccumulateWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<32, true>(code, ctx, inst);
+}
+
+template<>
 void EmitIR<IR::Opcode::VectorUnsignedAddSubWide8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitVectorAddSubWiden<8, false, true>(code, ctx, inst);
 }
@@ -489,6 +538,21 @@ void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden16>(oaknut::CodeGenerator& code
 template<>
 void EmitIR<IR::Opcode::VectorUnsignedAddSubWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitVectorAddSubWiden<32, false, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden8>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<8, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden16>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<16, false>(code, ctx, inst);
+}
+
+template<>
+void EmitIR<IR::Opcode::VectorUnsignedMultiplyAccumulateWiden32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitVectorMultiplyAccumulateWiden<32, false>(code, ctx, inst);
 }
 
 template<>
