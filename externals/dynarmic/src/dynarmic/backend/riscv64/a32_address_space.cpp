@@ -28,6 +28,7 @@ IR::Block A32AddressSpace::GenerateIR(IR::LocationDescriptor descriptor) const {
 
     Optimization::PolyfillPass(ir_block,
                                {.byte_reverse_halfwords = true,
+                                .byte_reverse_signed_half = true,
                                 .extend_and_add = true,
                                 .pack_halfword = true,
                                 .packed_sign_extend_byte_to_half = true,

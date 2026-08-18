@@ -391,6 +391,11 @@ void PolyfillByteReverseHalfwords(IR::IREmitter& ir, IR::Inst& inst) {
     inst.ReplaceUsesWith(ir.Or(low, high));
 }
 
+void PolyfillByteReverseSignedHalf(IR::IREmitter& ir, IR::Inst& inst) {
+    const IR::U16 half = ir.LeastSignificantHalf((IR::U32)inst.GetArg(0));
+    inst.ReplaceUsesWith(ir.SignExtendHalfToWord(ir.ByteReverseHalf(half)));
+}
+
 void PolyfillReverseBits(IR::IREmitter& ir, IR::Inst& inst) {
     const IR::U32 swapped = ir.ByteReverseWord((IR::U32)inst.GetArg(0));
 
@@ -428,6 +433,11 @@ void PolyfillPass(IR::Block& block, const PolyfillOptions& polyfill) {
         case IR::Opcode::ByteReverseHalfwords32:
             if (polyfill.byte_reverse_halfwords) {
                 PolyfillByteReverseHalfwords(ir, inst);
+            }
+            break;
+        case IR::Opcode::ByteReverseSignedHalf32:
+            if (polyfill.byte_reverse_signed_half) {
+                PolyfillByteReverseSignedHalf(ir, inst);
             }
             break;
         case IR::Opcode::SignedExtendAndAdd32:

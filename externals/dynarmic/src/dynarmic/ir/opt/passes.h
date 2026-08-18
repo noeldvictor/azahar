@@ -22,6 +22,7 @@ namespace Dynarmic::Optimization {
 
 struct PolyfillOptions {
     bool byte_reverse_halfwords = false;
+    bool byte_reverse_signed_half = false;
     bool extend_and_add = false;
     bool pack_halfword = false;
     bool packed_sign_extend_byte_to_half = false;

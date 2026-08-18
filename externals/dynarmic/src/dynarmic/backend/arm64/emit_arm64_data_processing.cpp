@@ -1581,6 +1581,14 @@ void EmitIR<IR::Opcode::ByteReverseHalfwords32>(oaknut::CodeGenerator& code, Emi
 }
 
 template<>
+void EmitIR<IR::Opcode::ByteReverseSignedHalf32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    EmitTwoOp<32>(code, ctx, inst, [&](auto& Wresult, auto& Woperand) {
+        code.REV(Wresult, Woperand);
+        code.ASR(Wresult, Wresult, 16);
+    });
+}
+
+template<>
 void EmitIR<IR::Opcode::ByteReverseDual>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     EmitTwoOp<64>(
         code, ctx, inst,

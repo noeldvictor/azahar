@@ -113,10 +113,7 @@ bool TranslatorVisitor::thumb32_REVSH(Reg n, Reg d, Reg m) {
         return UnpredictableInstruction();
     }
 
-    const auto reg_m = ir.GetRegister(m);
-    const auto rev_half = ir.ByteReverseHalf(ir.LeastSignificantHalf(reg_m));
-
-    ir.SetRegister(d, ir.SignExtendHalfToWord(rev_half));
+    ir.SetRegister(d, ir.ByteReverseSignedHalf(ir.GetRegister(m)));
     return true;
 }
 

@@ -60,8 +60,7 @@ bool TranslatorVisitor::arm_REVSH(Cond cond, Reg d, Reg m) {
         return true;
     }
 
-    const auto rev_half = ir.ByteReverseHalf(ir.LeastSignificantHalf(ir.GetRegister(m)));
-    ir.SetRegister(d, ir.SignExtendHalfToWord(rev_half));
+    ir.SetRegister(d, ir.ByteReverseSignedHalf(ir.GetRegister(m)));
     return true;
 }
 

@@ -827,8 +827,7 @@ bool TranslatorVisitor::thumb16_REV16(Reg m, Reg d) {
 // REVSH <Rd>, <Rm>
 // Rd cannot encode R15.
 bool TranslatorVisitor::thumb16_REVSH(Reg m, Reg d) {
-    const auto rev_half = ir.ByteReverseHalf(ir.LeastSignificantHalf(ir.GetRegister(m)));
-    ir.SetRegister(d, ir.SignExtendHalfToWord(rev_half));
+    ir.SetRegister(d, ir.ByteReverseSignedHalf(ir.GetRegister(m)));
     return true;
 }
 

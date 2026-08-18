@@ -501,6 +501,10 @@ U32 IREmitter::ByteReverseHalfwords(const U32& a) {
     return Inst<U32>(Opcode::ByteReverseHalfwords32, a);
 }
 
+U32 IREmitter::ByteReverseSignedHalf(const U32& a) {
+    return Inst<U32>(Opcode::ByteReverseSignedHalf32, a);
+}
+
 U64 IREmitter::ByteReverseDual(const U64& a) {
     return Inst<U64>(Opcode::ByteReverseDual, a);
 }
