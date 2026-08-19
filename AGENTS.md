@@ -150,6 +150,12 @@
 - For local Android builds, use JDK 17 and the Android SDK from `src/android`.
 - The Android APK target for this repo is the AYN Thor, so keep `abiFilter` set to `arm64-v8a` only. Do not build x86_64 unless the user explicitly asks for it.
 - When building an APK to send to the AYN Thor, use `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite` and install `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`. This is release-optimized, debug-signed, uses the `-thor` version suffix, and keeps the `.debug` package so it installs over the Thor test app without the debug/JNI-debug performance hit.
+- Keep the Android wrapper on upstream Gradle 8.14.5 and `targetSdk = 37` unless a later upstream
+  merge changes them. SDK 37 edge-to-edge handling depends on a black emulation root, the named
+  `coordinator_layout`, and one null-safe display-cutout margin listener attached to both the
+  coordinator and in-game menu. Do not restore the deleted `values-v35` opt-out theme or cast a
+  possibly null `layoutParams` to a non-null margin layout. Rebuild the full Thor APK after changing
+  target SDK, wrapper, window-inset, theme, or emulation-layout code.
 - Use `:app:assembleVanillaDebug` only when an actual debuggable APK is needed.
 - Before pushing Android changes, verify at least `:app:compileVanillaDebugKotlin`; prefer a full `:app:assembleVanillaRelWithDebInfoLite` when native code, packaging, or Thor installs are involved.
 - Vulkan Anime4K is a real three-stage filter: copy the unscaled source to an independent image, generate the RG16F X gradient, generate the R16F Y/luma gradient, then refine into the scaled surface. Never bind the destination surface as one of its sampled inputs. Preserve explicit transfer, color-attachment, and fragment-read dependencies and compare a fixed frame against the OpenGL path on Adreno after changing this code.

@@ -177,6 +177,9 @@ This fork has moved away from stock Azahar in visible ways:
   registers for a full audio frame and process the independent left/right channels together,
   without incorrectly vectorizing the sample-to-sample recurrence.
 - The APK target for Thor is `:app:assembleVanillaRelWithDebInfoLite`, a release-optimized/debug-signed build using the `-thor` version suffix and the `.debug` package slot.
+- Android upstream is integrated through `f6a3e3aa5`: the wrapper uses Gradle 8.14.5, packages with
+  target SDK 37, and applies display-cutout margins to both the emulation surface container and
+  in-game menu instead of opting out of enforced edge-to-edge behavior.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
 - Thor game profile manifests live under `src/android/app/src/main/assets/game_profiles/`.
@@ -1121,7 +1124,7 @@ This fork is currently aimed at Android/AYN Thor APK builds:
 
 ```powershell
 cd src/android
-.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite
+.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite --no-configuration-cache
 ```
 
 APK output:

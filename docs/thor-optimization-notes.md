@@ -6417,3 +6417,33 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   this route; whole-game frametime, thermal slope, and battery power still require a controlled
   matched title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/
   duration A/B run.
+
+## Upstream Android 17 / Gradle 8.14.5 Integration (2026-08-19)
+
+- A final upstream audit after optimization 131 found three newly published commits. `d53c1e8fb`
+  updates the Android wrapper from Gradle 8.13 to 8.14.5; `0821ff1ff` sets target SDK 37 and adapts
+  emulation UI insets to enforced edge-to-edge behavior; `f6a3e3aa5` makes the margin-layout access
+  null-safe. They merged without conflict as `d491accd4`, preserving this fork's ARM64-only Thor
+  flavor, `.debug` package slot, dual-display work, screen filters, profiles, and optimization 131.
+- The integrated layout gives the emulation drawer a black background and names its coordinator.
+  One display-cutout listener now applies all four safe-inset margins to both that coordinator and
+  the in-game menu, and it tolerates a null `layoutParams`. The old API-35 theme that opted out of
+  edge-to-edge enforcement is removed. This was compile/package checked only under the standing
+  no-launch restriction; visual cutout placement still requires a later permitted app run.
+- JDK 17 packaging with the freshly downloaded Gradle 8.14.5 wrapper and
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 4 minutes 4 seconds.
+  Native configuration retained AArch64, LTO, and Crypto++ NEON. The ARM64-only, v2-signed APK is
+  29,006,752 bytes with SHA-256
+  `F0ADE434226DA2FF740EE3287A6FFEFA36EB24AAAF65F6492E9656768E032B32`; it reports package
+  `org.azahar_emu.azahar.debug`, version `d491accd4-vanilla-thor`, minimum SDK 29, and target SDK 37.
+  Wi-Fi ADB installed it and an immediate force-stop left no app PID. Neither app nor game was
+  launched.
+- The exact second cleanup removed 2,471,852,144 logical bytes: the 449,332,056-byte native test
+  ELF and 2,022,520,088 bytes of reproducible Gradle/JNI/R8/symbol/mapping staging. It recovered
+  2,030,022,656 physical bytes and left 53,960,597,504 bytes (50.25 GiB) free on C:. Retained repo
+  build output is only the 29,006,752-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja
+  cache is 2,797,957,681 bytes. The Gradle 8.14.5 wrapper distribution remains as the current
+  reusable tool cache rather than being redownloaded on every build.
+- This synchronization is not optimization entry 132 and adds no FPS or watt claim. It keeps the
+  fork current with upstream Android packaging and cutout safety while entry 131 remains the latest
+  measured performance change.
