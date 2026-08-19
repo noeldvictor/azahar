@@ -1027,6 +1027,15 @@ allocation. All 45 Vulkan assertions passed on every Thor CPU class and the full
 passed 135,030 assertions. This is optimization 127: it removes unnecessary Vulkan allocations and
 memory growth on the affected exhaustion path, not a measured whole-game FPS or watt percentage.
 
+The pool now also searches both halves of its circular range with the monotonic cached completion
+tick before querying the Vulkan timeline counter. Previously, a busy hinted tail triggered a driver
+refresh before the wrapped prefix was checked, even when cached progress already proved an object in
+that prefix reusable. Only a complete cached miss now refreshes; both halves are then retried with
+fresh progress before growth. The exact regression proves wrapped-prefix reuse with zero refresh
+calls, 49 Vulkan assertions passed on every Thor CPU class, and the full video-core suite passed
+135,034 assertions. This is optimization 128: it removes one driver query on the affected reuse
+path, not a measured whole-game FPS or watt percentage.
+
 When duplicate-frame suppression or Eco Turbo skips host presentation, Vulkan now flushes pending
 3DS rendering work to the graphics queue without waiting for the GPU to finish it. The old fallback
 performed a full timeline wait on every non-presented VBlank, unnecessarily serializing the

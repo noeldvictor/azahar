@@ -6192,3 +6192,46 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   measured watt savings. Lower CPU/driver allocation work and lower command/descriptor memory are
   expected only on affected exhaustion paths; matched title/scene/cache/renderer/driver/resolution/
   layout/performance-mode/fan/brightness/duration A/B remains necessary for whole-game evidence.
+
+## Vulkan Cached Full-Ring Reuse Before Refresh (2026-08-19)
+
+- Optimization 127 fixed refreshed completion but retained an avoidable query order: a cached miss
+  in the hinted tail called `MasterSemaphore::Refresh()` before checking the wrapped prefix. When
+  cached progress already proved a prefix object reusable, that path still crossed the Vulkan
+  driver timeline-counter boundary even though no newer completion value was needed.
+- `ResourcePool::CommitResource()` now treats cached and refreshed completion as two complete
+  circular-search snapshots. It searches the hinted tail and wrapped prefix using cached
+  `KnownGpuTick()` first. Only if both ranges fail does it refresh once, reload completion, and
+  search both ranges again before growing. `KnownGpuTick()` is monotonic and may only be stale-low,
+  so cached reuse cannot select an unfinished object. First-free circular ordering is preserved
+  within each snapshot, resource tick assignment is unchanged, and a true full pool still grows by
+  its existing step.
+- A permanent seeded regression sets ticks `{1,5,5,5}`, hint two, and cached completion one. It
+  proves index zero is reused, `refresh_count` stays zero, known completion remains one, and no
+  allocation occurs. The prior natural-refresh and refreshed-wrapped-prefix cases remain, covering
+  the query path and post-refresh full-ring retry. Clean `[video_core][vulkan]` runs passed 49
+  assertions in five cases independently on A510 CPU 0, A715 CPU 3, A710 CPU 6, and X3 CPU 7. The
+  full `[video_core]` selection passed 135,034 assertions in 72 cases on A715. The temporary
+  stripped ARM64 test was 26,181,896 bytes. Source/test commit `d2e224ac9` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 7 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,268 bytes, has SHA-256
+  `A8E8BA8332BD88E0739FA614B08BD54A40833B5314475932E9F1A98921BEB9CC`, and reports package
+  `org.azahar_emu.azahar.debug` version `d2e224ac9-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no device PID. Neither app nor game was launched; the
+  Thor remained wall-powered.
+- Exact bounded cleanup removed 2,497,907,677 logical host bytes: the 26,181,896-byte stripped test,
+  the 449,264,128-byte unstripped test ELF, and 2,022,461,653 bytes of reproducible Gradle/JNI/R8/
+  symbol/mapping staging. C: recovered 2,055,766,016 physical bytes and reports 55,866,826,752 bytes
+  free. The retained active ARM64 CMake/Ninja cache is 2,793,691,776 bytes; retained build output is
+  only the 29,010,268-byte APK and 476-byte metadata. The exact 26,181,896-byte device test helper
+  was removed from `/data/local/tmp`, and no helper or app PID remained. No PDF, benchmark, test
+  binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 128 in the overlapping Thor ledger. It removes one Vulkan
+  timeline-counter driver query only when the cached full-ring search already finds reusable work;
+  workloads without that ring state see no direct gain. It is not an additive whole-emulator FPS
+  percentage or measured watt reduction. Lower driver-call, synchronization, and CPU wakeup work
+  makes lower energy plausible on the affected path, but whole-game frametime, thermal slope, and
+  battery watts still require a controlled matched title/scene/cache/renderer/driver/resolution/
+  layout/performance-mode/fan/brightness/duration A/B run.
