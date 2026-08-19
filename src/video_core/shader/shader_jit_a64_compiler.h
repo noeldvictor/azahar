@@ -91,6 +91,10 @@ private:
     /// Caches the currently selected PICA output-register bank in the host output pointer.
     void Compile_OutputPointer();
 
+    /// Calls EX2/LG2 without spilling a live guest-subroutine link register.
+    /// The target is a reference because Oaknut attaches forward-branch writebacks to the Label.
+    void Compile_MathCall(oaknut::Label& subroutine);
+
     /**
      * Compiles a `MUL src1, src2` operation, properly handling the PICA semantics when multiplying
      * zero by inf. Clobbers `src2` and `scratch`.

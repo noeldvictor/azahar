@@ -119,6 +119,8 @@ constexpr XReg COND0 = X13;
 constexpr XReg COND1 = X14;
 /// Pointer to the UnitState instance for the current VS unit
 constexpr XReg STATE = X15;
+/// Guest-subroutine return address kept across an EX2/LG2 helper call
+constexpr XReg GUEST_RETURN = X16;
 /// Scratch registers
 constexpr XReg XSCRATCH0 = X4;
 constexpr XReg XSCRATCH1 = X5;
@@ -604,6 +606,21 @@ void JitShader::Compile_OutputPointer() {
     ADD(OUTPUTS, OUTPUTS, ShaderUnit::OutputOffset(0));
 }
 
+void JitShader::Compile_MathCall(Label& subroutine) {
+    // Keep the target by reference: Oaknut records a forward branch's writeback on this Label
+    // object, which Compile_Exp2/Compile_Log2 bind after the main shader body is emitted.
+    if (return_offsets.empty()) {
+        BL(subroutine);
+        return;
+    }
+
+    // A guest subroutine keeps its return address in X30. The local math helpers reserve X16, so
+    // preserve that link in-register while still returning through X30 for the CPU return predictor.
+    MOV(GUEST_RETURN, X30);
+    BL(subroutine);
+    MOV(X30, GUEST_RETURN);
+}
+
 void JitShader::Compile_SanitizedMul(QReg src1, QReg src2, QReg scratch0) {
     // 0 * inf and inf * 0 in the PICA should return 0 instead of NaN. This can be implemented by
     // checking for NaNs before and after the multiplication.  If the multiplication result is NaN
@@ -759,27 +776,15 @@ void JitShader::Compile_DPH(Instruction instr) {
 
 void JitShader::Compile_EX2(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
-    if (!return_offsets.empty()) {
-        STR(X30, SP, POST_INDEXED, -16);
-    }
     exp2_used = true;
-    BL(exp2_subroutine);
-    if (!return_offsets.empty()) {
-        LDR(X30, SP, PRE_INDEXED, 16);
-    }
+    Compile_MathCall(exp2_subroutine);
     Compile_DestEnable(instr, SRC1);
 }
 
 void JitShader::Compile_LG2(Instruction instr) {
     Compile_SwizzleSrc(instr, 1, instr.common.src1, SRC1);
-    if (!return_offsets.empty()) {
-        STR(X30, SP, POST_INDEXED, -16);
-    }
     log2_used = true;
-    BL(log2_subroutine);
-    if (!return_offsets.empty()) {
-        LDR(X30, SP, PRE_INDEXED, 16);
-    }
+    Compile_MathCall(log2_subroutine);
     Compile_DestEnable(instr, SRC1);
 }
 
