@@ -3490,7 +3490,7 @@ TEST_CASE("Dynarmic A32 signed narrow loads fuse on callback and fastmem paths",
     }
 }
 
-TEST_CASE("Dynarmic A32 shifted ADD preserves aliases, flags, and full-width wrapping",
+TEST_CASE("Dynarmic A32 shifted arithmetic preserves aliases, flags, and full-width wrapping",
           "[core][arm][dynarmic]") {
     enum class ShiftKind : std::uint8_t {
         LogicalLeft = 0,
@@ -3534,77 +3534,83 @@ TEST_CASE("Dynarmic A32 shifted ADD preserves aliases, flags, and full-width wra
     constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
     constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
 
-    for (const bool thumb : {false, true}) {
-        for (const auto& layout : layouts) {
-            for (const ShiftKind shift_kind : shift_kinds) {
-                for (const std::uint8_t shift : shifts) {
-                    const std::uint32_t shift_encoding = static_cast<std::uint32_t>(shift_kind);
-                    const std::uint32_t instruction = [&] {
-                        if (!thumb) {
-                            return 0xe0800000U |
-                                   (static_cast<std::uint32_t>(layout.base) << 16) |
-                                   (static_cast<std::uint32_t>(layout.destination) << 12) |
-                                   (static_cast<std::uint32_t>(shift) << 7) |
-                                   (shift_encoding << 5) | layout.index;
-                        }
-                        const std::uint32_t first_half = 0xeb00U | layout.base;
-                        const std::uint32_t second_half =
-                            (static_cast<std::uint32_t>(shift >> 2) << 12) |
-                            (static_cast<std::uint32_t>(layout.destination) << 8) |
-                            (static_cast<std::uint32_t>(shift & 3) << 6) |
-                            (shift_encoding << 4) | layout.index;
-                        return (second_half << 16) | first_half;
-                    }();
-
-                    for (const auto& input : inputs) {
-                        CAPTURE(thumb, layout.destination, layout.base, layout.index, shift_encoding,
-                                shift, input.base, input.index, instruction);
-                        ArmTestCallbacks callbacks;
-                        callbacks.code = {
-                            instruction,
-                            thumb ? 0xe7fee7fe : 0xeafffffe, // B .
-                        };
-                        Dynarmic::A32::UserConfig config{&callbacks};
-                        Dynarmic::A32::Jit jit{config};
-
-                        std::array<std::uint32_t, 16> initial_regs{
-                            0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
-                            0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
-                            0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
-                            0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
-                        };
-                        initial_regs[layout.base] = input.base;
-                        initial_regs[layout.index] =
-                            layout.base == layout.index ? input.base : input.index;
-                        const std::uint32_t shifted_index = [&] {
-                            if (shift_kind == ShiftKind::LogicalLeft) {
-                                return initial_regs[layout.index] << shift;
+    for (const bool subtract : {false, true}) {
+        for (const bool thumb : {false, true}) {
+            for (const auto& layout : layouts) {
+                for (const ShiftKind shift_kind : shift_kinds) {
+                    for (const std::uint8_t shift : shifts) {
+                        const std::uint32_t shift_encoding =
+                            static_cast<std::uint32_t>(shift_kind);
+                        const std::uint32_t instruction = [&] {
+                            if (!thumb) {
+                                return (subtract ? 0xe0400000U : 0xe0800000U) |
+                                       (static_cast<std::uint32_t>(layout.base) << 16) |
+                                       (static_cast<std::uint32_t>(layout.destination) << 12) |
+                                       (static_cast<std::uint32_t>(shift) << 7) |
+                                       (shift_encoding << 5) | layout.index;
                             }
-                            if (shift_kind == ShiftKind::LogicalRight) {
-                                return shift == 0 ? 0U : initial_regs[layout.index] >> shift;
-                            }
-                            const std::uint8_t effective_shift = shift == 0 ? 31 : shift;
-                            return static_cast<std::uint32_t>(
-                                static_cast<std::int32_t>(initial_regs[layout.index]) >>
-                                effective_shift);
+                            const std::uint32_t first_half =
+                                (subtract ? 0xeba0U : 0xeb00U) | layout.base;
+                            const std::uint32_t second_half =
+                                (static_cast<std::uint32_t>(shift >> 2) << 12) |
+                                (static_cast<std::uint32_t>(layout.destination) << 8) |
+                                (static_cast<std::uint32_t>(shift & 3) << 6) |
+                                (shift_encoding << 4) | layout.index;
+                            return (second_half << 16) | first_half;
                         }();
-                        const std::uint32_t expected = initial_regs[layout.base] + shifted_index;
-                        jit.Regs() = initial_regs;
-                        jit.SetCpsr(preserved_flags | 0x000001d0 | (thumb ? 0x20 : 0));
-                        jit.SetFpscr(initial_fpscr);
-                        callbacks.ticks_left = 2;
-                        jit.Run();
 
-                        CHECK(jit.Regs()[layout.destination] == expected);
-                        for (std::size_t reg = 0; reg < 15; ++reg) {
-                            if (reg == layout.destination) {
-                                continue;
+                        for (const auto& input : inputs) {
+                            CAPTURE(subtract, thumb, layout.destination, layout.base, layout.index,
+                                    shift_encoding, shift, input.base, input.index, instruction);
+                            ArmTestCallbacks callbacks;
+                            callbacks.code = {
+                                instruction,
+                                thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+                            };
+                            Dynarmic::A32::UserConfig config{&callbacks};
+                            Dynarmic::A32::Jit jit{config};
+
+                            std::array<std::uint32_t, 16> initial_regs{
+                                0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                                0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                                0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                                0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+                            };
+                            initial_regs[layout.base] = input.base;
+                            initial_regs[layout.index] =
+                                layout.base == layout.index ? input.base : input.index;
+                            const std::uint32_t shifted_index = [&] {
+                                if (shift_kind == ShiftKind::LogicalLeft) {
+                                    return initial_regs[layout.index] << shift;
+                                }
+                                if (shift_kind == ShiftKind::LogicalRight) {
+                                    return shift == 0 ? 0U : initial_regs[layout.index] >> shift;
+                                }
+                                const std::uint8_t effective_shift = shift == 0 ? 31 : shift;
+                                return static_cast<std::uint32_t>(
+                                    static_cast<std::int32_t>(initial_regs[layout.index]) >>
+                                    effective_shift);
+                            }();
+                            const std::uint32_t expected =
+                                subtract ? initial_regs[layout.base] - shifted_index
+                                         : initial_regs[layout.base] + shifted_index;
+                            jit.Regs() = initial_regs;
+                            jit.SetCpsr(preserved_flags | 0x000001d0 | (thumb ? 0x20 : 0));
+                            jit.SetFpscr(initial_fpscr);
+                            callbacks.ticks_left = 2;
+                            jit.Run();
+
+                            CHECK(jit.Regs()[layout.destination] == expected);
+                            for (std::size_t reg = 0; reg < 15; ++reg) {
+                                if (reg == layout.destination) {
+                                    continue;
+                                }
+                                CAPTURE(reg);
+                                CHECK(jit.Regs()[reg] == initial_regs[reg]);
                             }
-                            CAPTURE(reg);
-                            CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                            CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+                            CHECK(jit.Fpscr() == initial_fpscr);
                         }
-                        CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
-                        CHECK(jit.Fpscr() == initial_fpscr);
                     }
                 }
             }

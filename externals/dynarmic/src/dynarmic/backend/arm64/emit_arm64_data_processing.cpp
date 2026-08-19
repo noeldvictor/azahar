@@ -142,13 +142,20 @@ static bool IsAlreadyZeroExtendedByte(const IR::Value& value) {
            !IsSoleVariableShiftConsumer(producer);
 }
 
-static const IR::Inst* GetImmediatelyShiftedAddOperand(const IR::Inst* add) {
-    if (!add || add->GetOpcode() != IR::Opcode::Add32 || add->HasAssociatedPseudoOperation() ||
-        !add->GetArg(2).IsImmediate() || add->GetArg(2).GetU1()) {
+static const IR::Inst* GetImmediatelyShiftedAddSubOperand(const IR::Inst* arithmetic) {
+    if (!arithmetic ||
+        (arithmetic->GetOpcode() != IR::Opcode::Add32 &&
+         arithmetic->GetOpcode() != IR::Opcode::Sub32) ||
+        arithmetic->HasAssociatedPseudoOperation() || !arithmetic->GetArg(2).IsImmediate()) {
         return nullptr;
     }
 
-    const IR::Value shifted_value = add->GetArg(1);
+    const bool is_sub = arithmetic->GetOpcode() == IR::Opcode::Sub32;
+    if (arithmetic->GetArg(2).GetU1() != is_sub) {
+        return nullptr;
+    }
+
+    const IR::Value shifted_value = arithmetic->GetArg(1);
     if (shifted_value.IsImmediate()) {
         return nullptr;
     }
@@ -159,15 +166,15 @@ static const IR::Inst* GetImmediatelyShiftedAddOperand(const IR::Inst* add) {
          shift_opcode != IR::Opcode::LogicalShiftRight32 &&
          shift_opcode != IR::Opcode::ArithmeticShiftRight32) ||
         shift->HasAssociatedPseudoOperation() || shift->UseCount() != 1 ||
-        shift->GetNextInstruction() != add || shift->GetArg(0).IsImmediate() ||
+        shift->GetNextInstruction() != arithmetic || shift->GetArg(0).IsImmediate() ||
         !shift->GetArg(1).IsImmediate()) {
         return nullptr;
     }
 
     const u8 shift_amount = shift->GetArg(1).GetU8();
-    // Wide LSL immediates lose dependent throughput on the heterogeneous Thor cores. LSR and ASR
-    // retain or improve throughput across their complete AArch64 shifted-register range.
-    const u8 maximum_shift = shift_opcode == IR::Opcode::LogicalShiftLeft32 ? 4 : 31;
+    // Wide LSL immediates lose ADD-dependent throughput on the heterogeneous Thor cores. Shifted
+    // SUB and right-shifted ADD retain or improve throughput across the complete AArch64 range.
+    const u8 maximum_shift = !is_sub && shift_opcode == IR::Opcode::LogicalShiftLeft32 ? 4 : 31;
     if (shift_amount < 1 || shift_amount > maximum_shift) {
         return nullptr;
     }
@@ -392,7 +399,7 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -549,7 +556,7 @@ void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitCo
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -704,7 +711,7 @@ void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, Emi
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -1082,8 +1089,8 @@ static void EmitAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* 
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if constexpr (bitsize == 32 && !sub) {
-        if (const IR::Inst* shift = GetImmediatelyShiftedAddOperand(inst)) {
+    if constexpr (bitsize == 32) {
+        if (const IR::Inst* shift = GetImmediatelyShiftedAddSubOperand(inst)) {
             auto Wresult = ctx.reg_alloc.WriteW(inst);
             auto Wbase = ctx.reg_alloc.ReadW(args[0]);
             auto Windex = ctx.reg_alloc.ReadW(args[1]);
@@ -1091,12 +1098,24 @@ static void EmitAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* 
 
             const IR::Opcode shift_opcode = shift->GetOpcode();
             if (shift_opcode == IR::Opcode::LogicalShiftLeft32) {
-                code.ADD(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+                if constexpr (sub) {
+                    code.SUB(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+                } else {
+                    code.ADD(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+                }
             } else if (shift_opcode == IR::Opcode::LogicalShiftRight32) {
-                code.ADD(Wresult, *Wbase, Windex, LSR, shift->GetArg(1).GetU8());
+                if constexpr (sub) {
+                    code.SUB(Wresult, *Wbase, Windex, LSR, shift->GetArg(1).GetU8());
+                } else {
+                    code.ADD(Wresult, *Wbase, Windex, LSR, shift->GetArg(1).GetU8());
+                }
             } else {
                 ASSERT(shift_opcode == IR::Opcode::ArithmeticShiftRight32);
-                code.ADD(Wresult, *Wbase, Windex, ASR, shift->GetArg(1).GetU8());
+                if constexpr (sub) {
+                    code.SUB(Wresult, *Wbase, Windex, ASR, shift->GetArg(1).GetU8());
+                } else {
+                    code.ADD(Wresult, *Wbase, Windex, ASR, shift->GetArg(1).GetU8());
+                }
             }
             return;
         }
