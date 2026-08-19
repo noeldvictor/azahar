@@ -410,43 +410,25 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentFrames);
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentPixels,
                                     static_cast<u64>(extent.width) * extent.height);
-    const std::array pre_barriers{
-        vk::ImageMemoryBarrier{
-            .srcAccessMask = vk::AccessFlagBits::eNone,
-            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-            .oldLayout = vk::ImageLayout::eUndefined,
-            .newLayout = vk::ImageLayout::eTransferDstOptimal,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = swapchain_image,
-            .subresourceRange{
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = VK_REMAINING_ARRAY_LAYERS,
-            },
-        },
-        vk::ImageMemoryBarrier{
-            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
-            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
-            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
-            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = frame->image,
-            .subresourceRange{
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = VK_REMAINING_ARRAY_LAYERS,
-            },
+    const vk::ImageMemoryBarrier pre_barrier{
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+        .oldLayout = vk::ImageLayout::eUndefined,
+        .newLayout = vk::ImageLayout::eTransferDstOptimal,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = swapchain_image,
+        .subresourceRange{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = VK_REMAINING_ARRAY_LAYERS,
         },
     };
     const vk::ImageMemoryBarrier post_barrier{
         .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-        .dstAccessMask = vk::AccessFlagBits::eMemoryRead,
+        .dstAccessMask = vk::AccessFlagBits::eNone,
         .oldLayout = vk::ImageLayout::eTransferDstOptimal,
         .newLayout = vk::ImageLayout::ePresentSrcKHR,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -461,9 +443,11 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
         },
     };
 
-    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+    // The render_ready semaphore makes the unchanged transfer-source image available to this
+    // submission. Only the acquired swapchain image still needs a layout transition before copy.
+    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
                            vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                           {}, {}, pre_barriers);
+                           {}, {}, pre_barrier);
 
     if (ShouldBlitToSwapchain(blit_supported, frame->width, frame->height, extent.width,
                               extent.height)) {
@@ -479,15 +463,15 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
                          MakeImageCopy(frame->width, frame->height, extent.width, extent.height));
     }
 
-    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                           vk::PipelineStageFlagBits::eAllCommands,
+    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                           vk::PipelineStageFlagBits::eBottomOfPipe,
                            vk::DependencyFlagBits::eByRegion, {}, {}, post_barrier);
 
     cmdbuf.end();
 
     static constexpr std::array<vk::PipelineStageFlags, 2> wait_stage_masks = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eAllGraphics,
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::PipelineStageFlagBits::eTransfer,
     };
 
     const vk::Semaphore present_ready = swapchain.GetPresentReadySemaphore();
