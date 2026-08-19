@@ -618,6 +618,11 @@ bool Inst::HasAssociatedPseudoOperation() const {
     return next_pseudoop && !IsAPseudoOperation();
 }
 
+bool Inst::HasOnlyAssociatedPseudoOperation(Opcode opcode) const {
+    return HasAssociatedPseudoOperation() && next_pseudoop->GetOpcode() == opcode &&
+           next_pseudoop->next_pseudoop == nullptr;
+}
+
 Inst* Inst::GetAssociatedPseudoOperation(Opcode opcode) {
     Inst* pseudoop = next_pseudoop;
     while (pseudoop) {

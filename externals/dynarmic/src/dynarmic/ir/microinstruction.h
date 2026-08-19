@@ -128,6 +128,8 @@ public:
 
     /// Determines if there is a pseudo-operation associated with this instruction.
     bool HasAssociatedPseudoOperation() const;
+    /// Determines whether the given opcode is the instruction's only associated pseudo-operation.
+    bool HasOnlyAssociatedPseudoOperation(Opcode opcode) const;
     /// Gets a pseudo-operation associated with this instruction.
     Inst* GetAssociatedPseudoOperation(Opcode opcode);
 

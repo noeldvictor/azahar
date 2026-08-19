@@ -146,7 +146,13 @@ static const IR::Inst* GetImmediatelyShiftedAddSubOperand(const IR::Inst* arithm
     if (!arithmetic ||
         (arithmetic->GetOpcode() != IR::Opcode::Add32 &&
          arithmetic->GetOpcode() != IR::Opcode::Sub32) ||
-        arithmetic->HasAssociatedPseudoOperation() || !arithmetic->GetArg(2).IsImmediate()) {
+        !arithmetic->GetArg(2).IsImmediate()) {
+        return nullptr;
+    }
+
+    const bool sets_nzcv = arithmetic->HasAssociatedPseudoOperation();
+    if (sets_nzcv &&
+        !arithmetic->HasOnlyAssociatedPseudoOperation(IR::Opcode::GetNZCVFromOp)) {
         return nullptr;
     }
 
@@ -172,6 +178,14 @@ static const IR::Inst* GetImmediatelyShiftedAddSubOperand(const IR::Inst* arithm
     }
 
     const u8 shift_amount = shift->GetArg(1).GetU8();
+    // Flag-setting shifted LSR/ASR and wide-LSL arithmetic loses roughly half the base-dependent
+    // throughput on Thor's A715/A710/X3 cores. Only LSL #1..#4 was neutral or faster in every
+    // dependency shape on all four CPU classes.
+    if (sets_nzcv &&
+        (shift_opcode != IR::Opcode::LogicalShiftLeft32 || shift_amount < 1 || shift_amount > 4)) {
+        return nullptr;
+    }
+
     // Wide LSL immediates lose ADD-dependent throughput on the heterogeneous Thor cores. Shifted
     // SUB and right-shifted ADD retain or improve throughput across the complete AArch64 range.
     const u8 maximum_shift = !is_sub && shift_opcode == IR::Opcode::LogicalShiftLeft32 ? 4 : 31;
@@ -1171,9 +1185,21 @@ static void EmitAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* 
             auto Wresult = ctx.reg_alloc.WriteW(inst);
             auto Wbase = ctx.reg_alloc.ReadW(args[0]);
             auto Windex = ctx.reg_alloc.ReadW(args[1]);
-            RegAlloc::Realize(Wresult, Wbase, Windex);
 
             const IR::Opcode shift_opcode = shift->GetOpcode();
+            if (nzcv_inst) {
+                ASSERT(shift_opcode == IR::Opcode::LogicalShiftLeft32);
+                auto flags = ctx.reg_alloc.WriteFlags(nzcv_inst);
+                RegAlloc::Realize(Wresult, Wbase, Windex, flags);
+                if constexpr (sub) {
+                    code.SUBS(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+                } else {
+                    code.ADDS(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+                }
+                return;
+            }
+
+            RegAlloc::Realize(Wresult, Wbase, Windex);
             if (shift_opcode == IR::Opcode::LogicalShiftLeft32) {
                 if constexpr (sub) {
                     code.SUB(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
