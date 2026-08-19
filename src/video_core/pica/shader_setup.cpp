@@ -68,6 +68,50 @@ void ShaderSetup::WriteUniformIntReg(u32 index, const Common::Vec4<u8> values) {
     uniforms_dirty |= prev != values;
 }
 
+#if defined(__aarch64__)
+// Float32 uniform transfers arrive as complete groups of four words in reverse component order.
+// Process every complete group directly so the command-list range path does not stage and branch
+// once per word. Keep this out of line so float24 and partial-queue uploads retain their compact
+// scalar path.
+CITRA_NO_INLINE static u32 WriteUniformFloat32Groups(ShaderSetup& setup, const u32* values,
+                                                     u32 count, u32 first_index) {
+    static_assert(sizeof(f24) == sizeof(u32));
+    static_assert(sizeof(Common::Vec4<f24>) == sizeof(uint32x4_t));
+
+    const u32 groups = std::min(count / 4, static_cast<u32>(setup.uniforms.f.size()) - first_index);
+    auto* destination = reinterpret_cast<u8*>(setup.uniforms.f.data() + first_index);
+    uint32x4_t last_packed{};
+
+    if (setup.uniforms_dirty) {
+        for (u32 group = 0; group < groups; ++group) {
+            last_packed = vld1q_u32(values + group * 4);
+            uint32x4_t uniform = vrev64q_u32(last_packed);
+            uniform = vextq_u32(uniform, uniform, 2);
+            vst1q_u8(destination + group * sizeof(Common::Vec4<f24>),
+                     vreinterpretq_u8_u32(uniform));
+        }
+    } else {
+        uint32x4_t changed = vdupq_n_u32(0);
+        for (u32 group = 0; group < groups; ++group) {
+            last_packed = vld1q_u32(values + group * 4);
+            uint32x4_t uniform = vrev64q_u32(last_packed);
+            uniform = vextq_u32(uniform, uniform, 2);
+            const u8* current = destination + group * sizeof(Common::Vec4<f24>);
+            const uint32x4_t previous = vreinterpretq_u32_u8(vld1q_u8(current));
+            changed = vorrq_u32(changed, veorq_u32(previous, uniform));
+            vst1q_u8(destination + group * sizeof(Common::Vec4<f24>),
+                     vreinterpretq_u8_u32(uniform));
+        }
+        setup.uniforms_dirty = vmaxvq_u32(changed) != 0;
+    }
+
+    // PackedAttribute retains the most recently written words even after Get() resets its index.
+    // Preserve that observable/save-state representation while avoiding the per-word queue loop.
+    vst1q_u32(setup.uniform_queue.buffer.data(), last_packed);
+    return groups;
+}
+#endif
+
 std::optional<u32> ShaderSetup::WriteUniformFloatReg(ShaderRegs& config, u32 value) {
     auto& uniform_setup = config.uniform_setup;
     const bool is_float32 = uniform_setup.IsFloat32();
@@ -101,8 +145,19 @@ std::optional<ShaderSetup::UniformWriteRange> ShaderSetup::WriteUniformFloatRegR
 
     std::optional<u32> first_index;
     u32 written = 0;
+    u32 consumed = 0;
 
-    for (u32 i = 0; i < count; ++i) {
+#if defined(__aarch64__)
+    const u32 index = uniform_setup.index.Value();
+    if (is_float32 && uniform_queue.index == 0 && count >= 4 && index < uniforms.f.size()) {
+        written = WriteUniformFloat32Groups(*this, values, count, index);
+        consumed = written * 4;
+        first_index = index;
+        uniform_setup.index.Assign(index + written);
+    }
+#endif
+
+    for (u32 i = consumed; i < count; ++i) {
         if (!uniform_queue.Push(values[i], is_float32)) {
             continue;
         }
