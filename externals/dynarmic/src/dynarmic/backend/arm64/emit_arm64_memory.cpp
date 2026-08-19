@@ -26,6 +26,36 @@ namespace Dynarmic::Backend::Arm64 {
 
 using namespace oaknut::util;
 
+bool IsSignExtendingA32MemoryRead(const IR::Inst* inst) {
+    const IR::Opcode extension_opcode = [&] {
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::A32ReadMemory8:
+            return IR::Opcode::SignExtendByteToWord;
+        case IR::Opcode::A32ReadMemory16:
+            return IR::Opcode::SignExtendHalfToWord;
+        default:
+            return IR::Opcode::Void;
+        }
+    }();
+    if (extension_opcode == IR::Opcode::Void) {
+        return false;
+    }
+
+    if (inst->UseCount() != 1) {
+        return false;
+    }
+
+    const IR::AccType acc_type = inst->GetArg(2).GetAccType();
+    if (acc_type == IR::AccType::ORDERED || acc_type == IR::AccType::ORDEREDRW ||
+        acc_type == IR::AccType::LIMITEDORDERED) {
+        return false;
+    }
+
+    const IR::Inst* consumer = inst->GetNextInstruction();
+    return consumer && consumer->GetOpcode() == extension_opcode &&
+           consumer->GetArg(0).GetInst() == inst;
+}
+
 namespace {
 
 bool IsOrdered(IR::AccType acctype) {
@@ -133,6 +163,7 @@ void CallbackOnlyEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
     ctx.reg_alloc.PrepareForCall({}, args[1]);
     const bool ordered = IsOrdered(args[2].GetImmediateAccType());
+    const bool sign_extend = IsSignExtendingA32MemoryRead(inst);
 
     EmitRelocation(code, ctx, ReadMemoryLinkTarget(bitsize));
     if (ordered) {
@@ -143,6 +174,15 @@ void CallbackOnlyEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, I
         code.MOV(Q8.B16(), Q0.B16());
         ctx.reg_alloc.DefineAsRegister(inst, Q8);
     } else {
+        if constexpr (bitsize == 8) {
+            if (sign_extend) {
+                code.SXTB(W0, W0);
+            }
+        } else if constexpr (bitsize == 16) {
+            if (sign_extend) {
+                code.SXTH(W0, W0);
+            }
+        }
         ctx.reg_alloc.DefineAsRegister(inst, X0);
     }
 }
@@ -282,7 +322,9 @@ std::pair<oaknut::XReg, oaknut::XReg> InlinePageTableEmitVAddrLookup(oaknut::Cod
 }
 
 template<std::size_t bitsize>
-CodePtr EmitMemoryLdr(oaknut::CodeGenerator& code, int value_idx, oaknut::XReg Xbase, oaknut::XReg Xoffset, bool ordered, bool extend32 = false) {
+CodePtr EmitMemoryLdr(oaknut::CodeGenerator& code, int value_idx, oaknut::XReg Xbase,
+                      oaknut::XReg Xoffset, bool ordered, bool extend32 = false,
+                      bool sign_extend = false) {
     const auto index_ext = extend32 ? oaknut::IndexExt::UXTW : oaknut::IndexExt::LSL;
     const auto add_ext = extend32 ? oaknut::AddSubExt::UXTW : oaknut::AddSubExt::LSL;
     const auto Roffset = extend32 ? oaknut::RReg{Xoffset.toW()} : oaknut::RReg{Xoffset};
@@ -319,10 +361,18 @@ CodePtr EmitMemoryLdr(oaknut::CodeGenerator& code, int value_idx, oaknut::XReg X
 
         switch (bitsize) {
         case 8:
-            code.LDRB(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            if (sign_extend) {
+                code.LDRSB(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            } else {
+                code.LDRB(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            }
             break;
         case 16:
-            code.LDRH(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            if (sign_extend) {
+                code.LDRSH(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            } else {
+                code.LDRH(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
+            }
             break;
         case 32:
             code.LDR(oaknut::WReg{value_idx}, Xbase, Roffset, index_ext);
@@ -414,6 +464,7 @@ void InlinePageTableEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx
         }
     }();
     const bool ordered = IsOrdered(args[2].GetImmediateAccType());
+    const bool sign_extend = IsSignExtendingA32MemoryRead(inst);
     ctx.fpsr.Spill();
     ctx.reg_alloc.SpillFlags();
     RegAlloc::Realize(Xaddr, Rvalue);
@@ -421,9 +472,10 @@ void InlinePageTableEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx
     SharedLabel fallback = GenSharedLabel(), end = GenSharedLabel();
 
     const auto [Xbase, Xoffset] = InlinePageTableEmitVAddrLookup<bitsize>(code, ctx, Xaddr, fallback);
-    EmitMemoryLdr<bitsize>(code, Rvalue->index(), Xbase, Xoffset, ordered);
+    EmitMemoryLdr<bitsize>(code, Rvalue->index(), Xbase, Xoffset, ordered, false, sign_extend);
 
-    ctx.deferred_emits.emplace_back([&code, &ctx, inst, Xaddr = *Xaddr, Rvalue = *Rvalue, ordered, fallback, end] {
+    ctx.deferred_emits.emplace_back([&code, &ctx, inst, Xaddr = *Xaddr, Rvalue = *Rvalue, ordered,
+                                     sign_extend, fallback, end] {
         code.l(*fallback);
         code.MOV(Xscratch0, Xaddr);
         EmitRelocation(code, ctx, WrappedReadMemoryLinkTarget(bitsize));
@@ -433,7 +485,21 @@ void InlinePageTableEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx
         if constexpr (bitsize == 128) {
             code.MOV(Rvalue.B16(), Q0.B16());
         } else {
-            code.MOV(Rvalue.toX(), Xscratch0);
+            if constexpr (bitsize == 8) {
+                if (sign_extend) {
+                    code.SXTB(Rvalue.toW(), Wscratch0);
+                } else {
+                    code.MOV(Rvalue.toX(), Xscratch0);
+                }
+            } else if constexpr (bitsize == 16) {
+                if (sign_extend) {
+                    code.SXTH(Rvalue.toW(), Wscratch0);
+                } else {
+                    code.MOV(Rvalue.toX(), Xscratch0);
+                }
+            } else {
+                code.MOV(Rvalue.toX(), Xscratch0);
+            }
         }
         ctx.conf.emit_check_memory_abort(code, ctx, inst, *end);
         code.B(*end);
@@ -533,6 +599,7 @@ void FastmemEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::In
         }
     }();
     const bool ordered = IsOrdered(args[2].GetImmediateAccType());
+    const bool sign_extend = IsSignExtendingA32MemoryRead(inst);
     ctx.fpsr.Spill();
     ctx.reg_alloc.SpillFlags();
     RegAlloc::Realize(Xaddr, Rvalue);
@@ -540,9 +607,11 @@ void FastmemEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::In
     SharedLabel fallback = GenSharedLabel(), end = GenSharedLabel();
 
     const auto [Xbase, Xoffset] = FastmemEmitVAddrLookup<bitsize>(code, ctx, Xaddr, fallback);
-    const auto fastmem_location = EmitMemoryLdr<bitsize>(code, Rvalue->index(), Xbase, Xoffset, ordered, ShouldExt32(ctx));
+    const auto fastmem_location = EmitMemoryLdr<bitsize>(code, Rvalue->index(), Xbase, Xoffset,
+                                                        ordered, ShouldExt32(ctx), sign_extend);
 
-    ctx.deferred_emits.emplace_back([&code, &ctx, inst, marker, Xaddr = *Xaddr, Rvalue = *Rvalue, ordered, fallback, end, fastmem_location] {
+    ctx.deferred_emits.emplace_back([&code, &ctx, inst, marker, Xaddr = *Xaddr, Rvalue = *Rvalue,
+                                     ordered, sign_extend, fallback, end, fastmem_location] {
         ctx.ebi.fastmem_patch_info.emplace(
             fastmem_location - ctx.ebi.entry_point,
             FastmemPatchInfo{
@@ -562,7 +631,21 @@ void FastmemEmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::In
         if constexpr (bitsize == 128) {
             code.MOV(Rvalue.B16(), Q0.B16());
         } else {
-            code.MOV(Rvalue.toX(), Xscratch0);
+            if constexpr (bitsize == 8) {
+                if (sign_extend) {
+                    code.SXTB(Rvalue.toW(), Wscratch0);
+                } else {
+                    code.MOV(Rvalue.toX(), Xscratch0);
+                }
+            } else if constexpr (bitsize == 16) {
+                if (sign_extend) {
+                    code.SXTH(Rvalue.toW(), Wscratch0);
+                } else {
+                    code.MOV(Rvalue.toX(), Xscratch0);
+                }
+            } else {
+                code.MOV(Rvalue.toX(), Xscratch0);
+            }
         }
         ctx.conf.emit_check_memory_abort(code, ctx, inst, *end);
         code.B(*end);

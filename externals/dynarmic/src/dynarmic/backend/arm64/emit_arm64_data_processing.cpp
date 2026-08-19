@@ -11,6 +11,7 @@
 #include "dynarmic/backend/arm64/a32_jitstate.h"
 #include "dynarmic/backend/arm64/abi.h"
 #include "dynarmic/backend/arm64/emit_arm64.h"
+#include "dynarmic/backend/arm64/emit_arm64_memory.h"
 #include "dynarmic/backend/arm64/emit_context.h"
 #include "dynarmic/backend/arm64/reg_alloc.h"
 #include "dynarmic/ir/basic_block.h"
@@ -1494,6 +1495,13 @@ void EmitIR<IR::Opcode::UnsignedExtendAndAdd32>(oaknut::CodeGenerator& code, Emi
 
 template<>
 void EmitIR<IR::Opcode::SignExtendByteToWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    const IR::Value source = inst->GetArg(0);
+    if (!source.IsImmediate() && IsSignExtendingA32MemoryRead(source.GetInstRecursive())) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     EmitTwoOp<32>(
         code, ctx, inst,
         [&](auto& Wresult, auto& Woperand) { code.SXTB(Wresult, Woperand); });
@@ -1501,6 +1509,13 @@ void EmitIR<IR::Opcode::SignExtendByteToWord>(oaknut::CodeGenerator& code, EmitC
 
 template<>
 void EmitIR<IR::Opcode::SignExtendHalfToWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    const IR::Value source = inst->GetArg(0);
+    if (!source.IsImmediate() && IsSignExtendingA32MemoryRead(source.GetInstRecursive())) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     EmitTwoOp<32>(
         code, ctx, inst,
         [&](auto& Wresult, auto& Woperand) { code.SXTH(Wresult, Woperand); });

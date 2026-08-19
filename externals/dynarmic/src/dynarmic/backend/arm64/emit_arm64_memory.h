@@ -20,6 +20,8 @@ namespace Dynarmic::Backend::Arm64 {
 struct EmitContext;
 enum class LinkTarget;
 
+bool IsSignExtendingA32MemoryRead(const IR::Inst* inst);
+
 template<size_t bitsize>
 void EmitReadMemory(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst);
 template<size_t bitsize>

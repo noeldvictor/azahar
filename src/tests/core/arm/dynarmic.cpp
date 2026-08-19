@@ -28,6 +28,11 @@ public:
     std::uint32_t data_write_address{};
     std::uint64_t data_write_value{};
     std::uint8_t data_write_bits{};
+    bool allow_data_reads{};
+    std::size_t data_read_count{};
+    std::uint32_t data_read_address{};
+    std::uint16_t data_read_value{};
+    std::uint8_t data_read_bits{};
 
     std::optional<std::uint32_t> MemoryReadCode(std::uint32_t address) override {
         if ((address & 3) == 0 && address / 4 < code.size()) {
@@ -36,11 +41,23 @@ public:
         return std::nullopt;
     }
 
-    std::uint8_t MemoryRead8(std::uint32_t) override {
-        return 0;
+    std::uint8_t MemoryRead8(std::uint32_t address) override {
+        if (!allow_data_reads) {
+            return 0;
+        }
+        data_read_count++;
+        data_read_address = address;
+        data_read_bits = 8;
+        return static_cast<std::uint8_t>(data_read_value);
     }
-    std::uint16_t MemoryRead16(std::uint32_t) override {
-        return 0;
+    std::uint16_t MemoryRead16(std::uint32_t address) override {
+        if (!allow_data_reads) {
+            return 0;
+        }
+        data_read_count++;
+        data_read_address = address;
+        data_read_bits = 16;
+        return data_read_value;
     }
     std::uint32_t MemoryRead32(std::uint32_t) override {
         return 0;
@@ -3276,6 +3293,99 @@ TEST_CASE("Dynarmic A32 narrow stores discard dirty high bits on callback and fa
                     CHECK(callbacks.data_write_value == expected);
                 }
                 for (std::size_t reg = 0; reg < 15; ++reg) {
+                    CAPTURE(reg);
+                    CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                }
+                CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+                CHECK(jit.Fpscr() == initial_fpscr);
+            }
+        }
+    }
+}
+
+TEST_CASE("Dynarmic A32 signed narrow loads fuse on callback and fastmem paths",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t bits;
+        std::uint8_t base;
+        std::uint8_t destination;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe1d120d0, 8, 1, 2, false},   // ARM LDRSB R2, [R1]
+        Operation{0xe1d110d0, 8, 1, 1, false},   // ARM LDRSB R1, [R1]
+        Operation{0xe1d120f0, 16, 1, 2, false},  // ARM LDRSH R2, [R1]
+        Operation{0xe1d110f0, 16, 1, 1, false},  // ARM LDRSH R1, [R1]
+        Operation{0xe7fe560a, 8, 1, 2, true},    // Thumb LDRSB R2, [R1, R0]; B .
+        Operation{0xe7fe5609, 8, 1, 1, true},    // Thumb LDRSB R1, [R1, R0]; B .
+        Operation{0xe7fe5e0a, 16, 1, 2, true},   // Thumb LDRSH R2, [R1, R0]; B .
+        Operation{0xe7fe5e09, 16, 1, 1, true},   // Thumb LDRSH R1, [R1, R0]; B .
+    };
+    constexpr std::array<std::uint16_t, 10> inputs{
+        0x0000, 0x0001, 0x007f, 0x0080, 0x00ff,
+        0x7fff, 0x8000, 0xffff, 0x80ff, 0xff80,
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        for (const std::uint16_t input : inputs) {
+            for (const bool fastmem : {false, true}) {
+                CAPTURE(operation.instruction, operation.bits, operation.base,
+                        operation.destination, operation.thumb, input, fastmem);
+                ArmTestCallbacks callbacks;
+                callbacks.code = {
+                    operation.instruction,
+                    operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+                };
+                callbacks.allow_data_reads = !fastmem;
+                callbacks.data_read_value = input;
+
+                std::array<std::uint8_t, 256> backing_memory{};
+                backing_memory.fill(0xcd);
+                Dynarmic::A32::UserConfig config{&callbacks};
+                if (fastmem) {
+                    config.fastmem_pointer = reinterpret_cast<std::uintptr_t>(backing_memory.data());
+                    config.recompile_on_fastmem_failure = false;
+                }
+                Dynarmic::A32::Jit jit{config};
+
+                std::array<std::uint32_t, 16> initial_regs{
+                    0x00000000, 0x00000040, 0x2468ace0, 0x55aa55aa,
+                    0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                    0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                    0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+                };
+                const std::uint32_t address = initial_regs[operation.base];
+                const std::uint16_t raw = operation.bits == 8 ? input & 0xffU : input;
+                const std::uint32_t expected = operation.bits == 8
+                                                   ? static_cast<std::uint32_t>(static_cast<std::int32_t>(
+                                                         static_cast<std::int8_t>(raw)))
+                                                   : static_cast<std::uint32_t>(static_cast<std::int32_t>(
+                                                         static_cast<std::int16_t>(raw)));
+                backing_memory[address] = static_cast<std::uint8_t>(raw);
+                if (operation.bits == 16) {
+                    backing_memory[address + 1] = static_cast<std::uint8_t>(raw >> 8);
+                }
+                jit.Regs() = initial_regs;
+                jit.SetCpsr(preserved_flags | 0x000001d0 | (operation.thumb ? 0x20 : 0));
+                jit.SetFpscr(initial_fpscr);
+                callbacks.ticks_left = 2;
+                jit.Run();
+
+                CHECK(jit.Regs()[operation.destination] == expected);
+                if (fastmem) {
+                    CHECK(callbacks.data_read_count == 0);
+                } else {
+                    CHECK(callbacks.data_read_count == 1);
+                    CHECK(callbacks.data_read_address == address);
+                    CHECK(callbacks.data_read_bits == operation.bits);
+                }
+                for (std::size_t reg = 0; reg < 15; ++reg) {
+                    if (reg == operation.destination) {
+                        continue;
+                    }
                     CAPTURE(reg);
                     CHECK(jit.Regs()[reg] == initial_regs[reg]);
                 }
