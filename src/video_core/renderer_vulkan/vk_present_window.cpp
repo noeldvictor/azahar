@@ -27,6 +27,15 @@ bool CanBlitToSwapchain(const vk::PhysicalDevice& physical_device, vk::Format fo
     return static_cast<bool>(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst);
 }
 
+constexpr bool ShouldBlitToSwapchain(bool blit_supported, u32 frame_width, u32 frame_height,
+                                     u32 swapchain_width, u32 swapchain_height) {
+    return blit_supported && (frame_width != swapchain_width || frame_height != swapchain_height);
+}
+
+static_assert(!ShouldBlitToSwapchain(true, 1920, 1080, 1920, 1080));
+static_assert(ShouldBlitToSwapchain(true, 1280, 720, 1920, 1080));
+static_assert(!ShouldBlitToSwapchain(false, 1280, 720, 1920, 1080));
+
 [[nodiscard]] vk::ImageSubresourceLayers MakeImageSubresourceLayers() {
     return vk::ImageSubresourceLayers{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -456,7 +465,8 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
                            vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
                            {}, {}, pre_barriers);
 
-    if (blit_supported) {
+    if (ShouldBlitToSwapchain(blit_supported, frame->width, frame->height, extent.width,
+                              extent.height)) {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentBlits);
         cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
                          vk::ImageLayout::eTransferDstOptimal,

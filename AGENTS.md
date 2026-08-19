@@ -450,6 +450,12 @@
   than the sentenced resource tick; equality must retain the resource because that tick can still
   be queued or in flight. Any value read by a worker callback while the producer may begin the next
   frame, such as the presentation clear color, must be captured by value.
+- Vulkan presentation frames use the swapchain's exact format. When the intermediate frame and
+  acquired swapchain image also have identical extents, retain the direct `vkCmdCopyImage` route:
+  it preserves every pixel bit-for-bit and avoids asking the transfer path to perform a filtered
+  blit with a 1:1 mapping. Keep `vkCmdBlitImage` for actual extent scaling when the destination
+  supports blitting, and keep the established overlapping copy fallback when it does not. Do not
+  infer equal extents from Android alone; select the route from the acquired swapchain extent.
 - HLE audio intermediate mixes deliberately use `PlanarQuadFrame32` from `Source::MixInto()` through
   aux exchange and final downmix. Preserve channel-major live storage, contiguous whole-buffer aux
   copies on little-endian hosts, the endian-converting fallback, and the historical sample-major

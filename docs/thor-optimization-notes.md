@@ -55,6 +55,33 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   The profiler is diagnostic infrastructure, does not increment the optimization ledger, and does
   not support a new speed or watt claim.
 
+## 2026-08-19 Exact-Size Vulkan Presentation Copy
+
+- Entry 143 addresses one of the profiler pivot's whole-frame suspects rather than another guest
+  instruction. Vulkan presentation first renders the complete host layout into an intermediate
+  image, then transfers that image into the acquired swapchain image. The intermediate image is
+  created with the swapchain's exact format, but the prior path used a filtered `vkCmdBlitImage`
+  whenever the destination advertised blit support, including a 1:1 transfer with equal extents.
+- Equal frame and acquired-swapchain extents now use `vkCmdCopyImage`. With identical formats and
+  extents this preserves each texel bit-for-bit and requires no scaling or filtering. A genuine
+  extent mismatch still uses the existing linear blit when supported; a device without blit
+  support retains the existing overlapping-copy fallback. Selection uses the acquired swapchain
+  extent rather than assuming that the requested Android surface dimensions always match it.
+- Compile-time checks cover equal-size copy, supported scaling blit, and unsupported scaling copy.
+  The existing opt-in whole-frame counters distinguish `PresentCopies` from `PresentBlits`, so a
+  future permitted capture can verify route frequency without adding instrumentation to a normal
+  APK. Qualcomm's Adreno guidance to avoid unnecessary resolves/filter and external-memory traffic
+  makes this a plausible every-presented-frame efficiency improvement, but the driver may already
+  optimize some 1:1 blits internally. No FPS, frametime, power, or watt improvement is claimed
+  before the matched Thor A/B.
+- The latest fetched `upstream/master` is `f6a3e3aa5` (2026-08-19) and is already an ancestor of
+  this fork. Upstream still selects blit solely from format support, so this is a current fork-side
+  change rather than a duplicate of a newer Azahar fix.
+- This is optimization/candidate entry 143 and raises the overlapping ledger count to 143. It
+  removes an API-level filtered transfer from the equal-size route; it does not remove the
+  intermediate presentation image, the render-ready submission, swapchain acquisition, the final
+  transfer command, or queue presentation.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

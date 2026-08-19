@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **142 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **143 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -491,6 +491,12 @@ on A510**, **0.996x-1.002x on A715**, **0.998x-1.208x on A710**, and **0.997x-1.
 near-one values are ties under the all-core acceptance floor, not claimed speedups. The complete
 PICA shader suite passed 18,506 assertions on all four classes. These are affected-store-path
 results, not whole-game FPS or measured battery-watt gains.
+
+Optimization 143 removes a filtered full-frame Vulkan blit from the normal equal-size presentation
+path. The intermediate image already uses the swapchain format, so matching extents now use an
+exact `vkCmdCopyImage`; real scaling still uses linear blitting, and unsupported scaling retains
+the old overlapping-copy fallback. This targets one complete transfer operation on every matching
+presented image, but its FPS and battery effect remains pending a matched Thor A/B.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
