@@ -257,6 +257,16 @@
   rewrites. Do not restore the rejected grouped-float24 candidate: its small-batch A510 timing was
   unstable or regressive. Treat the 1.15x-14.84x measurements as uploader-kernel ratios, not whole-
   game FPS or watts.
+- AArch64 PICA lighting, fog, and procedural-texture LUT batches may skip old-value loads and use
+  circular contiguous copies only when the selected table is already dirty and the remaining batch
+  has at least seven words. Clean uploads must retain exact compare-and-dirty semantics and the
+  compiler's existing vectorizable loop; shorter dirty batches keep that same route because copy
+  setup did not clear the all-core gate. Select the procedural-texture table once outside the word
+  loop. Preserve circular wrap and repeated-overwrite order, unchanged-clean false dirty state,
+  already-dirty absorption, table sizes 128/256, offsets beyond one wrap, and the scalar non-AArch64
+  path. Retain deterministic boundary coverage, randomized differential coverage, final ThinLTO
+  inspection, and A510/A715/A710 measurements. Treat the 1.04x-10.97x accepted dirty-copy range as
+  LUT-upload-path work, not whole-game FPS or watts.
 - Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
   `ShaderUnit::WriteOutput()`. When its output-mask popcount exactly equals the rasterizer or
   geometry-pipeline consumer count, select one direct-cache loop before the draw: a hit must pass

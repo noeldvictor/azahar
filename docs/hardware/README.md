@@ -19,6 +19,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 
 ## Guidance already applied
 
+- For PICA lighting, fog, and procedural-texture LUT uploads, an already-set dirty bit is an
+  absorbing state: later words cannot require another comparison. Split seven-or-more-word
+  AArch64 batches into circular contiguous copies and leave clean uploads on Clang's original
+  compare/store loop. A510 page 32, A715 page 26, A710 page 39, and X3 page 23 document the vector
+  load/store costs that make eliminating old-value reads plausible; they do not establish a win.
+  Exact power-of-two-table benchmarks control the gate because an earlier runtime-size prototype
+  falsely charged the old loop for division. The accepted already-dirty path improved on A510,
+  A715, and A710, while one-to-six-word copy setup and a broader clean-vector candidate were
+  rejected. Keep procedural-texture table selection outside the recurring word loop.
 - Classify PICA `LG2` edge inputs with one scalar `FCMP input,#0.0`: unordered/V selects NaN first,
   then LE selects signed zero, negative finite values, and negative infinity. This keeps the result
   branches exact while avoiding a SIMD equality mask and lane-to-GPR move. The floating-point

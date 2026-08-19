@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **140 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **141 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -463,6 +463,16 @@ on Thor's A510, A715, and A710 classes. Alternating-order exact-uploader medians
 **1.15x-3.82x on A510**, **1.96x-14.84x on A715**, and **1.88x-12.24x on A710**, depending on batch
 length and dirty/change state. X3 was parked by Android `core_ctl`. These ratios cover only the
 float32 uniform-upload kernel and are not whole-game FPS or measured battery-watt gains.
+
+Optimization 141 removes redundant comparisons from already-dirty AArch64 PICA lighting, fog, and
+procedural-texture LUT batches. Uploads of seven or more words are split at the circular-table wrap
+and copied as contiguous spans; clean and shorter uploads keep Clang's established comparison path,
+including its linked 32-word AdvSIMD loops. Procedural-texture table selection also moves outside
+the per-word loop. Exact already-dirty kernel medians improved by **1.26x-5.66x on A510**,
+**1.06x-10.35x on A715**, and **1.04x-10.97x on A710** across the accepted seven-to-255-word cases.
+The complete 432,920-assertion video-core suite passes on all three accessible classes. X3 was
+parked by Android `core_ctl`. These are dirty-LUT upload-path ratios, not additive FPS or measured
+battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

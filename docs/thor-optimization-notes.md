@@ -7063,3 +7063,67 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   prior 139 entries or converted into whole-emulator FPS or battery watts. Fewer queue writes,
   comparisons, loads, branches, and decoded instructions make lower energy plausible on this path,
   but whole-game frametime, thermal slope, and battery power still require a controlled matched A/B.
+
+## Already-Dirty AArch64 PICA LUT Copies (2026-08-19)
+
+- Entry 141 targets batch uploads to PICA lighting, fog, and procedural-texture LUTs. Once a table's
+  dirty bit is set, loading and comparing every old word cannot change observable dirty state.
+  AArch64 batches of at least seven words now normalize the circular index once, split only at table
+  wrap boundaries, and copy each contiguous span. Clean uploads and one-to-six-word dirty batches
+  retain the exact comparison loop. The procedural-texture table switch also moved outside the word
+  loop, so every batch selects Noise, ColorMap, AlphaMap, Color, or ColorDiff once rather than once
+  per uploaded word. Non-AArch64 code is unchanged.
+- The first broader candidate vectorized clean uploads and appeared extremely fast in a prototype
+  whose table size was runtime-variable. That result was rejected: production's 128- and 256-entry
+  tables are compile-time powers of two, so Clang uses masks and can auto-vectorize non-wrapping
+  clean loops instead of paying the prototype's integer division. A power-of-two-table rerun found
+  clean-span regressions in important shapes. The shipped path therefore eliminates work only when
+  dirty state proves comparisons redundant. Cortex load/store tables on A510 page 32, A715 page 26,
+  A710 page 39, and X3 page 23 guided the memory-traffic audit but did not decide acceptance.
+- The final standalone Android 29 ARM64 benchmark first passed 20,000 randomized differential
+  trials over 128/256-entry tables, dirty and clean starts, unchanged data, random values, arbitrary
+  16-bit offsets, and counts through 511. It then used seven alternating old/new-order samples per
+  cell. Median old-over-new ratios for the accepted already-dirty seven-to-255-word cases were:
+
+  | Thor core | Exact already-dirty LUT-kernel improvement |
+  | --- | ---: |
+  | A510 CPU 0 | 1.263743x-5.664785x |
+  | A715 CPU 3 | 1.061347x-10.354599x |
+  | A710 CPU 4 | 1.042289x-10.966256x |
+
+  One-to-six-word copies were rejected and keep the comparison route. The minimum accepted rows
+  were wrap-heavy seven/eight-word cases; common contiguous seven-word rows improved 2.337156x on
+  A510, 1.452297x on A715, and 1.460733x on A710. X3 affinity remained unavailable, so no X3 result
+  is inferred. The Thor was AC-powered at 80%, 4.269 V, and 25.0 C; these are sustained performance
+  measurements, not battery-discharge watts.
+- Permanent AArch64 differential coverage checks both table sizes; counts 0-8 and boundaries through
+  511; offsets at 0/1/125/127/128/129/65535; clean and dirty starts; explicit unchanged clean data;
+  multiple wraps; and 10,000 randomized cases per size. Focused tests passed 21,008 assertions in
+  three cases. The complete `[video_core]` suite passed 432,920 assertions in 82 cases independently
+  on A510 CPU0, A715 CPU3, and A710 CPU4. Final ThinLTO emits count-seven and dirty-state gates,
+  circular `memcpy` spans for the accepted path, and 32-word AdvSIMD compare/store loops for clean
+  power-of-two spans. The procedural table selection is not inside those recurring loops.
+  `PicaCore::HandleSpecialRegBatch()` is 2,736 bytes (`0xAB0`).
+- Source/test commit `79e81fc35` was pushed directly to `origin/master` with command-line Git over
+  SSH. The upstream audit found the fork 264 commits ahead and zero behind `upstream/master`
+  (`f6a3e3aa5`), so no merge was required. The post-commit JDK 17 native build and
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` package build passed. The
+  ARM64-only, v2-signed APK is 29,010,652 bytes with SHA-256
+  `FA66A0ACED75ED29E4CD6DE2DF3CF67776F7513F2C7EE8637F75AD3D21226E59`; its signer certificate
+  SHA-256 is `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `79e81fc35-vanilla-thor`, minimum SDK 29,
+  and target SDK 37. Wi-Fi ADB installed it successfully; the app was immediately force-stopped,
+  its PID remained absent, and `stay_on_while_plugged_in` was restored and verified as `0`. Neither
+  app nor game was launched.
+- Exact bounded cleanup removed 2,500,538,406 logical host bytes and recovered 2,055,352,320 physical
+  bytes, leaving 52,041,588,736 bytes free on C:. Retained repo build output is only the 29,010,652-
+  byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,801,563,819 bytes. The
+  449,854,232-byte native test ELF, Gradle/JNI/R8/symbol/mapping staging, rendered manual pages, and
+  all host/device benchmark helpers were removed. No PDF, benchmark, test binary, rendered page,
+  APK, or scratch note was committed.
+- This is optimization/candidate entry 141 and the total overlapping ledger count is now 141, not
+  78. The exact 1.04x-10.97x figures cover only already-dirty LUT batch uploads; they cannot be
+  added to the prior 140 entries or converted into whole-emulator FPS or battery watts. Removing
+  old-value reads, comparisons, per-word procedural switches, and circular index work makes lower
+  energy plausible on this path, but whole-game frametime, thermal slope, and battery power still
+  require a controlled matched A/B.
