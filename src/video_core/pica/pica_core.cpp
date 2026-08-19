@@ -1314,7 +1314,7 @@ void PicaCore::LoadVertices(bool is_indexed) {
         if (!vertex_cache_hit) {
             // Initialize data for the current vertex
             AttributeBuffer input;
-            loader.LoadVertex(base_address, index, vertex, input, input_default_attributes);
+            loader.LoadVertex(vertex, input, input_default_attributes);
 
             // Record vertex processing to the debugger.
             if (debug_context) {

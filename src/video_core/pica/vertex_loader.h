@@ -17,10 +17,10 @@ namespace Pica {
 
 class VertexLoader {
 public:
-    explicit VertexLoader(Memory::MemorySystem& memory_, const PipelineRegs& regs);
+    explicit VertexLoader(Memory::MemorySystem& memory, const PipelineRegs& regs);
     ~VertexLoader();
 
-    void LoadVertex(PAddr base_address, u32 index, u32 vertex, AttributeBuffer& input,
+    void LoadVertex(u32 vertex, AttributeBuffer& input,
                     AttributeBuffer& input_default_attributes) const;
 
     int GetNumTotalAttributes() const {
@@ -28,8 +28,7 @@ public:
     }
 
 private:
-    Memory::MemorySystem& memory;
-    std::array<u32, 16> vertex_attribute_sources;
+    std::array<const u8*, 16> vertex_attribute_sources{};
     std::array<u32, 16> vertex_attribute_strides{};
     std::array<VertexLoaderUtils::AttributeLoader, 16> vertex_attribute_loaders{};
     std::array<bool, 16> vertex_attribute_is_default;

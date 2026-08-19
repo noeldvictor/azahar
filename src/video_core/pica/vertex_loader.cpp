@@ -8,12 +8,10 @@
 
 namespace Pica {
 
-VertexLoader::VertexLoader(Memory::MemorySystem& memory_, const PipelineRegs& regs)
-    : memory{memory_} {
+VertexLoader::VertexLoader(Memory::MemorySystem& memory, const PipelineRegs& regs) {
     const auto& attribute_config = regs.vertex_attributes;
+    const PAddr base_address = attribute_config.GetPhysicalBaseAddress();
     num_total_attributes = attribute_config.GetNumTotalAttributes();
-
-    vertex_attribute_sources.fill(0xdeadbeef);
 
     for (u32 i = 0; i < 16; i++) {
         vertex_attribute_is_default[i] = attribute_config.IsDefaultAttribute(i);
@@ -38,12 +36,19 @@ VertexLoader::VertexLoader(Memory::MemorySystem& memory_, const PipelineRegs& re
             if (attribute_index < 12) {
                 offset = Common::AlignUp(offset,
                                          attribute_config.GetElementSizeInBytes(attribute_index));
-                vertex_attribute_sources[attribute_index] = loader_config.data_offset + offset;
+                const PAddr source_address =
+                    base_address + static_cast<u32>(loader_config.data_offset) + offset;
+                vertex_attribute_sources[attribute_index] =
+                    memory.GetPhysicalPointer(source_address);
                 vertex_attribute_strides[attribute_index] =
                     static_cast<u32>(loader_config.byte_count);
                 vertex_attribute_loaders[attribute_index] =
                     VertexLoaderUtils::Decode(attribute_config.GetFormat(attribute_index),
                                               attribute_config.GetNumElements(attribute_index));
+                if (vertex_attribute_sources[attribute_index] == nullptr) [[unlikely]] {
+                    vertex_attribute_loaders[attribute_index] =
+                        VertexLoaderUtils::AttributeLoader::Invalid;
+                }
                 offset += attribute_config.GetStride(attribute_index);
             } else if (attribute_index < 16) {
                 // Attribute ids 12, 13, 14 and 15 signify 4, 8, 12 and 16-byte paddings,
@@ -60,7 +65,7 @@ VertexLoader::VertexLoader(Memory::MemorySystem& memory_, const PipelineRegs& re
 
 VertexLoader::~VertexLoader() = default;
 
-void VertexLoader::LoadVertex(PAddr base_address, u32 index, u32 vertex, AttributeBuffer& input,
+void VertexLoader::LoadVertex(u32 vertex, AttributeBuffer& input,
                               AttributeBuffer& input_default_attributes) const {
     for (s32 i = 0; i < num_total_attributes; ++i) {
         // Load the default attribute if we're configured to do so
@@ -79,10 +84,7 @@ void VertexLoader::LoadVertex(PAddr base_address, u32 index, u32 vertex, Attribu
         }
 
         // Load per-vertex data from the loader arrays
-        const PAddr source_addr =
-            base_address + vertex_attribute_sources[i] + vertex_attribute_strides[i] * vertex;
-
-        const void* source = memory.GetPhysicalPointer(source_addr);
+        const void* source = vertex_attribute_sources[i] + vertex_attribute_strides[i] * vertex;
         VertexLoaderUtils::LoadAttribute(attribute_loader, source, input[i]);
     }
 }
