@@ -768,6 +768,17 @@
   boundaries plus per-core Thor measurements must remain the gate. Do not apply the SUB 1..31
   result to ADD's independently measured LSL 1..4 limit, and keep the gains path-local until a
   matched title and battery-power A/B exists.
+- ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32 LSL/LSR/ASR/ROR
+  producer into operand 1 of a flag-free/carry-free `And32`, `Eor32`, or `Or32` for immediate
+  shifts 1 through 31. Emit one shifted-register `AND`/`EOR`/`ORR`. The producer and consumer must
+  use the same eligibility helper so a producer can alias its raw input only when its consumer
+  will encode the shift. Keep flag or carry pseudos, shared/non-adjacent producers, immediate
+  sources, variable shifts, zero/32/RRX forms, shifts in another operand, and unrelated consumers
+  on the established lowering. Preserve ARM and Thumb-2 encodings, every destination/source alias,
+  full-width logical results, unrelated GPRs, NZCV/Q/GE, and FPSCR. Require actual-JIT words for
+  all three logical families and all four shift kinds plus representative boundaries and all-core
+  Thor measurements. This independent logical result does not widen ADD's measured LSL 1..4 gate;
+  keep all gains path-local until a matched title and battery-power A/B exists.
 - Do not globally replace A32/A64 same-width `SABD/UABD` plus `ADD` for `VABA` with native
   `SABA/UABA`. Although independent and big-core dependency patterns can win, exact accumulator-
   chain measurements regressed to 0.6595x-0.6890x on A510 for signed/unsigned 8/16/32-bit forms.

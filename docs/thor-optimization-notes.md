@@ -5845,3 +5845,78 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   code-cache, fetch/decode, dependency, and integer-issue work makes lower energy plausible, but
   whole-game frametime, thermal slope, and battery watts still require a controlled matched
   title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## ARM64 Shifted Logical Folding (2026-08-19)
+
+- Command-line Git fetched authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 225 commits ahead and zero behind before
+  this work, so no merge was needed. Work remained on `master`, and the source commit was pushed
+  directly to the configured command-line Git SSH remote. RPCS3's current
+  [`Avoid redundant XFloat normalization in SELB`](https://github.com/RPCS3/rpcs3/commit/82164a54c18e8255f8db86c4d7fe18a587b3a36d)
+  and
+  [`Stop inverting float-to-int saturation on ARM64`](https://github.com/RPCS3/rpcs3/commit/6161ecd7aaf631fdbaf78bc7714db839e15771c8)
+  changes reinforce the transferable rule: remove redundant ARM64 materialization only when the IR
+  representation and an exact semantic predicate prove it safe. No RPCS3 code was copied.
+- Dynarmic previously emitted a standalone immediate LSL/LSR/ASR/ROR and then AND/EOR/ORR for
+  ordinary no-flags A32 logical operations. ARM64 now aliases a sole immediately adjacent shift
+  producer to its non-immediate source and encodes that shift directly in operand 1 of `And32`,
+  `Eor32`, or `Or32` for immediates 1..31. The single helper shared by producer and consumer proves
+  that neither has an associated pseudo-operation, the producer has one use, adjacency is exact,
+  the shifted value is the consumer's second operand, and the source is not immediate. Flag/carry,
+  shared, non-adjacent, immediate-source, variable, zero/32/RRX, wrong-operand, and unrelated forms
+  retain the established split lowering. This logical-family gate is independent of ADD's measured
+  LSL #1..#4 limit.
+- A disassembly-checked helper compared four independent, eight base-dependent, and eight
+  shifted-index-dependent old/fused bodies for all three logical operations, all four shift kinds,
+  and shifts 1/2/3/4/5/8/16/31. Each of the 288 rows per core used 100,000 iterations and nine
+  alternating-order median rounds; every checksum matched. Old-over-fused median ranges were:
+
+  | Thor core | Independent | Base dependency | Shifted-index dependency |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.6663x-2.1421x | 0.9999x-1.0001x | 0.9999x-1.0573x |
+  | A715 CPU 3 | 1.3833x-1.4687x | 1.0104x-1.0151x | 1.9998x-2.0000x |
+  | A710 CPU 6 | 1.7897x-1.8011x | 0.9998x-1.0002x | 1.9996x-2.0002x |
+  | X3 CPU 7 | 1.8106x-2.0620x | 0.9998x-1.0002x | 2.0000x-2.0002x |
+
+  Thor reported AC power, no USB or wireless charging, 80% charge, 4.271 V, and 25.0 C at the
+  start. These are wall-powered instruction-kernel timings, not battery-discharge watt results.
+- The A710 and X3 runs used corrected core wake, kill, and reap sequencing before timing. Isolated
+  losses from an earlier narrow run did not repeat in the expanded matrix. Preconditioned
+  10,000,000-iteration, 21-round confirmations measured 1.003857x for A510 AND/ROR #31
+  base-dependent, 1.000026x for A710 ORR/LSL #5 base-dependent, and 1.000111x for X3 EOR/LSR #5
+  base-dependent. The expanded corrected matrix's overall minima were 0.999866x on A510,
+  1.010399x on A715, 0.999824x on A710, and 0.999808x on X3; no row fell below 0.995x.
+- Temporary actual-emitter tracing captured all 84 accepted operation/shift-kind/representative-
+  amount combinations for shifts 1/2/3/4/5/16/31. `llvm-objdump` decoded representative shift-5
+  words as exactly one `and`, `eor`, or `orr w20,w19,w19,lsl/lsr/asr/ror #5`; the raw instruction
+  families were `0a13/0a53/0a93/0ad3`, `4a13/4a53/4a93/4ad3`, and
+  `2a13/2a53/2a93/2ad3`. No shift-zero case entered the fused path. The trace hook was removed
+  before the final build. The clean unstripped test ELF was 449,136,576 bytes; its temporary
+  stripped copy was 26,164,680 bytes with SHA-256
+  `D9351899F9A8A2D99C790A6706985DF3F0ABF021C6E2C394F5B2DE0ED04ACF34`.
+- Permanent ARM and Thumb-2 coverage exercises AND/EOR/ORR, LSL/LSR/ASR/ROR, encoded shifts
+  0/1/2/3/4/5/16/31, all five destination/source alias layouts, full-width and signed-boundary
+  inputs, flag-setting fallbacks including RRX and shift-32 semantics, every unrelated GPR,
+  NZCV/Q/GE, and FPSCR. The final focused case passed 156,672 assertions independently on A510 CPU
+  0, A715 CPU 3, A710 CPU 6, and X3 CPU 7. The final trace-free full `[core][arm][dynarmic]` suite
+  passed 319,124 assertions in 43 cases on A715. Source/test commit `633537612` was pushed directly
+  to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 11 seconds
+  with ThinLTO and ARMv8 NEON enabled. The ARM64-only APK is 29,008,424 bytes, has SHA-256
+  `E7DDBD34AA999F105B2BF1C6B6251D81441EDF87A43B4F74A775E9560EB54576`, and reports package
+  `org.azahar_emu.azahar.debug` version `633537612-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID. Neither app nor game was launched.
+- Exact cleanup removed 2,497,710,884 logical host bytes: 26,291,501 bytes of bounded scratch, the
+  449,136,576-byte unstripped test ELF, and 2,022,282,807 bytes of reproducible Gradle/JNI/R8/
+  native-symbol/mapping staging. C: recovered 2,055,376,896 physical bytes and reports
+  56,363,606,016 bytes free. The retained active ARM64 CMake/Ninja cache is 2,792,154,322 bytes;
+  retained build output is only the 29,008,424-byte APK and 476-byte metadata. Both exact device
+  helpers totaling 26,278,248 bytes were removed from `/data/local/tmp`. No PDF, benchmark, test
+  binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 123 in the overlapping Thor ledger. It removes one host
+  instruction only when matching guest shifted-logical paths execute; its exact-loop ratios cannot
+  be added to the other 122 entries or converted into whole-emulator FPS or watts. Lower code-cache,
+  fetch/decode, dependency, and integer-issue work makes lower energy plausible, but whole-game
+  frametime, thermal slope, and battery watts still require a controlled matched title/scene/cache/
+  renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.

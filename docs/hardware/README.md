@@ -39,6 +39,17 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   range. Preserve normal subtraction carry-in and keep borrow/reverse-subtract, carry-producing,
   shared, variable, zero/32, and non-adjacent forms split. This result remains separate from ADD's
   narrower measured LSL gate.
+- Treat shifted logical operations as their own measured family. The A-profile architecture manual
+  defines 32-bit shifted-register `AND`, `EOR`, and `ORR` with `LSL`, `LSR`, `ASR`, or `ROR`
+  immediates through 31. The standalone logical-operation timing rows are on X3 page 15, A715 and
+  A710 page 17, and A510 page 14; removing that materialized shift reduces a real instruction and
+  front-end/integer issue work. Exact all-core runs accepted 1..31 because no corrected row
+  regressed: independent work improved on every core, shifted-index chains improved on the big
+  cores, and neutral dependency shapes stayed within about 0.02% after long confirmation. Fold
+  only a sole adjacent no-flags/no-carry A32 shift feeding operand 1 of AND/EOR/ORR; preserve
+  shared, non-adjacent, immediate-source, variable, zero/32/RRX, flag/carry, and unrelated paths.
+  Encoding availability and the manuals support the shape, but only the measured Thor gate supports
+  the performance decision, which remains separate from ADD's narrower LSL rule.
 - Do not globally substitute same-width `SABA/UABA` for `SABD/UABD` plus `ADD`. The checked rows
   list `SABD/UABD` latency/throughput as 2/4 on X3 page 25, 2/2 on A715 pages 27-28 and A710 page
   42, and latency 3 with split `2,1` throughput on A510 page 35. Accumulating `SABA/UABA` is 4(1)/2

@@ -953,6 +953,17 @@ test passed 65,280 assertions and the complete ARM Dynarmic suite passed 162,452
 cases. This is optimization 122; it removes one affected host instruction and does not mean the
 whole emulator is 1.5x-2x faster or establish a battery-watt reduction.
 
+Ordinary no-flags A32 `AND`, `EOR`, and `ORR` now fold a sole immediately adjacent `LSL`, `LSR`,
+`ASR`, or `ROR #1..#31` source into one ARM64 shifted-register logical instruction. The shared
+producer/consumer gate rejects flag or carry users, shared/non-adjacent shifts, immediate sources,
+variable shifts, encoded zero/32/RRX cases, and unrelated consumers. Actual JIT words decoded as
+one shifted `and`/`eor`/`orr`, while permanent ARM/Thumb-2 tests preserve every alias layout,
+full-width results, flags, unrelated registers, and FPSCR. Exact affected-loop medians ranged from
+**1.67x-2.14x on A510, 1.38x-2.00x on A715, 1.79x-2.00x on A710, and 1.81x-2.00x on X3** where
+the dependency shape benefits; neutral shapes remained within about 0.02% after corrected long
+confirmations. This is optimization 123. It removes one matching host instruction, not an additive
+whole-emulator speedup or a measured battery-watt reduction.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
