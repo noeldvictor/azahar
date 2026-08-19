@@ -6123,8 +6123,8 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - A broader `[video_core]` audit exposed one separate existing failure: after a resource-pool
   refresh, `CommitResource()` updates its local `gpu_tick` but its search lambda still holds the
   pre-refresh value captured by copy, so the exact Vulkan test grows from four to eight resources
-  instead of reusing index zero. This did not affect the shader acceptance result and remains a
-  follow-up memory/allocation/power candidate rather than being mixed into this source commit.
+  instead of reusing index zero. This did not affect the shader acceptance result; it was queued as
+  a separate memory/allocation/power candidate and is resolved by entry 127 below.
 - Exact post-commit JDK 17 packaging with
   `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 1 minute 39 seconds
   with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,440 bytes, has SHA-256
@@ -6145,3 +6145,50 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   plausible only when these guest shader operations execute; whole-game frametime, thermal slope,
   and battery watts still require a controlled matched title/scene/cache/renderer/driver/
   resolution/layout/performance-mode/fan/brightness/duration A/B run.
+
+## Vulkan Refreshed Resource-Pool Reuse (2026-08-19)
+
+- The full video-core verification after optimization 126 exposed an inherited upstream resource-
+  pool bug. `CommitResource()` loaded `gpu_tick`, captured that value by copy in its search lambda,
+  called `Refresh()`, updated the local variable, and then unknowingly searched with the original
+  snapshot. This dates to the 2024 descriptor-management rewrite and remains present in current
+  `upstream/master`; it was not introduced by this fork's later timeline-polling cadence change.
+- Resource searches now take `completed_tick` as an explicit argument. The initial hinted-tail
+  search uses cached completion; after refresh, both the tail retry and the wrapped-prefix search
+  use the newly loaded monotonic `KnownGpuTick()`. Circular first-free ordering, one refresh on
+  exhaustion, resource tick assignment, and true overflow behavior remain unchanged.
+- The natural four-entry regression advances submission ticks 1-4 while completion stays cached at
+  zero, then refreshes completion to two. The inherited code returned index four and recorded an
+  allocation from `[4,8)`; the fixed code returns reusable index zero and leaves the sole `[0,4)`
+  allocation intact. A second seeded case places the only newly reusable entry before a nonzero
+  hint, proving the refreshed snapshot reaches the wrapped-prefix search without another growth.
+  In production, each false command-pool miss allocates four command buffers; a descriptor-heap
+  miss grows by a 64-set batch and can create another Vulkan descriptor pool if existing capacity
+  is exhausted. Avoided allocation frequency and bytes remain title/workload dependent.
+- The clean `[video_core][vulkan]` selection passed 45 assertions in four cases independently on
+  A510 CPU 0, A715 CPU 3, A710 CPU 6, and X3 CPU 7. The previously failing full `[video_core]`
+  selection then passed 135,030 assertions in 71 cases on A715. The stripped ARM64 test was
+  26,180,296 bytes with SHA-256
+  `3811D876C645C486575703021F02616C9BEA885FBCDCC6CC8F9C72D4D1195D27`. Source/test commit
+  `18bb05bf0` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 2 minutes 58 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,496 bytes, has SHA-256
+  `6C46D8762F36773B3B04573DD9A0AE83022DF7F4D8004A7693A1FC0C07B9E7D2`, and reports package
+  `org.azahar_emu.azahar.debug` version `18bb05bf0-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no device PID. Neither app nor game was launched; Thor
+  remained on AC power at 80% and 21.0 C.
+- Exact bounded cleanup removed 2,497,884,433 logical host bytes: 26,181,517 bytes of scratch, the
+  449,252,384-byte unstripped test ELF, and 2,022,450,532 bytes of reproducible Gradle/JNI/R8/
+  symbol/mapping staging. C: recovered 2,055,311,360 physical bytes and reports 55,878,307,840 bytes
+  free. The retained active ARM64 CMake/Ninja cache is 2,793,544,395 bytes; retained build output is
+  only the 29,010,496-byte APK and 476-byte metadata. Three exact device helpers totaling 26,182,412
+  bytes were removed from `/data/local/tmp`; the generalized affinity helper was corrected to reap
+  every temporary worker, and a process audit found no survivor. No PDF, benchmark, test binary,
+  rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 127 in the overlapping Thor ledger. It prevents unnecessary
+  Vulkan allocation and persistent pool growth when a refresh proves resources reusable. It does
+  not claim an Arm instruction-kernel speedup, an additive whole-emulator FPS percentage, or
+  measured watt savings. Lower CPU/driver allocation work and lower command/descriptor memory are
+  expected only on affected exhaustion paths; matched title/scene/cache/renderer/driver/resolution/
+  layout/performance-mode/fan/brightness/duration A/B remains necessary for whole-game evidence.

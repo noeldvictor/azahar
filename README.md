@@ -1018,6 +1018,15 @@ relaxed ordering while Vulkan submission/completion and existing mutexes continu
 the actual work and resource queues. Final ARM64 code uses relaxed `LDADD`/CAS helpers and ordinary
 `LDR` counter reads, and each refresh makes at most one timeline-counter driver query.
 
+Resource-pool exhaustion now actually consumes that refreshed completion value. The inherited
+search closure captured the old tick by copy, so even after Adreno reported completed work it could
+miss every reusable object and grow the pool. The search now receives the current snapshot
+explicitly for both the hinted tail and wrapped prefix. The exact regression changes a false 4->8
+command-buffer growth into reuse of index zero; the same base pool backs 64-at-a-time descriptor-set
+allocation. All 45 Vulkan assertions passed on every Thor CPU class and the full video-core suite
+passed 135,030 assertions. This is optimization 127: it removes unnecessary Vulkan allocations and
+memory growth on the affected exhaustion path, not a measured whole-game FPS or watt percentage.
+
 When duplicate-frame suppression or Eco Turbo skips host presentation, Vulkan now flushes pending
 3DS rendering work to the graphics queue without waiting for the GPU to finish it. The old fallback
 performed a full timeline wait on every non-presented VBlank, unnecessarily serializing the

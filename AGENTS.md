@@ -294,6 +294,12 @@
   call rather than an inlined tiny-copy loop.
 - Vulkan `CommandChunk::Empty()` must derive emptiness from its linked-list head: successful first record sets `first`, and `ExecuteAll()` destroys every command before clearing it. Do not add a separate stale counter. Preserve the scheduler's queue-before-execution lock order and shared-condition-variable `notify_all` behavior; they prevent worker/waiter races.
 - Routine Vulkan timeline progress polling is deliberately limited to every fourth submitted tick, matching the command-buffer pool depth. Preserve immediate `Refresh()` calls for explicit waits and exhausted resource pools, monotonic cached completion, and conservative garbage-collection behavior; stale-low progress may delay reuse/deletion but must never permit unfinished GPU resources to be reused or destroyed.
+- `ResourcePool::CommitResource()` must pass the current completion snapshot explicitly into every
+  search. After `Refresh()`, both the hinted tail and wrapped prefix must use the newly loaded
+  `KnownGpuTick()`; never capture the pre-refresh value by copy in the search closure. Preserve
+  first-free circular order and grow only after both refreshed ranges fail. A false miss allocates
+  four more Vulkan command buffers or another 64-descriptor-set batch, so retain forward, wrapped,
+  refresh-count, allocation-count, and full `[video_core]` coverage.
 - Vulkan `current_tick` and `gpu_tick` are numerical sequence/completion caches, not memory-publication primitives. Keep their loads, increment, and monotonic `AdvanceGpuTick()` compare/exchange relaxed unless new side data is explicitly published through a tick; Vulkan submission/completion and the existing queue/fence mutexes provide the required ordering. Query the timeline-semaphore driver counter once per `Refresh()` and fold it into the cache with atomic max so a CAS retry never repeats the driver call or regresses known completion.
 - A Vulkan frame that skips host presentation must still submit pending emulation commands with
   `Scheduler::Flush()`, but it must not call `Finish()` or otherwise wait for GPU completion.

@@ -79,6 +79,12 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   stream-buffer wrap waits, and conservative deferred destruction instead of blocking the CPU on
   every duplicate/Eco-Turbo-skipped frame. Retain explicit waits for CPU readback and resource
   destruction. This preserves CPU/GPU overlap and avoids needless Adreno completion wakeups.
+- Treat a refreshed Vulkan timeline value as a new resource-reuse snapshot. Pass that value into
+  both halves of a circular pool search rather than closing over the stale pre-refresh value. A
+  false miss grows Thor's command-buffer pool by four objects or allocates another 64 descriptor
+  sets even when Adreno has completed reusable work. This is a software lifetime invariant rather
+  than an Arm instruction-timing claim: exact forward/wrapped reuse and allocation-count tests are
+  the acceptance evidence.
 - Treat normal native presentation as one FIFO worker command, not a CPU-worker join or two
   scheduler dispatches. Submit the render-ready semaphore first, release the submit lock, enqueue
   the frame, release its predicate mutex, and only then notify presentation. Completion-tick
