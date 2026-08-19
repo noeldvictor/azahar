@@ -914,6 +914,18 @@ independent and dependent patterns. The clean permanent suite passed 97,172 asse
 cases. This is optimization 119; it removes one affected host instruction and is not an
 emulator-wide FPS, thermal, or battery-watt claim.
 
+Exact sole-use adjacent A32 `LSL #1..#4` plus flag-free `ADD` chains now lower to one ARM64
+shifted-register `ADD` instead of materializing the shift first. Flags/carry, shared or
+non-adjacent shifts, immediate sources, variable shifts, and shifts outside that measured range
+retain the established lowering. Actual JIT words decoded with immediate fields 1, 2, 3, and 4,
+and the clean Thor suite passed 106,692 assertions in 42 cases. Disassembly-checked exact-loop
+medians for the independent form improved **1.29x-1.49x on A510, 1.81x-1.84x on A715,
+1.89x on A710, and 1.85x-2.00x on X3**; dependency shapes ranged from neutral on A510 to about
+2.00x when the shifted index was the chain on the big cores. Shifts 16/31 deliberately remain
+split after their base-dependent forms regressed to about 0.50x on A715/A710/X3. This is
+optimization 120 in the overlapping optimization/candidate ledger, not an additive speedup or a
+whole-emulator FPS, thermal, or battery-watt claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

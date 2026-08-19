@@ -737,6 +737,20 @@
   median affected-path time by 18.9%/53.8% for byte/halfword on A510 and 1.7%/1.7% on A715, while
   A710 was neutral within 0.1%; CPU 5 and X3 affinity were parked during this run. Treat the win as
   path-local instruction/code-cache/front-end work until a matched title and battery-power A/B.
+- ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32
+  `LogicalShiftLeft32` into a following flag-free/carry-free `Add32` only for immediate shifts
+  1 through 4. Emit one shifted-register `ADD Wd,Wbase,Windex,LSL #shift`. Keep flags/carry,
+  shared, non-adjacent, immediate-source, variable, zero, and shifts 5 through 31 on the
+  established lowering. Preserve ARM and Thumb-2 encodings, destination/base/index aliases,
+  full-width wrap, unrelated GPRs, NZCV/Q/GE, and FPSCR in permanent tests. Do not widen the gate
+  from instruction-count intuition: exact Thor base-dependent shifts 16/31 regressed to about
+  0.50x on A715/A710/X3, while the accepted 1..4 range was independently rechecked on A510.
+- Do not globally replace A32/A64 same-width `SABD/UABD` plus `ADD` for `VABA` with native
+  `SABA/UABA`. Although independent and big-core dependency patterns can win, exact accumulator-
+  chain measurements regressed to 0.6595x-0.6890x on A510 for signed/unsigned 8/16/32-bit forms.
+  Keep the split lowering unless a future gate proves its dependency shape and wins on every
+  intended Thor core class. The manuals' slower A510 `SABA/UABA` timing is a warning, not a
+  substitute for the retained all-core benchmark evidence.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

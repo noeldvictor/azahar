@@ -5614,3 +5614,93 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   but whole-game FPS, frametime, temperature, thermal slope, and watts still require a controlled
   matched title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/
   duration A/B run.
+
+## ARM64 Small Shifted-ADD Folding and VABA Rejection (2026-08-18)
+
+- The first candidate was the obvious AArch64 replacement for same-width A32/A64 `VABA`:
+  `SABD/UABD` followed by `ADD` can be expressed as one native accumulating `SABA/UABA`. The
+  complete Cortex tables warned that this was not uniformly cheaper. X3 page 25 lists
+  `SABD/UABD` latency/throughput 2/4 and `SABA/UABA` 4(1)/2; A715 pages 27-28 and A710 page 42
+  list 2/2 versus 4(1)/1; A510 page 35 lists `SABD/UABD` latency 3 with split `2,1` throughput but
+  `SABA/UABA` latency 6 with `1/2,1/4` throughput. No PDF or rendered page entered Git.
+- A disassembly-checked helper compared eight independent and eight true accumulator-chain
+  `SABD/UABD; ADD` operations with matching `SABA/UABA` operations. Each of nine alternating-order
+  samples executed 4,000,000 iterations, or 32,000,000 affected operations, with matching
+  checksums. Old/fused medians on A510 were:
+
+  | Form | Independent | Accumulator dependency |
+  | --- | ---: | ---: |
+  | `SABA.8` | 2.005866x | 0.670348x |
+  | `SABA.16` | 1.868680x | 0.670527x |
+  | `SABA.32` | 1.972331x | 0.688968x |
+  | `UABA.8` | 2.051850x | 0.671513x |
+  | `UABA.16` | 1.971682x | 0.661446x |
+  | `UABA.32` | 1.999445x | 0.659546x |
+
+- The same six forms were 1.0168x-1.0337x independent and 1.9991x-2.0005x dependent on A715,
+  0.9994x-1.0012x independent and 1.6656x-1.6671x dependent on A710, and
+  1.9237x-2.0002x independent and 1.7325x-1.7339x dependent on X3. The native accumulator looked
+  excellent on most big-core patterns but made the A510 accumulator chain 31.1%-34.0% slower.
+  Global fusion was therefore rejected and no VABA source change was retained.
+- The accepted candidate instead targets ordinary no-flags A32 adds whose second operand is a
+  sole-use, immediately adjacent `LogicalShiftLeft32` by an immediate 1 through 4. ARM64 aliases
+  the shift result to its input without emitting code and uses one
+  `ADD Wd,Wbase,Windex,LSL #shift`. Flags/carry, shared/non-adjacent shifts, immediate sources,
+  variable/zero shifts, shifts 5 through 31, subtraction, and unrelated consumers retain the old
+  lowering. The producer and consumer use the same eligibility helper so a fallback cannot read an
+  unshifted alias.
+- The exact helper compared eight independent, eight base-dependent, and eight index-dependent
+  old `LSL; ADD` chains with one-instruction shifted ADD chains. The main run used 4,000,000
+  iterations and nine alternating-order samples per shape. A longer A510 confirmation used
+  8,000,000 iterations, or 64,000,000 affected operations, and 15 samples. Old/fused A510 results
+  for the retained gate were:
+
+  | Shift | Independent | Base dependency | Index dependency |
+  | ---: | ---: | ---: | ---: |
+  | 1 | 1.286088x | 1.001042x | 1.007412x |
+  | 2 | 1.475840x | 0.981775x | 0.997746x |
+  | 3 | 1.335876x | 0.989126x | 0.987284x |
+  | 4 | 1.492759x | 1.012459x | 1.006867x |
+
+- For shifts 1 through 4, A715 independent/base/index results were 1.8124x-1.8351x,
+  1.008x-1.011x, and 1.9985x-2.0005x; A710 was 1.890x-1.893x, about 1.000x, and
+  1.999x-2.000x; X3 was 1.8477x-2.0012x, about 1.000x, and about 2.000x. The bounded gate trades
+  large independent/front-end and big-core shifted-index wins for A510 dependency results close to
+  one. It does not claim every synthetic dependency shape improves.
+- Wider shifts were explicitly rejected. For shifts 16/31 the base-dependent form fell to about
+  0.505x on A715, 0.500x on A710, and 0.500x on X3 even though independent forms sometimes won.
+  The permanent gate therefore stops at four instead of assuming that fewer instructions always
+  means better heterogeneous-core scheduling.
+- Temporary emitter instrumentation captured 128 fused JIT emissions: 32 each for shifts 1, 2,
+  3, and 4. The unique words were `0b130674`, `0b130a74`, `0b130e74`, and `0b131274`; their opcode
+  and immediate fields validate as single 32-bit shifted-register ADD instructions with immediate
+  1, 2, 3, and 4. The trace was removed, the emitter and production library were rebuilt, and both
+  the 449,025,552-byte unstripped and 26,153,672-byte stripped clean test binaries contained no
+  trace marker.
+- Permanent ARM and Thumb-2 coverage exercises shifts 1/2/3/4 plus unfused 5/16/31, distinct
+  operands, destination/base/index aliases, base-equals-index and all-alias forms, dirty/boundary
+  inputs, 32-bit wrap, every unrelated GPR, NZCV/Q/GE, and FPSCR. The clean focused case passed
+  9,520 assertions, and the final Thor `[core][arm][dynarmic]` suite passed 106,692 assertions in
+  42 cases. Source/test commit `e984ad250` was pushed directly to `origin/master` with command-line
+  Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 7 seconds.
+  The ARM64-only APK is 29,007,336 bytes, has SHA-256
+  `039E69AF41858A704545E4ABB3BCB4610C0F99C038B9F8DDBC95A25757FD0B6A`, and reports package
+  `org.azahar_emu.azahar.debug` version `e984ad250-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID; neither app nor game was launched. Thor reported
+  AC power, 80%, 4.271 V, and 25.0 C, so this is not battery-discharge watt evidence.
+- Cleanup removed 2,550,451,023 logical host bytes: 79,360,075 bytes of scratch, the
+  449,025,552-byte unstripped test ELF, and reproducible Gradle/JNI/R8/native-symbol/mapping
+  staging. C: recovered 2,106,241,024 physical bytes and reports 56,474,251,264 bytes free. The
+  retained active ARM64 CMake/Ninja cache is 2,797,552,350 bytes; retained build output is only the
+  29,007,336-byte APK and 476-byte metadata. Three present device helpers totaling 52,669,048
+  bytes were removed from `/data/local/tmp`; the already-absent VABA helper was also included in
+  the exact cleanup command. Existing unrelated screenshots were left untouched. No PDF,
+  benchmark, test binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 120 in the overlapping Thor ledger: one bounded shifted-ADD
+  optimization shipped and one unsafe global VABA fusion was permanently rejected. The exact-loop
+  ratios cannot be added to the other 119 entries or treated as whole-game FPS, sustained watts,
+  frametime, or thermal improvement. Those still require a controlled matched title/scene/cache/
+  renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run, which was
+  intentionally not performed because the app/game was not to be launched.
