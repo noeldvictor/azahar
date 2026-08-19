@@ -59,6 +59,32 @@ static bool IsImmediatelySignExtended(const IR::Inst* value, IR::Opcode word_opc
     return consumer->GetArg(0).GetInst() == value;
 }
 
+static const IR::Inst* GetImmediatelyChainedNarrowSignExtension(
+    const IR::Inst* long_extension) {
+    if (!long_extension || long_extension->GetOpcode() != IR::Opcode::SignExtendWordToLong) {
+        return nullptr;
+    }
+
+    const IR::Value word = long_extension->GetArg(0);
+    if (word.IsImmediate()) {
+        return nullptr;
+    }
+
+    const IR::Inst* narrow_extension = word.GetInst();
+    if ((narrow_extension->GetOpcode() != IR::Opcode::SignExtendByteToWord &&
+         narrow_extension->GetOpcode() != IR::Opcode::SignExtendHalfToWord) ||
+        narrow_extension->GetArg(0).IsImmediate() || narrow_extension->UseCount() != 1 ||
+        narrow_extension->GetNextInstruction() != long_extension) {
+        return nullptr;
+    }
+    return narrow_extension;
+}
+
+static bool IsImmediatelySignExtendedToLong(const IR::Inst* narrow_extension) {
+    return GetImmediatelyChainedNarrowSignExtension(narrow_extension->GetNextInstruction()) ==
+           narrow_extension;
+}
+
 static const IR::Inst* FindSoleConsumer(const IR::Inst* value) {
     if (value->UseCount() != 1) {
         return nullptr;
@@ -1495,6 +1521,12 @@ void EmitIR<IR::Opcode::UnsignedExtendAndAdd32>(oaknut::CodeGenerator& code, Emi
 
 template<>
 void EmitIR<IR::Opcode::SignExtendByteToWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelySignExtendedToLong(inst)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     const IR::Value source = inst->GetArg(0);
     if (!source.IsImmediate() && IsSignExtendingA32MemoryRead(source.GetInstRecursive())) {
         auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -1509,6 +1541,12 @@ void EmitIR<IR::Opcode::SignExtendByteToWord>(oaknut::CodeGenerator& code, EmitC
 
 template<>
 void EmitIR<IR::Opcode::SignExtendHalfToWord>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (IsImmediatelySignExtendedToLong(inst)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     const IR::Value source = inst->GetArg(0);
     if (!source.IsImmediate() && IsSignExtendingA32MemoryRead(source.GetInstRecursive())) {
         auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -1537,6 +1575,20 @@ void EmitIR<IR::Opcode::SignExtendHalfToLong>(oaknut::CodeGenerator& code, EmitC
 
 template<>
 void EmitIR<IR::Opcode::SignExtendWordToLong>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (const IR::Inst* narrow_extension = GetImmediatelyChainedNarrowSignExtension(inst)) {
+        auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+        auto Xresult = ctx.reg_alloc.WriteX(inst);
+        auto Woperand = ctx.reg_alloc.ReadW(args[0]);
+        RegAlloc::Realize(Xresult, Woperand);
+
+        if (narrow_extension->GetOpcode() == IR::Opcode::SignExtendByteToWord) {
+            code.SXTB(Xresult, Woperand);
+        } else {
+            code.SXTH(Xresult, Woperand);
+        }
+        return;
+    }
+
     EmitTwoOp<64>(
         code, ctx, inst,
         [&](auto& Xresult, auto& Xoperand) { code.SXTW(Xresult, Xoperand->toW()); });

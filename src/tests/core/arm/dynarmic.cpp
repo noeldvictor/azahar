@@ -2166,6 +2166,100 @@ TEST_CASE("Dynarmic A32 signed word-by-halfword multiplies preserve edge semanti
     }
 }
 
+TEST_CASE("Dynarmic A32 signed word-by-halfword accumulates preserve sticky Q and aliases",
+          "[core][arm][dynarmic]") {
+    struct Operation {
+        std::uint32_t instruction;
+        std::uint8_t n;
+        std::uint8_t m;
+        std::uint8_t a;
+        bool top;
+        bool thumb;
+    };
+    constexpr std::array operations{
+        Operation{0xe1204382, 2, 3, 4, false, false}, // ARM SMLAWB R0, R2, R3, R4
+        Operation{0xe12043c2, 2, 3, 4, true, false},  // ARM SMLAWT R0, R2, R3, R4
+        Operation{0xe1204380, 0, 3, 4, false, false}, // ARM SMLAWB R0, R0, R3, R4
+        Operation{0xe12043c0, 0, 3, 4, true, false},  // ARM SMLAWT R0, R0, R3, R4
+        Operation{0xe1204082, 2, 0, 4, false, false}, // ARM SMLAWB R0, R2, R0, R4
+        Operation{0xe12040c2, 2, 0, 4, true, false},  // ARM SMLAWT R0, R2, R0, R4
+        Operation{0xe1200382, 2, 3, 0, false, false}, // ARM SMLAWB R0, R2, R3, R0
+        Operation{0xe12003c2, 2, 3, 0, true, false},  // ARM SMLAWT R0, R2, R3, R0
+        Operation{0xe1200080, 0, 0, 0, false, false}, // ARM SMLAWB R0, R0, R0, R0
+        Operation{0xe12000c0, 0, 0, 0, true, false},  // ARM SMLAWT R0, R0, R0, R0
+        Operation{0x4003fb32, 2, 3, 4, false, true}, // Thumb SMLAWB R0, R2, R3, R4
+        Operation{0x4013fb32, 2, 3, 4, true, true},  // Thumb SMLAWT R0, R2, R3, R4
+        Operation{0x4003fb30, 0, 3, 4, false, true}, // Thumb SMLAWB R0, R0, R3, R4
+        Operation{0x4013fb30, 0, 3, 4, true, true},  // Thumb SMLAWT R0, R0, R3, R4
+        Operation{0x4000fb32, 2, 0, 4, false, true}, // Thumb SMLAWB R0, R2, R0, R4
+        Operation{0x4010fb32, 2, 0, 4, true, true},  // Thumb SMLAWT R0, R2, R0, R4
+        Operation{0x0003fb32, 2, 3, 0, false, true}, // Thumb SMLAWB R0, R2, R3, R0
+        Operation{0x0013fb32, 2, 3, 0, true, true},  // Thumb SMLAWT R0, R2, R3, R0
+        Operation{0x0000fb30, 0, 0, 0, false, true}, // Thumb SMLAWB R0, R0, R0, R0
+        Operation{0x0010fb30, 0, 0, 0, true, true},  // Thumb SMLAWT R0, R0, R0, R0
+    };
+    constexpr std::array<std::array<std::uint32_t, 5>, 6> inputs{
+        std::array{0x7fffffffu, 0x7fff8000u, 0x7fffffffu, 0x7fff8000u, 0x70000000u},
+        std::array{0x80007fffu, 0x80007fffu, 0x80000000u, 0x80007fffu, 0x90000000u},
+        std::array{0xffffffffu, 0x0001ffffu, 0xffffffffu, 0x0001ffffu, 0xffffffffu},
+        std::array{0x12345678u, 0xfedcba98u, 0x87654321u, 0x13579bdfu, 0x2468ace0u},
+        std::array{0x00000000u, 0x8000ffffu, 0x00000000u, 0x8000ffffu, 0x7fffffffu},
+        std::array{0x00000001u, 0xffff0001u, 0x00000001u, 0xffff0001u, 0x80000000u},
+    };
+    constexpr std::uint32_t preserved_flags = 0xa0050000; // N/C/GE
+    constexpr std::uint32_t q_flag = 1U << 27;
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const auto& operation : operations) {
+        for (const auto& input : inputs) {
+            for (const bool initial_q : {false, true}) {
+                CAPTURE(operation.instruction, input, initial_q);
+                ArmTestCallbacks callbacks;
+                callbacks.code = {
+                    operation.instruction,
+                    operation.thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+                };
+                Dynarmic::A32::UserConfig config{&callbacks};
+                Dynarmic::A32::Jit jit{config};
+
+                std::array<std::uint32_t, 16> initial_regs{
+                    input[0],   input[1],   input[2],   input[3],   input[4],   0x55aa55aa,
+                    0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001, 0x01234567, 0x89abcdef,
+                    0x0f1e2d3c, 0x4b5a6978, 0x87654321, 0,
+                };
+                const auto signed_n =
+                    static_cast<std::int64_t>(static_cast<std::int32_t>(initial_regs[operation.n]));
+                const auto signed_m = static_cast<std::int64_t>(static_cast<std::int16_t>(
+                    initial_regs[operation.m] >> (operation.top ? 16 : 0)));
+                const std::uint32_t product_word = static_cast<std::uint32_t>(
+                    static_cast<std::uint64_t>(signed_n * signed_m) >> 16);
+                const std::uint32_t addend = initial_regs[operation.a];
+                const std::uint32_t expected = product_word + addend;
+                const std::int64_t signed_sum =
+                    static_cast<std::int64_t>(static_cast<std::int32_t>(product_word)) +
+                    static_cast<std::int64_t>(static_cast<std::int32_t>(addend));
+                const bool overflow = signed_sum > 0x7fffffffLL || signed_sum < -0x80000000LL;
+
+                jit.Regs() = initial_regs;
+                jit.SetCpsr(preserved_flags | (initial_q ? q_flag : 0) | 0x000001d0 |
+                            (operation.thumb ? 0x20 : 0));
+                jit.SetFpscr(initial_fpscr);
+                callbacks.ticks_left = 2;
+                jit.Run();
+
+                CHECK(jit.Regs()[0] == expected);
+                for (std::size_t reg = 1; reg < 15; ++reg) {
+                    CAPTURE(reg);
+                    CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                }
+                const std::uint32_t expected_q = (initial_q || overflow) ? q_flag : 0;
+                CHECK((jit.Cpsr() & 0xf80f0000) == (preserved_flags | expected_q));
+                CHECK(jit.Fpscr() == initial_fpscr);
+            }
+        }
+    }
+}
+
 TEST_CASE("Dynarmic A32 register shifts preserve the complete byte-sized amount",
           "[core][arm][dynarmic]") {
     ArmTestCallbacks callbacks;
