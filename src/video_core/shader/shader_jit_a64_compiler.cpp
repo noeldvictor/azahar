@@ -563,9 +563,6 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
             return;
         }
 
-        const std::size_t first_byte_offset = groups[0].lane * sizeof(u32);
-        ADD(XSCRATCH0, dest_ptr, dest_offset_disp + first_byte_offset);
-
         const auto store_group = [&](const StoreGroup& group, bool post_indexed) {
             if (group.bytes == 8) {
                 if (post_indexed) {
@@ -580,7 +577,26 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
             }
         };
 
+        // Lane zero is also the low scalar S/D register, so it can use STR's scaled immediate
+        // directly. Besides removing the address ADD, scalar STR is substantially cheaper than
+        // the equivalent ST1 element form on the Thor's Cortex-A510 cores. Other lanes still need
+        // ST1 because their source element is not at the bottom of the SIMD register.
+        const auto store_low_group_direct = [&](const StoreGroup& group) {
+            ASSERT(group.lane == 0);
+            if (group.bytes == 8) {
+                STR(src.toD(), dest_ptr, dest_offset_disp);
+            } else {
+                STR(src.toS(), dest_ptr, dest_offset_disp);
+            }
+        };
+
+        const std::size_t first_byte_offset = groups[0].lane * sizeof(u32);
         if (group_count == 1) {
+            if (groups[0].lane == 0) {
+                store_low_group_direct(groups[0]);
+                return;
+            }
+            ADD(XSCRATCH0, dest_ptr, dest_offset_disp + first_byte_offset);
             store_group(groups[0], false);
             return;
         }
@@ -588,6 +604,18 @@ void JitShader::Compile_DestEnable(Instruction instr, QReg src) {
         const std::size_t second_byte_offset = groups[1].lane * sizeof(u32);
         const std::size_t group_distance = second_byte_offset - first_byte_offset;
         const bool groups_are_contiguous = group_distance == groups[0].bytes;
+
+        // A noncontiguous second group already needs a fresh address. Store a low first group
+        // directly, then form only the second group's address. Keep contiguous XYZ on its current
+        // post-indexed two-store path because this substitution would not remove an instruction.
+        if (groups[0].lane == 0 && !groups_are_contiguous) {
+            store_low_group_direct(groups[0]);
+            ADD(XSCRATCH0, dest_ptr, dest_offset_disp + second_byte_offset);
+            store_group(groups[1], false);
+            return;
+        }
+
+        ADD(XSCRATCH0, dest_ptr, dest_offset_disp + first_byte_offset);
         store_group(groups[0], groups_are_contiguous);
         if (!groups_are_contiguous) {
             ADD(XSCRATCH0, XSCRATCH0, group_distance);

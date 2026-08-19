@@ -946,6 +946,57 @@ SHADER_TEST_CASE("Dest Mask", "[video_core][shader]") {
         }
     }
 
+    SECTION("Low-lane direct stores preserve far output and temporary registers") {
+        constexpr std::array masks = {"x", "xy", "xz", "xw", "xyw", "xzw"};
+        constexpr Common::Vec4f sentinel = {-31.0f, -32.0f, -33.0f, -34.0f};
+        const auto sh_far_output = DestRegister::MakeOutput(15);
+        const auto sh_far_temp = DestRegister::MakeTemporary(15);
+        const auto sh_far_temp_source = SourceRegister::MakeTemporary(15);
+        const auto sh_sentinel_input = SourceRegister::MakeInput(1);
+
+        const auto check_components = [&](const Common::Vec4<Pica::f24>& result,
+                                          const char* mask) {
+            for (std::size_t component = 0; component < 4; ++component) {
+                bool enabled = false;
+                for (const char* current = mask; *current != '\0'; ++current) {
+                    enabled |= *current == "xyzw"[component];
+                }
+                const float expected = enabled ? iota_vec[component] : sentinel[component];
+                REQUIRE(result[component].ToFloat32() == expected);
+            }
+        };
+
+        for (const char* mask : masks) {
+            CAPTURE(mask);
+            auto temporary_shader = TestType({
+                {OpCode::Id::MOV, sh_far_temp, "xyzw", sh_sentinel_input, "xyzw",
+                 SourceRegister{}, ""},
+                {OpCode::Id::MOV, sh_far_temp, mask, sh_input, "xyzw", SourceRegister{}, ""},
+                {OpCode::Id::MOV, sh_output, "xyzw", sh_far_temp_source, "xyzw",
+                 SourceRegister{}, ""},
+                {OpCode::Id::END},
+            });
+            Pica::ShaderUnit temporary_unit;
+            const std::array temporary_inputs = {iota_vec, sentinel};
+            temporary_shader.RunShader(temporary_unit, temporary_inputs);
+            check_components(temporary_unit.output[temporary_unit.output_bank][0], mask);
+
+            for (const bool output_bank : {false, true}) {
+                auto output_shader = TestType({
+                    {OpCode::Id::MOV, sh_far_output, mask, sh_input, "xyzw", SourceRegister{}, ""},
+                    {OpCode::Id::END},
+                });
+                Pica::ShaderUnit output_unit;
+                output_unit.output_bank = output_bank;
+                output_unit.output[output_bank][15] = {
+                    Pica::f24::FromFloat32(sentinel.x), Pica::f24::FromFloat32(sentinel.y),
+                    Pica::f24::FromFloat32(sentinel.z), Pica::f24::FromFloat32(sentinel.w)};
+                output_shader.RunShader(output_unit, {&iota_vec, 1});
+                check_components(output_unit.output[output_bank][15], mask);
+            }
+        }
+    }
+
     SECTION("An empty hardware mask leaves the destination untouched") {
         auto shader_setup = CompileShaderSetup({
             {OpCode::Id::MOV, sh_output, "x", sh_input, "xyzw", SourceRegister{}, ""},
