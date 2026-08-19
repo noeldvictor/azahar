@@ -2,6 +2,7 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -53,22 +54,37 @@ TEST_CASE("PICA vertex cache lookup matches scalar first-match semantics", "[vid
             duplicate_count);
 }
 
-TEST_CASE("PICA vertex cache copies every live output", "[video_core]") {
+TEST_CASE("PICA vertex cache direct-output gate preserves observable prefixes", "[video_core]") {
     Pica::AttributeBuffer source{};
-    Pica::AttributeBuffer initial{};
+    Pica::AttributeBuffer output_initial{};
+    Pica::AttributeBuffer cache_initial{};
     auto* source_bytes = reinterpret_cast<u8*>(source.data());
-    auto* initial_bytes = reinterpret_cast<u8*>(initial.data());
+    auto* output_initial_bytes = reinterpret_cast<u8*>(output_initial.data());
+    auto* cache_initial_bytes = reinterpret_cast<u8*>(cache_initial.data());
     for (u32 byte = 0; byte < sizeof(source); ++byte) {
         source_bytes[byte] = static_cast<u8>(byte * 37 + 11);
-        initial_bytes[byte] = static_cast<u8>(byte * 53 + 19);
+        output_initial_bytes[byte] = static_cast<u8>(byte * 53 + 19);
+        cache_initial_bytes[byte] = static_cast<u8>(byte * 71 + 29);
     }
 
-    for (u32 count = 0; count <= Pica::VertexCacheUtils::MAX_BOUNDED_OUTPUTS; ++count) {
-        Pica::AttributeBuffer actual = initial;
-        Pica::VertexCacheUtils::CopyVertexOutputPrefix(actual, source, count);
-        CAPTURE(count);
-        REQUIRE(std::memcmp(actual.data(), source.data(), count * sizeof(source[0])) == 0);
-        REQUIRE(std::memcmp(actual.data() + count, initial.data() + count,
-                            (source.size() - count) * sizeof(source[0])) == 0);
+    for (u32 produced = 0; produced <= source.size(); ++produced) {
+        for (u32 consumed = 0; consumed <= source.size(); ++consumed) {
+            CAPTURE(produced, consumed);
+            REQUIRE(Pica::VertexCacheUtils::CanUseDirectVertexCache(true, produced, consumed) ==
+                    (produced == consumed));
+            REQUIRE_FALSE(
+                Pica::VertexCacheUtils::CanUseDirectVertexCache(false, produced, consumed));
+        }
+
+        Pica::AttributeBuffer previous_output = output_initial;
+        Pica::AttributeBuffer direct_cache = cache_initial;
+        std::copy_n(source.begin(), produced, previous_output.begin());
+        std::copy_n(source.begin(), produced, direct_cache.begin());
+
+        CAPTURE(produced);
+        REQUIRE(std::memcmp(previous_output.data(), direct_cache.data(),
+                            produced * sizeof(source[0])) == 0);
+        REQUIRE(std::memcmp(direct_cache.data() + produced, cache_initial.data() + produced,
+                            (source.size() - produced) * sizeof(source[0])) == 0);
     }
 }
