@@ -25,7 +25,7 @@ enum class FrameProfileEvent : u32 {
     PresentCopies,
     PresentPixels,
     PresentQueueWaitNanoseconds,
-    PresentFenceWaitNanoseconds,
+    PresentCombinedSubmissions,
     SchedulerFlushes,
     SchedulerEmptyFlushesSkipped,
     SchedulerFinishes,

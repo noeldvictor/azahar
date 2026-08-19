@@ -54,7 +54,7 @@ public:
 
     /// Submits the provided command buffer for execution
     virtual void SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait, vk::Semaphore signal,
-                            u64 signal_value) = 0;
+                            vk::PipelineStageFlags wait_stage, u64 signal_value) = 0;
 
 protected:
     /// Advances the numerical completion cache without publishing other memory through it.
@@ -84,7 +84,7 @@ public:
     void Wait(u64 tick) override;
 
     void SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait, vk::Semaphore signal,
-                    u64 signal_value) override;
+                    vk::PipelineStageFlags wait_stage, u64 signal_value) override;
 
 private:
     const Instance& instance;
@@ -103,7 +103,7 @@ public:
     void Wait(u64 tick) override;
 
     void SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait, vk::Semaphore signal,
-                    u64 signal_value) override;
+                    vk::PipelineStageFlags wait_stage, u64 signal_value) override;
 
 private:
     void WaitThread(std::stop_token token);

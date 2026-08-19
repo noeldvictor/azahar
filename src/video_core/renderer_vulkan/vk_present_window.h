@@ -23,15 +23,20 @@ class Scheduler;
 class RenderManager;
 
 struct Frame {
-    u32 width;
-    u32 height;
-    VmaAllocation allocation;
-    vk::Framebuffer framebuffer;
-    vk::Image image;
-    vk::ImageView image_view;
-    vk::Semaphore render_ready;
-    vk::Fence present_done;
-    vk::CommandBuffer cmdbuf;
+    u32 width{};
+    u32 height{};
+    VmaAllocation allocation{};
+    vk::Framebuffer framebuffer{};
+    vk::Image image{};
+    vk::ImageView image_view{};
+    u32 present_image_index{};
+    vk::Semaphore image_acquired{};
+    vk::Semaphore present_ready{};
+    bool present_valid{};
+    // LibRetro owns its presentation command buffers and synchronization separately.
+    vk::Semaphore render_ready{};
+    vk::Fence present_done{};
+    vk::CommandBuffer cmdbuf{};
 };
 
 class PresentWindow final {
@@ -70,7 +75,11 @@ public:
 private:
     void PresentThread(std::stop_token token);
 
-    void CopyToSwapchain(Frame* frame);
+    void PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame);
+
+    void FinishPresent(Frame* frame);
+
+    void RecreateSwapchain(Frame* frame);
 
     vk::RenderPass CreateRenderpass();
 
@@ -82,7 +91,6 @@ private:
     vk::SurfaceKHR surface;
     vk::SurfaceKHR next_surface{};
     Swapchain swapchain;
-    vk::CommandPool command_pool;
     vk::Queue graphics_queue;
     vk::RenderPass present_renderpass;
     std::vector<Frame> swap_chain;

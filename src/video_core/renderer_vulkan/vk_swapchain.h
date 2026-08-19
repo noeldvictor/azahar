@@ -14,6 +14,13 @@ namespace Vulkan {
 class Instance;
 class Scheduler;
 
+struct AcquiredSwapchainImage {
+    u32 index{};
+    vk::Image image{};
+    vk::Semaphore image_acquired{};
+    vk::Semaphore present_ready{};
+};
+
 class Swapchain {
 public:
     explicit Swapchain(const Instance& instance, u32 width, u32 height, vk::SurfaceKHR surface,
@@ -24,17 +31,13 @@ public:
     void Create(u32 width, u32 height, vk::SurfaceKHR surface, bool low_refresh_rate);
 
     /// Acquires the next image in the swapchain.
-    bool AcquireNextImage();
+    bool AcquireNextImage(AcquiredSwapchainImage& acquired_image);
 
-    /// Presents the current image and move to the next one
-    void Present();
+    /// Presents a previously acquired image.
+    void Present(u32 image_index);
 
     vk::SurfaceKHR GetSurface() const {
         return surface;
-    }
-
-    vk::Image Image() const {
-        return images[image_index];
     }
 
     vk::SurfaceFormatKHR GetSurfaceFormat() const {
@@ -59,14 +62,6 @@ public:
 
     vk::Extent2D GetExtent() const {
         return extent;
-    }
-
-    [[nodiscard]] vk::Semaphore GetImageAcquiredSemaphore() const {
-        return image_acquired[frame_index];
-    }
-
-    [[nodiscard]] vk::Semaphore GetPresentReadySemaphore() const {
-        return present_ready[image_index];
     }
 
 private:
@@ -103,8 +98,7 @@ private:
     u32 width = 0;
     u32 height = 0;
     u32 image_count = 0;
-    u32 image_index = 0;
-    u32 frame_index = 0;
+    u32 semaphore_index = 0;
     bool needs_recreation = true;
     bool low_refresh_rate;
 };

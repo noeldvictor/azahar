@@ -28,11 +28,18 @@ class Instance;
 /// OpenGL-like operations on Vulkan command buffers.
 class Scheduler {
 public:
+    struct SubmissionSemaphores {
+        vk::Semaphore signal{};
+        vk::Semaphore wait{};
+        vk::PipelineStageFlags wait_stage{vk::PipelineStageFlagBits::eAllCommands};
+    };
+
     explicit Scheduler(const Instance& instance);
     ~Scheduler();
 
     /// Sends the current execution context to the GPU.
-    void Flush(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr);
+    void Flush(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr,
+               vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eAllCommands);
 
     /// Flushes only when commands have been recorded since the previous submission.
     void FlushIfPending();
@@ -44,14 +51,32 @@ public:
         const u64 signal_value = PrepareSubmission();
         Record([signal, signal_value, post_submit = std::forward<T>(post_submit), this](
                    vk::CommandBuffer cmdbuf) {
-            ExecuteSubmission(cmdbuf, signal, nullptr, signal_value);
+            ExecuteSubmission(cmdbuf, signal, nullptr, vk::PipelineStageFlagBits::eAllCommands,
+                              signal_value);
+            post_submit(cmdbuf);
+        });
+        DispatchSubmission(signal_value);
+    }
+
+    /// Records any final commands and chooses the binary semaphore handoff immediately before the
+    /// scheduler's one queue submission, then runs a worker callback after that host submission.
+    template <typename Prepare, typename PostSubmit>
+    void FlushWithDynamicSubmission(Prepare&& prepare, PostSubmit&& post_submit) {
+        const u64 signal_value = PrepareSubmission();
+        Record([signal_value, prepare = std::forward<Prepare>(prepare),
+                post_submit = std::forward<PostSubmit>(post_submit),
+                this](vk::CommandBuffer cmdbuf) {
+            const SubmissionSemaphores semaphores = prepare(cmdbuf);
+            ExecuteSubmission(cmdbuf, semaphores.signal, semaphores.wait, semaphores.wait_stage,
+                              signal_value);
             post_submit(cmdbuf);
         });
         DispatchSubmission(signal_value);
     }
 
     /// Sends the current execution context to the GPU and waits for it to complete.
-    void Finish(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr);
+    void Finish(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr,
+                vk::PipelineStageFlags wait_stage = vk::PipelineStageFlagBits::eAllCommands);
 
     /// Waits for the worker thread to finish executing everything. After this function returns it's
     /// safe to touch worker resources.
@@ -205,11 +230,13 @@ private:
     [[nodiscard]] u64 PrepareSubmission();
 
     void ExecuteSubmission(vk::CommandBuffer cmdbuf, vk::Semaphore signal_semaphore,
-                           vk::Semaphore wait_semaphore, u64 signal_value);
+                           vk::Semaphore wait_semaphore, vk::PipelineStageFlags wait_stage,
+                           u64 signal_value);
 
     void DispatchSubmission(u64 signal_value);
 
-    void SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore);
+    void SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore,
+                         vk::PipelineStageFlags wait_stage);
 
     void AcquireNewChunk();
 

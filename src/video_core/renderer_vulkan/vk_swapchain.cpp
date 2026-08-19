@@ -105,16 +105,18 @@ void Swapchain::Create(u32 width_, u32 height_, vk::SurfaceKHR surface_, bool lo
     RefreshSemaphores();
 }
 
-bool Swapchain::AcquireNextImage() {
+bool Swapchain::AcquireNextImage(AcquiredSwapchainImage& acquired_image) {
     if (needs_recreation) {
         return false;
     }
 
     MICROPROFILE_SCOPE(Vulkan_Acquire);
     const vk::Device device = instance.GetDevice();
+    u32 image_index{};
+    const vk::Semaphore acquire_semaphore = image_acquired[semaphore_index];
     const vk::Result result =
         device.acquireNextImageKHR(swapchain, std::numeric_limits<u64>::max(),
-                                   image_acquired[frame_index], VK_NULL_HANDLE, &image_index);
+                                   acquire_semaphore, VK_NULL_HANDLE, &image_index);
 
     switch (result) {
     case vk::Result::eSuccess:
@@ -130,10 +132,21 @@ bool Swapchain::AcquireNextImage() {
         break;
     }
 
-    return !needs_recreation;
+    if (needs_recreation) {
+        return false;
+    }
+
+    acquired_image = {
+        .index = image_index,
+        .image = images[image_index],
+        .image_acquired = acquire_semaphore,
+        .present_ready = present_ready[image_index],
+    };
+    semaphore_index = (semaphore_index + 1) % image_count;
+    return true;
 }
 
-void Swapchain::Present() {
+void Swapchain::Present(u32 image_index) {
     const vk::PresentInfoKHR present_info = {
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &present_ready[image_index],
@@ -156,7 +169,6 @@ void Swapchain::Present() {
         UNREACHABLE();
     }
 
-    frame_index = (frame_index + 1) % image_count;
 }
 
 void Swapchain::FindPresentFormat() {
@@ -298,6 +310,7 @@ void Swapchain::Destroy() {
 
 void Swapchain::RefreshSemaphores() {
     const vk::Device device = instance.GetDevice();
+    semaphore_index = 0;
     image_acquired.resize(image_count);
     present_ready.resize(image_count);
 

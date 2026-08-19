@@ -775,7 +775,8 @@ void MasterSemaphoreLibRetro::Wait(u64 tick) {
 }
 
 void MasterSemaphoreLibRetro::SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait,
-                                         vk::Semaphore signal, u64 signal_value) {
+                                         vk::Semaphore signal, vk::PipelineStageFlags wait_stage,
+                                         u64 signal_value) {
     if (!vulkan_intf) {
         LOG_ERROR(Render_Vulkan, "LibRetro Vulkan interface not available for command submission");
         return;

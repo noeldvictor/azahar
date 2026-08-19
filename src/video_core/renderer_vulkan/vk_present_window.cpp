@@ -121,40 +121,9 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
       use_present_thread{Settings::values.async_presentation.GetValue()},
       last_render_surface{emu_window.GetWindowInfo().render_surface} {
 
-    const u32 num_images = swapchain.GetImageCount();
-    const vk::Device device = instance.GetDevice();
-
-    const vk::CommandPoolCreateInfo pool_info = {
-        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer |
-                 vk::CommandPoolCreateFlagBits::eTransient,
-        .queueFamilyIndex = instance.GetGraphicsQueueFamilyIndex(),
-    };
-    command_pool = device.createCommandPool(pool_info);
-
-    const vk::CommandBufferAllocateInfo alloc_info = {
-        .commandPool = command_pool,
-        .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = num_images,
-    };
-    const std::vector command_buffers = device.allocateCommandBuffers(alloc_info);
-
-    swap_chain.resize(num_images);
-    for (u32 i = 0; i < num_images; i++) {
-        Frame& frame = swap_chain[i];
-        frame.cmdbuf = command_buffers[i];
-        frame.render_ready = device.createSemaphore({});
-        frame.present_done = device.createFence({.flags = vk::FenceCreateFlagBits::eSignaled});
+    swap_chain.resize(swapchain.GetImageCount());
+    for (Frame& frame : swap_chain) {
         free_queue.push(&frame);
-    }
-
-    if (instance.HasDebuggingToolAttached()) {
-        for (u32 i = 0; i < num_images; ++i) {
-            SetObjectName(device, swap_chain[i].cmdbuf, "Swapchain Command Buffer {}", i);
-            SetObjectName(device, swap_chain[i].render_ready,
-                          "Swapchain Semaphore: render_ready {}", i);
-            SetObjectName(device, swap_chain[i].present_done, "Swapchain Fence: present_done {}",
-                          i);
-        }
     }
 
     if (use_present_thread) {
@@ -165,14 +134,13 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
 PresentWindow::~PresentWindow() {
     scheduler.Finish();
     const vk::Device device = instance.GetDevice();
-    device.destroyCommandPool(command_pool);
     device.destroyRenderPass(present_renderpass);
     for (auto& frame : swap_chain) {
-        device.destroyImageView(frame.image_view);
         device.destroyFramebuffer(frame.framebuffer);
-        device.destroySemaphore(frame.render_ready);
-        device.destroyFence(frame.present_done);
-        vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
+        device.destroyImageView(frame.image_view);
+        if (frame.image) {
+            vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
+        }
     }
 }
 
@@ -245,6 +213,28 @@ void PresentWindow::RecreateFrame(Frame* frame, u32 width, u32 height) {
 
     frame->width = width;
     frame->height = height;
+
+    scheduler.Record([image = frame->image](vk::CommandBuffer cmdbuf) {
+        const vk::ImageMemoryBarrier init_barrier = {
+            .srcAccessMask = vk::AccessFlagBits::eNone,
+            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                               vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, init_barrier);
+    });
 }
 
 Frame* PresentWindow::GetRenderFrame() {
@@ -258,52 +248,34 @@ Frame* PresentWindow::GetRenderFrame() {
         free_cv.wait(lock, [this] { return !free_queue.empty(); });
     }
 
-    // Take the frame from the queue
+    // Take the frame from the queue. Its previous render and transfer are ordered before any
+    // future reuse on the same graphics queue by the post-copy image barrier.
     Frame* frame = free_queue.front();
     free_queue.pop();
-
-    vk::Device device = instance.GetDevice();
-    vk::Result result{};
-
-    const auto wait = [&]() {
-        result = device.waitForFences(frame->present_done, false, std::numeric_limits<u64>::max());
-        return result;
-    };
-
-    {
-        VideoCore::ScopedFrameProfileTimer timer{
-            VideoCore::FrameProfileEvent::PresentFenceWaitNanoseconds};
-
-        // Wait for the presentation to be finished so all frame resources are free
-        while (wait() != vk::Result::eSuccess) {
-            // Retry if the waiting times out
-            if (result == vk::Result::eTimeout) {
-                continue;
-            }
-
-            // eErrorInitializationFailed occurs on Mali GPU drivers due to them
-            // using the ppoll() syscall which isn't correctly restarted after a signal,
-            // we need to manually retry waiting in that case
-            if (result == vk::Result::eErrorInitializationFailed) {
-                continue;
-            }
-        }
-    }
-
-    device.resetFences(frame->present_done);
     return frame;
 }
 
 void PresentWindow::Present(Frame* frame) {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCombinedSubmissions);
+    const auto prepare = [this, frame](vk::CommandBuffer cmdbuf) {
+        PrepareForPresent(cmdbuf, frame);
+        return Scheduler::SubmissionSemaphores{
+            .signal = frame->present_valid ? frame->present_ready : vk::Semaphore{},
+            .wait = frame->present_valid ? frame->image_acquired : vk::Semaphore{},
+            .wait_stage = vk::PipelineStageFlagBits::eTransfer,
+        };
+    };
+
     if (!use_present_thread) {
-        scheduler.Flush(frame->render_ready);
+        scheduler.FlushWithDynamicSubmission(prepare, [](vk::CommandBuffer) {});
         scheduler.WaitWorker();
-        CopyToSwapchain(frame);
+        std::scoped_lock lock{swapchain_mutex};
+        FinishPresent(frame);
         free_queue.push(frame);
         return;
     }
 
-    scheduler.FlushWithCallback(frame->render_ready, [this, frame](vk::CommandBuffer) {
+    scheduler.FlushWithDynamicSubmission(prepare, [this, frame](vk::CommandBuffer) {
         {
             std::scoped_lock lock{queue_mutex};
             present_queue.push(frame);
@@ -350,7 +322,7 @@ void PresentWindow::PresentThread(std::stop_token token) {
         // lock in WaitPresent is guaranteed to occur after here.
         std::exchange(lock, std::unique_lock{swapchain_mutex});
 
-        CopyToSwapchain(frame);
+        FinishPresent(frame);
 
         // Free the frame for reuse
         {
@@ -369,19 +341,44 @@ void PresentWindow::NotifySurfaceChanged() {
 #endif
 }
 
-void PresentWindow::CopyToSwapchain(Frame* frame) {
-    const auto recreate_swapchain = [&] {
+void PresentWindow::RecreateSwapchain(Frame* frame) {
 #ifdef ANDROID
-        {
-            std::unique_lock lock{recreate_surface_mutex};
-            recreate_surface_cv.wait(lock, [this]() { return surface != next_surface; });
-            surface = next_surface;
-        }
+    {
+        std::unique_lock lock{recreate_surface_mutex};
+        recreate_surface_cv.wait(lock, [this]() { return surface != next_surface; });
+        surface = next_surface;
+    }
 #endif
-        std::scoped_lock submit_lock{scheduler.submit_mutex};
-        graphics_queue.waitIdle();
-        swapchain.Create(frame->width, frame->height, surface, low_refresh_rate);
+    std::scoped_lock submit_lock{scheduler.submit_mutex};
+    graphics_queue.waitIdle();
+    swapchain.Create(frame->width, frame->height, surface, low_refresh_rate);
+}
+
+void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
+    const auto restore_frame = [cmdbuf, frame] {
+        const vk::ImageMemoryBarrier restore_barrier = {
+            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = frame->image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                               vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                               vk::DependencyFlagBits::eByRegion, {}, {}, restore_barrier);
     };
+
+    std::scoped_lock swapchain_lock{swapchain_mutex};
+    frame->present_valid = false;
 
 #ifndef ANDROID
     const bool use_vsync = Settings::values.use_vsync.GetValue();
@@ -390,114 +387,131 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
     const bool vsync_changed = vsync_enabled != use_vsync;
     if (vsync_changed || size_changed) [[unlikely]] {
         vsync_enabled = use_vsync;
-        recreate_swapchain();
+        restore_frame();
+        return;
     }
 #endif
 
-    while (!swapchain.AcquireNextImage()) {
-        recreate_swapchain();
+    AcquiredSwapchainImage acquired_image;
+    if (!swapchain.AcquireNextImage(acquired_image)) {
+        restore_frame();
+        return;
     }
 
-    const vk::Image swapchain_image = swapchain.Image();
-
-    const vk::CommandBufferBeginInfo begin_info = {
-        .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
-    };
-    const vk::CommandBuffer cmdbuf = frame->cmdbuf;
-    cmdbuf.begin(begin_info);
+    frame->present_image_index = acquired_image.index;
+    frame->image_acquired = acquired_image.image_acquired;
+    frame->present_ready = acquired_image.present_ready;
+    frame->present_valid = true;
 
     const vk::Extent2D extent = swapchain.GetExtent();
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentFrames);
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentPixels,
                                     static_cast<u64>(extent.width) * extent.height);
-    const vk::ImageMemoryBarrier pre_barrier{
-        .srcAccessMask = vk::AccessFlagBits::eNone,
-        .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
-        .oldLayout = vk::ImageLayout::eUndefined,
-        .newLayout = vk::ImageLayout::eTransferDstOptimal,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = swapchain_image,
-        .subresourceRange{
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = VK_REMAINING_ARRAY_LAYERS,
+    const std::array pre_barriers = {
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = frame->image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
         },
-    };
-    const vk::ImageMemoryBarrier post_barrier{
-        .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-        .dstAccessMask = vk::AccessFlagBits::eNone,
-        .oldLayout = vk::ImageLayout::eTransferDstOptimal,
-        .newLayout = vk::ImageLayout::ePresentSrcKHR,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = swapchain_image,
-        .subresourceRange{
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = VK_REMAINING_ARRAY_LAYERS,
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eNone,
+            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eTransferDstOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = acquired_image.image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
+            },
         },
     };
 
-    // The render_ready semaphore makes the unchanged transfer-source image available to this
-    // submission. Only the acquired swapchain image still needs a layout transition before copy.
-    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+    // The final composition and swapchain copy now share one command buffer and one queue submit.
+    // Make the color output visible to transfer while preparing the acquired image for its first
+    // transfer write. The binary acquire wait is scoped to Transfer at submission time.
+    cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                               vk::PipelineStageFlagBits::eTopOfPipe,
                            vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eByRegion,
-                           {}, {}, pre_barrier);
+                           {}, {}, pre_barriers);
 
     if (ShouldBlitToSwapchain(blit_supported, frame->width, frame->height, extent.width,
                               extent.height)) {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentBlits);
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
+        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, acquired_image.image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageBlit(frame->width, frame->height, extent.width, extent.height),
                          vk::Filter::eLinear);
     } else {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCopies);
-        cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
+        cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, acquired_image.image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageCopy(frame->width, frame->height, extent.width, extent.height));
     }
 
+    const std::array post_barriers = {
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+            .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+            .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = frame->image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        },
+        vk::ImageMemoryBarrier{
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eNone,
+            .oldLayout = vk::ImageLayout::eTransferDstOptimal,
+            .newLayout = vk::ImageLayout::ePresentSrcKHR,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = acquired_image.image,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = VK_REMAINING_ARRAY_LAYERS,
+            },
+        },
+    };
+
     cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                           vk::PipelineStageFlagBits::eBottomOfPipe,
-                           vk::DependencyFlagBits::eByRegion, {}, {}, post_barrier);
+                           vk::PipelineStageFlagBits::eColorAttachmentOutput |
+                               vk::PipelineStageFlagBits::eBottomOfPipe,
+                           vk::DependencyFlagBits::eByRegion, {}, {}, post_barriers);
+}
 
-    cmdbuf.end();
-
-    static constexpr std::array<vk::PipelineStageFlags, 2> wait_stage_masks = {
-        vk::PipelineStageFlagBits::eTransfer,
-        vk::PipelineStageFlagBits::eTransfer,
-    };
-
-    const vk::Semaphore present_ready = swapchain.GetPresentReadySemaphore();
-    const vk::Semaphore image_acquired = swapchain.GetImageAcquiredSemaphore();
-    const std::array wait_semaphores = {image_acquired, frame->render_ready};
-
-    vk::SubmitInfo submit_info = {
-        .waitSemaphoreCount = static_cast<u32>(wait_semaphores.size()),
-        .pWaitSemaphores = wait_semaphores.data(),
-        .pWaitDstStageMask = wait_stage_masks.data(),
-        .commandBufferCount = 1u,
-        .pCommandBuffers = &cmdbuf,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &present_ready,
-    };
-
-    std::scoped_lock submit_lock{scheduler.submit_mutex, recreate_surface_mutex};
-
-    try {
-        graphics_queue.submit(submit_info, frame->present_done);
-    } catch (vk::DeviceLostError& err) {
-        LOG_CRITICAL(Render_Vulkan, "Device lost during present submit: {}", err.what());
-        UNREACHABLE();
+void PresentWindow::FinishPresent(Frame* frame) {
+    if (!frame->present_valid) [[unlikely]] {
+        RecreateSwapchain(frame);
+        return;
     }
-
-    swapchain.Present();
+    std::scoped_lock submit_lock{scheduler.submit_mutex};
+    swapchain.Present(frame->present_image_index);
 }
 
 vk::RenderPass PresentWindow::CreateRenderpass() {
@@ -522,7 +536,7 @@ vk::RenderPass PresentWindow::CreateRenderpass() {
         .storeOp = vk::AttachmentStoreOp::eStore,
         .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
         .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eUndefined,
+        .initialLayout = vk::ImageLayout::eGeneral,
         .finalLayout = vk::ImageLayout::eTransferSrcOptimal,
     };
 

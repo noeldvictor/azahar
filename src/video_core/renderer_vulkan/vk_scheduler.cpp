@@ -60,10 +60,11 @@ Scheduler::Scheduler(const Instance& instance)
 
 Scheduler::~Scheduler() = default;
 
-void Scheduler::Flush(vk::Semaphore signal, vk::Semaphore wait) {
+void Scheduler::Flush(vk::Semaphore signal, vk::Semaphore wait,
+                      vk::PipelineStageFlags wait_stage) {
     // When flushing, we only send data to the worker thread; no waiting is necessary.
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerFlushes);
-    SubmitExecution(signal, wait);
+    SubmitExecution(signal, wait, wait_stage);
 }
 
 void Scheduler::FlushIfPending() {
@@ -75,11 +76,12 @@ void Scheduler::FlushIfPending() {
     Flush();
 }
 
-void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait) {
+void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait,
+                       vk::PipelineStageFlags wait_stage) {
     // When finishing, we need to wait for the submission to have executed on the device.
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerFinishes);
     const u64 presubmit_tick = CurrentTick();
-    SubmitExecution(signal, wait);
+    SubmitExecution(signal, wait, wait_stage);
     Wait(presubmit_tick);
 }
 
@@ -204,10 +206,12 @@ u64 Scheduler::PrepareSubmission() {
 }
 
 void Scheduler::ExecuteSubmission(vk::CommandBuffer cmdbuf, vk::Semaphore signal_semaphore,
-                                  vk::Semaphore wait_semaphore, u64 signal_value) {
+                                  vk::Semaphore wait_semaphore, vk::PipelineStageFlags wait_stage,
+                                  u64 signal_value) {
     MICROPROFILE_SCOPE(Vulkan_Submit);
     std::scoped_lock lock{submit_mutex};
-    master_semaphore->SubmitWork(cmdbuf, wait_semaphore, signal_semaphore, signal_value);
+    master_semaphore->SubmitWork(cmdbuf, wait_semaphore, signal_semaphore, wait_stage,
+                                 signal_value);
 }
 
 void Scheduler::DispatchSubmission(u64 signal_value) {
@@ -221,11 +225,13 @@ void Scheduler::DispatchSubmission(u64 signal_value) {
     }
 }
 
-void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore) {
+void Scheduler::SubmitExecution(vk::Semaphore signal_semaphore, vk::Semaphore wait_semaphore,
+                                vk::PipelineStageFlags wait_stage) {
     const u64 signal_value = PrepareSubmission();
 
-    Record([signal_semaphore, wait_semaphore, signal_value, this](vk::CommandBuffer cmdbuf) {
-        ExecuteSubmission(cmdbuf, signal_semaphore, wait_semaphore, signal_value);
+    Record([signal_semaphore, wait_semaphore, wait_stage, signal_value,
+            this](vk::CommandBuffer cmdbuf) {
+        ExecuteSubmission(cmdbuf, signal_semaphore, wait_semaphore, wait_stage, signal_value);
     });
 
     DispatchSubmission(signal_value);

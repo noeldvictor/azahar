@@ -18,7 +18,8 @@ public:
 
     void Wait(u64) override {}
 
-    void SubmitWork(vk::CommandBuffer, vk::Semaphore, vk::Semaphore, u64) override {}
+    void SubmitWork(vk::CommandBuffer, vk::Semaphore, vk::Semaphore, vk::PipelineStageFlags,
+                    u64) override {}
 
     void SetRefreshTarget(u64 tick) {
         refresh_target = tick;

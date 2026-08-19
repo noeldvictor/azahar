@@ -117,12 +117,12 @@ void ReportFrameProfileWindow() {
              values[Index(FrameProfileEvent::TextureScaleBlitPixels)] / 1'000'000.0);
     LOG_INFO(Render_Vulkan,
              "ThorFrameProfile present blits={} copies={} mpix={:.3f} "
-             "queue_wait_ms_per_swap={:.3f} fence_wait_ms_per_swap={:.3f}",
+             "queue_wait_ms_per_swap={:.3f} combined_submissions={}",
              values[Index(FrameProfileEvent::PresentBlits)],
              values[Index(FrameProfileEvent::PresentCopies)],
              values[Index(FrameProfileEvent::PresentPixels)] / 1'000'000.0,
              MillisecondsPerSwap(values, FrameProfileEvent::PresentQueueWaitNanoseconds, swaps),
-             MillisecondsPerSwap(values, FrameProfileEvent::PresentFenceWaitNanoseconds, swaps));
+             values[Index(FrameProfileEvent::PresentCombinedSubmissions)]);
 }
 
 ScopedFrameProfileTimer::ScopedFrameProfileTimer(FrameProfileEvent event_) noexcept

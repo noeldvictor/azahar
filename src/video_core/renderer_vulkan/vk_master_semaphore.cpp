@@ -53,7 +53,8 @@ void MasterSemaphoreTimeline::Wait(u64 tick) {
 }
 
 void MasterSemaphoreTimeline::SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait,
-                                         vk::Semaphore signal, u64 signal_value) {
+                                         vk::Semaphore signal, vk::PipelineStageFlags wait_stage,
+                                         u64 signal_value) {
     cmdbuf.end();
 
     const u32 num_signal_semaphores = signal ? 2U : 1U;
@@ -63,11 +64,6 @@ void MasterSemaphoreTimeline::SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore
     const u32 num_wait_semaphores = wait ? 1U : 0U;
     const std::array wait_values{u64(1)};
     const std::array wait_semaphores{wait};
-
-    static constexpr std::array<vk::PipelineStageFlags, 2> wait_stage_masks = {
-        vk::PipelineStageFlagBits::eAllCommands,
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-    };
 
     const vk::TimelineSemaphoreSubmitInfoKHR timeline_si = {
         .waitSemaphoreValueCount = num_wait_semaphores,
@@ -80,7 +76,7 @@ void MasterSemaphoreTimeline::SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore
         .pNext = &timeline_si,
         .waitSemaphoreCount = num_wait_semaphores,
         .pWaitSemaphores = wait_semaphores.data(),
-        .pWaitDstStageMask = wait_stage_masks.data(),
+        .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1u,
         .pCommandBuffers = &cmdbuf,
         .signalSemaphoreCount = num_signal_semaphores,
@@ -117,20 +113,17 @@ void MasterSemaphoreFence::Wait(u64 tick) {
 }
 
 void MasterSemaphoreFence::SubmitWork(vk::CommandBuffer cmdbuf, vk::Semaphore wait,
-                                      vk::Semaphore signal, u64 signal_value) {
+                                      vk::Semaphore signal, vk::PipelineStageFlags wait_stage,
+                                      u64 signal_value) {
     cmdbuf.end();
 
     const u32 num_signal_semaphores = signal ? 1U : 0U;
     const u32 num_wait_semaphores = wait ? 1U : 0U;
 
-    static constexpr std::array<vk::PipelineStageFlags, 1> wait_stage_masks = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-    };
-
     const vk::SubmitInfo submit_info = {
         .waitSemaphoreCount = num_wait_semaphores,
         .pWaitSemaphores = &wait,
-        .pWaitDstStageMask = wait_stage_masks.data(),
+        .pWaitDstStageMask = &wait_stage,
         .commandBufferCount = 1u,
         .pCommandBuffers = &cmdbuf,
         .signalSemaphoreCount = num_signal_semaphores,
