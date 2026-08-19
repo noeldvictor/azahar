@@ -88,6 +88,11 @@ android {
                 if (!hostPython.isNullOrBlank()) {
                     arguments("-DPython3_EXECUTABLE=$hostPython")
                 }
+                val thorFrameProfiling =
+                    project.findProperty("thorFrameProfiling")?.toString()?.toBoolean() == true
+                arguments(
+                    "-DENABLE_THOR_FRAME_PROFILING=${if (thorFrameProfiling) "ON" else "OFF"}"
+                )
             }
         }
 

@@ -13,6 +13,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Thor dual-display mode is fixed to 3DS top screen on the primary panel and 3DS bottom screen on the secondary panel. The old hidden virtual secondary display fallback is removed, so secondary rendering only starts when Android exposes a real second display.
 - The Thor GPU Driver Manager now has a guided picker. It queries K11MCH1 AdrenoToolsDrivers releases, presents the newest generic Turnip ZIP as the recommended first pick, lists recent generic Turnip rollback builds with visible download buttons, also lists Qualcomm and Turnip variant troubleshooting choices when available, validates driver metadata, stores the ZIP under `gpu_drivers`, installs immediately, and still keeps manual ZIP and system-driver fallback paths.
 
+## 2026-08-19 Whole-Frame Profiling Pivot
+
+- The 142-entry ledger is deliberately overlapping and path-local. It proves that many individual
+  pieces became cheaper; it does not establish their aggregate frame share or a 142-change
+  whole-emulator speedup. Further micro-optimization acceptance now waits for subsystem-level
+  evidence instead of treating another favorable instruction loop as the next priority.
+- A dedicated profiler is compiled only when the Android package is built with
+  `-PthorFrameProfiling=true`. Ordinary builds define `THOR_FRAME_PROFILING=0`, making counter adds,
+  reports, and scoped timers inline no-ops. Profiling builds emit a `ThorFrameProfile` window every
+  300 `SwapBuffers()` calls and log a warning that their atomic counters and timers make them
+  unsuitable for FPS, watt, or thermal A/B comparisons.
+- The windows count swap calls and actual presented images; presentation blits/copies and pixels;
+  presentation queue/fence waits; scheduler flushes, finishes, submissions, timeline waits, and
+  worker drains; render-pass starts, reuse, ends, end-of-render-pass image barriers, and Mali-only
+  flushes; texture upload/download/custom-upload bytes plus copy/blit pixels; and PICA draw batches,
+  immediate vertices, backend-handled draws, software draws, and categorized hardware-shader
+  fallback reasons.
+  `RenderPassImageBarriers` is intentionally scoped to barriers emitted by
+  `RenderManager::EndRendering()` and is not a global Vulkan barrier count.
+- The profile-enabled JDK 17 ARM64 package build passed, and its final native library contained the
+  warning plus all six `ThorFrameProfile` log groups, including the immediate-vertex field. A
+  separate ordinary package build then passed with `ENABLE_THOR_FRAME_PROFILING:BOOL=OFF`. Its
+  `libvideo_core.a` contained zero frame-profile symbols and its final `libcitra-android.so`
+  contained zero profiler or warning strings, confirming that the normal path compiles the
+  instrumentation out. The retained normal APK is 29,010,268 bytes with SHA-256
+  `7FD223F97A0F3A40D619C7C018F8525CCFAF2D07C5ECCAD8599F5C5A7356FCA6`.
+- Exact bounded cleanup removed the profile cache, the obsolete pre-option cache, and reproducible
+  Gradle/JNI/R8/symbol/mapping staging: 9,015,641,394 logical bytes removed and 8,140,775,424
+  physical bytes recovered. C: has 52,450,258,944 bytes free. The retained repo output is the
+  3,241,799,767-byte active profile-disabled ARM64 CMake/Ninja cache plus the 29,010,268-byte APK
+  and 476-byte metadata. No PDF, APK, native binary, profiler log, or scratch note is tracked.
+- Static inspection makes final-presentation copy/synchronization, render-pass churn, forced texture
+  readback finishes, CPU vertex fallback frequency, and queue wait/submission cadence the main
+  forest-level suspects. The counters rank those suspects; none is called the bottleneck without a
+  matched game capture.
+- Build a diagnostic APK with
+  `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite -PthorFrameProfiling=true --no-configuration-cache`
+  and filter a future allowed capture for `ThorFrameProfile`. The current no-launch restriction
+  means no ADB command, install, app launch, game launch, or capture was performed in this change.
+  The profiler is diagnostic infrastructure, does not increment the optimization ledger, and does
+  not support a new speed or watt claim.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

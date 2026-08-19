@@ -21,6 +21,7 @@
 #include "common/microprofile.h"
 #include "common/scope_exit.h"
 #include "video_core/custom_textures/material.h"
+#include "video_core/frame_profile.h"
 #include "video_core/rasterizer_cache/texture_codec.h"
 #include "video_core/rasterizer_cache/utils.h"
 #include "video_core/renderer_vulkan/pica_to_vk.h"
@@ -462,6 +463,14 @@ void TextureRuntime::ClearTextureWithRenderpass(Surface& surface,
 
 bool TextureRuntime::CopyTextures(Surface& source, Surface& dest,
                                   std::span<const VideoCore::TextureCopy> copies) {
+#if THOR_FRAME_PROFILING
+    u64 copied_pixels = 0;
+    for (const auto& copy : copies) {
+        copied_pixels += static_cast<u64>(copy.extent.width) * copy.extent.height;
+    }
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureCopies, copies.size());
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureCopyPixels, copied_pixels);
+#endif
     renderpass_cache.EndRendering();
 
     const RecordParams params = {
@@ -564,6 +573,10 @@ bool TextureRuntime::CopyTextures(Surface& source, Surface& dest,
 
 bool TextureRuntime::BlitTextures(Surface& source, Surface& dest,
                                   const VideoCore::TextureBlit& blit) {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureBlits);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureBlitPixels,
+                                    static_cast<u64>(blit.dst_rect.GetWidth()) *
+                                        blit.dst_rect.GetHeight());
     const bool is_depth_stencil = source.type == VideoCore::SurfaceType::DepthStencil;
     const auto& depth_traits = instance.GetTraits(source.pixel_format);
     if (is_depth_stencil && !depth_traits.blit_support) {
@@ -828,6 +841,8 @@ Surface::Surface(TextureRuntime& runtime_, const VideoCore::SurfaceBase& surface
 
 void Surface::Upload(const VideoCore::BufferTextureCopy& upload,
                      const VideoCore::StagingData& staging) {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureUploads);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureUploadBytes, staging.size);
     runtime.renderpass_cache.EndRendering();
 
     const RecordParams params = {
@@ -923,6 +938,9 @@ void Surface::UploadCustom(const VideoCore::Material* material, u32 level) {
 
     const auto upload = [&](Type type, VideoCore::CustomTexture* texture) {
         const u32 custom_size = static_cast<u32>(texture->data.size());
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::CustomTextureUploads);
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::CustomTextureUploadBytes,
+                                        custom_size);
         const RecordParams params = {
             .aspect = vk::ImageAspectFlagBits::eColor,
             .pipeline_flags = PipelineStageFlags(),
@@ -990,6 +1008,9 @@ void Surface::UploadCustom(const VideoCore::Material* material, u32 level) {
 
 void Surface::Download(const VideoCore::BufferTextureCopy& download,
                        const VideoCore::StagingData& staging) {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureDownloads);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureDownloadBytes,
+                                    staging.size);
     SCOPE_EXIT({
         scheduler.Finish();
         runtime.download_buffer.Commit(staging.size);

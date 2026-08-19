@@ -6,6 +6,7 @@
 #include "common/settings.h"
 #include "common/thread.h"
 #include "core/frontend/emu_window.h"
+#include "video_core/frame_profile.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_present_window.h"
@@ -242,7 +243,11 @@ Frame* PresentWindow::GetRenderFrame() {
 
     // Wait for free presentation frames
     std::unique_lock lock{free_mutex};
-    free_cv.wait(lock, [this] { return !free_queue.empty(); });
+    {
+        VideoCore::ScopedFrameProfileTimer timer{
+            VideoCore::FrameProfileEvent::PresentQueueWaitNanoseconds};
+        free_cv.wait(lock, [this] { return !free_queue.empty(); });
+    }
 
     // Take the frame from the queue
     Frame* frame = free_queue.front();
@@ -256,18 +261,23 @@ Frame* PresentWindow::GetRenderFrame() {
         return result;
     };
 
-    // Wait for the presentation to be finished so all frame resources are free
-    while (wait() != vk::Result::eSuccess) {
-        // Retry if the waiting times out
-        if (result == vk::Result::eTimeout) {
-            continue;
-        }
+    {
+        VideoCore::ScopedFrameProfileTimer timer{
+            VideoCore::FrameProfileEvent::PresentFenceWaitNanoseconds};
 
-        // eErrorInitializationFailed occurs on Mali GPU drivers due to them
-        // using the ppoll() syscall which isn't correctly restarted after a signal,
-        // we need to manually retry waiting in that case
-        if (result == vk::Result::eErrorInitializationFailed) {
-            continue;
+        // Wait for the presentation to be finished so all frame resources are free
+        while (wait() != vk::Result::eSuccess) {
+            // Retry if the waiting times out
+            if (result == vk::Result::eTimeout) {
+                continue;
+            }
+
+            // eErrorInitializationFailed occurs on Mali GPU drivers due to them
+            // using the ppoll() syscall which isn't correctly restarted after a signal,
+            // we need to manually retry waiting in that case
+            if (result == vk::Result::eErrorInitializationFailed) {
+                continue;
+            }
         }
     }
 
@@ -388,6 +398,9 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
     cmdbuf.begin(begin_info);
 
     const vk::Extent2D extent = swapchain.GetExtent();
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentFrames);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentPixels,
+                                    static_cast<u64>(extent.width) * extent.height);
     const std::array pre_barriers{
         vk::ImageMemoryBarrier{
             .srcAccessMask = vk::AccessFlagBits::eNone,
@@ -444,11 +457,13 @@ void PresentWindow::CopyToSwapchain(Frame* frame) {
                            {}, {}, pre_barriers);
 
     if (blit_supported) {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentBlits);
         cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageBlit(frame->width, frame->height, extent.width, extent.height),
                          vk::Filter::eLinear);
     } else {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCopies);
         cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, swapchain_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageCopy(frame->width, frame->height, extent.width, extent.height));

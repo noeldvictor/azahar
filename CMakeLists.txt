@@ -146,6 +146,9 @@ option(ENABLE_DISCORD_RPC "Enables Discord Rich Presence" OFF)
 
 option(ENABLE_MICROPROFILE "Enables microprofile capabilities" OFF)
 
+option(ENABLE_THOR_FRAME_PROFILING
+       "Enables low-level Thor whole-frame workload counters (profiling builds only)" OFF)
+
 option(ENABLE_SSE42 "Enable SSE4.2 optimizations on x86_64" ON)
 
 option(ENABLE_DEVELOPER_OPTIONS "Enable functionality targeted at emulator developers" OFF)

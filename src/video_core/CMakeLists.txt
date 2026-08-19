@@ -9,6 +9,8 @@ add_library(video_core STATIC EXCLUDE_FROM_ALL
     custom_textures/material.h
     debug_utils/debug_utils.cpp
     debug_utils/debug_utils.h
+    frame_profile.cpp
+    frame_profile.h
     gpu.cpp
     gpu.h
     gpu_debugger.h
@@ -100,6 +102,12 @@ add_library(video_core STATIC EXCLUDE_FROM_ALL
     video_core.cpp
     video_core.h
 )
+
+if (ENABLE_THOR_FRAME_PROFILING)
+    target_compile_definitions(video_core PRIVATE THOR_FRAME_PROFILING=1)
+else()
+    target_compile_definitions(video_core PRIVATE THOR_FRAME_PROFILING=0)
+endif()
 
 if (ENABLE_SOFTWARE_RENDERER)
     target_sources(video_core PRIVATE

@@ -9,6 +9,7 @@
 #include "common/settings.h"
 #include "core/core.h"
 #include "core/frontend/emu_window.h"
+#include "video_core/frame_profile.h"
 #include "video_core/gpu.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
@@ -128,6 +129,10 @@ RendererVulkan::RendererVulkan(Core::System& system, Pica::PicaCore& pica_,
                                          update_queue,
                                          main_present_window.ImageCount()},
       present_heap{instance, scheduler.GetMasterSemaphore(), PRESENT_BINDINGS, 32} {
+#if THOR_FRAME_PROFILING
+    LOG_WARNING(Render_Vulkan,
+                "Thor whole-frame profiling is enabled; this APK is not valid for performance A/B");
+#endif
     CompileShaders();
     BuildLayouts();
     BuildPipelines();
@@ -1149,6 +1154,7 @@ void RendererVulkan::DrawCursor(const Layout::FramebufferLayout& layout) {
 }
 
 void RendererVulkan::SwapBuffers() {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SwapCalls);
     system.perf_stats->StartSwap();
     screenRendered = false;
     const bool should_present = ShouldPresentFrame();
@@ -1233,6 +1239,7 @@ void RendererVulkan::SwapBuffers() {
     system.perf_stats->EndSwap();
     rasterizer.TickFrame();
     EndFrame();
+    VideoCore::ReportFrameProfileWindow();
 }
 
 void RendererVulkan::RenderScreenshot() {

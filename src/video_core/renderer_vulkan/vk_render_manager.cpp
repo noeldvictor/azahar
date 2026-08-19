@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include "common/assert.h"
+#include "video_core/frame_profile.h"
 #include "video_core/rasterizer_cache/pixel_format.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_render_manager.h"
@@ -48,11 +49,13 @@ void RenderManager::BeginRendering(const Framebuffer* framebuffer,
 
 void RenderManager::BeginRendering(const RenderPass& new_pass) {
     if (pass == new_pass) [[likely]] {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::RenderPassReuses);
         num_draws++;
         return;
     }
 
     EndRendering();
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::RenderPassBegins);
     scheduler.Record([info = new_pass](vk::CommandBuffer cmdbuf) {
         const vk::RenderPassBeginInfo renderpass_begin_info = {
             .renderPass = info.render_pass,
@@ -71,6 +74,8 @@ void RenderManager::EndRendering() {
     if (!pass.render_pass) {
         return;
     }
+
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::RenderPassEnds);
 
     scheduler.Record([images = images, aspects = aspects,
                       shadow_rendering = shadow_rendering](vk::CommandBuffer cmdbuf) {
@@ -116,6 +121,8 @@ void RenderManager::EndRendering() {
         if (num_barriers == 0) {
             return;
         }
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::RenderPassImageBarriers,
+                                        num_barriers);
         cmdbuf.pipelineBarrier(pipeline_flags,
                                vk::PipelineStageFlagBits::eFragmentShader |
                                    vk::PipelineStageFlagBits::eTransfer,
@@ -132,6 +139,7 @@ void RenderManager::EndRendering() {
     // The Mali guide recommends flushing at the end of each major renderpass
     // Testing has shown this has a significant effect on rendering performance
     if (num_draws > MinDrawsToFlush && instance.ShouldFlush()) {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::MaliRenderPassFlushes);
         scheduler.Flush();
         num_draws = 0;
     }

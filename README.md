@@ -33,6 +33,12 @@ entries**. This is the total ledger count; smaller figures quoted for a recent t
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
 
+The project has now reached the point where more isolated instruction wins risk missing the real
+system bottleneck. The next accepted performance work is selected from opt-in whole-frame counters
+for CPU draw fallback, Vulkan submissions and waits, render-pass churn, texture traffic, and final
+presentation work. The profiler is diagnostic infrastructure, not optimization 143, and its timing
+overhead means profiling APKs are never used for FPS, power, or thermal comparisons.
+
 See [Thor optimization notes](docs/thor-optimization-notes.md) for current performance hooks and candidate code paths.
 
 ## What This Is Not

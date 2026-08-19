@@ -47,6 +47,15 @@
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.
+- After a long micro-optimization tranche, require whole-frame evidence before accepting more
+  instruction-path candidates. Use the opt-in Thor profiler only through
+  `-PthorFrameProfiling=true`; ordinary builds must compile its counters and timers out. Its
+  `ThorFrameProfile` windows cover draw acceleration/fallback reasons, Vulkan submissions and
+  waits, render-pass reuse/churn, texture transfer volume, and presentation copies. A profiling
+  APK perturbs timing and is not valid for FPS, power, or thermal A/B claims. Do not count profiler
+  instrumentation as an optimization-ledger entry. `RenderPassImageBarriers` counts only barriers
+  emitted while ending render passes, not every Vulkan image barrier in the emulator. Do not launch
+  the app or a game while the user's current no-launch restriction remains in effect.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

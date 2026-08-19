@@ -1,0 +1,132 @@
+// Copyright 2026 Azahar Thor Experiment
+// Licensed under GPLv2 or any later version
+
+#include "video_core/frame_profile.h"
+
+#if THOR_FRAME_PROFILING
+
+#include <array>
+#include <atomic>
+#include <chrono>
+
+#include "common/logging/log.h"
+
+namespace VideoCore {
+namespace {
+
+using Clock = std::chrono::steady_clock;
+constexpr u32 ReportSwapPeriod = 300;
+constexpr std::size_t EventCount = static_cast<std::size_t>(FrameProfileEvent::Count);
+
+std::array<std::atomic<u64>, EventCount> counters{};
+u32 swaps_until_report = ReportSwapPeriod;
+Clock::time_point report_start = Clock::now();
+
+constexpr std::size_t Index(FrameProfileEvent event) noexcept {
+    return static_cast<std::size_t>(event);
+}
+
+double PerSwap(const std::array<u64, EventCount>& values, FrameProfileEvent event, u64 swaps) {
+    return swaps == 0 ? 0.0 : static_cast<double>(values[Index(event)]) / swaps;
+}
+
+double MillisecondsPerSwap(const std::array<u64, EventCount>& values, FrameProfileEvent event,
+                           u64 swaps) {
+    return PerSwap(values, event, swaps) / 1'000'000.0;
+}
+
+} // Anonymous namespace
+
+void AddFrameProfileEvent(FrameProfileEvent event, u64 amount) noexcept {
+    counters[Index(event)].fetch_add(amount, std::memory_order_relaxed);
+}
+
+void ReportFrameProfileWindow() {
+    if (--swaps_until_report != 0) {
+        return;
+    }
+    swaps_until_report = ReportSwapPeriod;
+
+    std::array<u64, EventCount> values{};
+    for (std::size_t i = 0; i < EventCount; ++i) {
+        values[i] = counters[i].exchange(0, std::memory_order_relaxed);
+    }
+
+    const auto now = Clock::now();
+    const double seconds = std::chrono::duration<double>(now - report_start).count();
+    report_start = now;
+
+    const u64 swaps = values[Index(FrameProfileEvent::SwapCalls)];
+    const u64 draws = values[Index(FrameProfileEvent::DrawBatches)];
+    const u64 accelerated = values[Index(FrameProfileEvent::AcceleratedDraws)];
+    const double accelerated_percent =
+        draws == 0 ? 0.0 : 100.0 * static_cast<double>(accelerated) / draws;
+
+    LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile window_s={:.3f} swaps={} presented={} immediate_vertices={} "
+             "draw_batches={} accelerated={} accelerated_pct={:.2f} software={}",
+             seconds, swaps, values[Index(FrameProfileEvent::PresentFrames)],
+             values[Index(FrameProfileEvent::ImmediateVertices)], draws, accelerated,
+             accelerated_percent, values[Index(FrameProfileEvent::SoftwareDraws)]);
+    LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile fallback hw_off={} gs={} primitive_state={} topology={} backend={}",
+             values[Index(FrameProfileEvent::FallbackHwShaderDisabled)],
+             values[Index(FrameProfileEvent::FallbackGeometryShader)],
+             values[Index(FrameProfileEvent::FallbackPrimitiveState)],
+             values[Index(FrameProfileEvent::FallbackTopology)],
+             values[Index(FrameProfileEvent::FallbackBackend)]);
+    LOG_INFO(
+        Render_Vulkan,
+        "ThorFrameProfile scheduler submit_per_swap={:.3f} flush_per_swap={:.3f} "
+        "finish={} waits={} wait_ms_per_swap={:.3f} worker_drains={} "
+        "worker_drain_ms_per_swap={:.3f}",
+        PerSwap(values, FrameProfileEvent::SchedulerSubmissions, swaps),
+        PerSwap(values, FrameProfileEvent::SchedulerFlushes, swaps),
+        values[Index(FrameProfileEvent::SchedulerFinishes)],
+        values[Index(FrameProfileEvent::SchedulerWaits)],
+        MillisecondsPerSwap(values, FrameProfileEvent::SchedulerWaitNanoseconds, swaps),
+        values[Index(FrameProfileEvent::SchedulerWorkerDrains)],
+        MillisecondsPerSwap(values, FrameProfileEvent::SchedulerWorkerDrainNanoseconds, swaps));
+    LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile renderpass begin_per_swap={:.3f} reuse_per_swap={:.3f} "
+             "end_per_swap={:.3f} end_image_barriers_per_swap={:.3f} mali_flushes={}",
+             PerSwap(values, FrameProfileEvent::RenderPassBegins, swaps),
+             PerSwap(values, FrameProfileEvent::RenderPassReuses, swaps),
+             PerSwap(values, FrameProfileEvent::RenderPassEnds, swaps),
+             PerSwap(values, FrameProfileEvent::RenderPassImageBarriers, swaps),
+             values[Index(FrameProfileEvent::MaliRenderPassFlushes)]);
+    LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile texture upload_per_swap={:.3f} upload_kib_per_swap={:.3f} "
+             "custom_uploads={} custom_kib={:.3f} download_per_swap={:.3f} "
+             "download_kib_per_swap={:.3f} copies={} copy_mpix={:.3f} blits={} blit_mpix={:.3f}",
+             PerSwap(values, FrameProfileEvent::TextureUploads, swaps),
+             PerSwap(values, FrameProfileEvent::TextureUploadBytes, swaps) / 1024.0,
+             values[Index(FrameProfileEvent::CustomTextureUploads)],
+             values[Index(FrameProfileEvent::CustomTextureUploadBytes)] / 1024.0,
+             PerSwap(values, FrameProfileEvent::TextureDownloads, swaps),
+             PerSwap(values, FrameProfileEvent::TextureDownloadBytes, swaps) / 1024.0,
+             values[Index(FrameProfileEvent::TextureCopies)],
+             values[Index(FrameProfileEvent::TextureCopyPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::TextureBlits)],
+             values[Index(FrameProfileEvent::TextureBlitPixels)] / 1'000'000.0);
+    LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile present blits={} copies={} mpix={:.3f} "
+             "queue_wait_ms_per_swap={:.3f} fence_wait_ms_per_swap={:.3f}",
+             values[Index(FrameProfileEvent::PresentBlits)],
+             values[Index(FrameProfileEvent::PresentCopies)],
+             values[Index(FrameProfileEvent::PresentPixels)] / 1'000'000.0,
+             MillisecondsPerSwap(values, FrameProfileEvent::PresentQueueWaitNanoseconds, swaps),
+             MillisecondsPerSwap(values, FrameProfileEvent::PresentFenceWaitNanoseconds, swaps));
+}
+
+ScopedFrameProfileTimer::ScopedFrameProfileTimer(FrameProfileEvent event_) noexcept
+    : event{event_}, start{Clock::now()} {}
+
+ScopedFrameProfileTimer::~ScopedFrameProfileTimer() {
+    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - start);
+    AddFrameProfileEvent(event, static_cast<u64>(elapsed.count()));
+}
+
+} // namespace VideoCore
+
+#endif

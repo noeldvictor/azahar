@@ -6,6 +6,7 @@
 #include <utility>
 #include "common/microprofile.h"
 #include "common/thread.h"
+#include "video_core/frame_profile.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #ifdef HAVE_LIBRETRO
@@ -61,11 +62,13 @@ Scheduler::~Scheduler() = default;
 
 void Scheduler::Flush(vk::Semaphore signal, vk::Semaphore wait) {
     // When flushing, we only send data to the worker thread; no waiting is necessary.
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerFlushes);
     SubmitExecution(signal, wait);
 }
 
 void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait) {
     // When finishing, we need to wait for the submission to have executed on the device.
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerFinishes);
     const u64 presubmit_tick = CurrentTick();
     SubmitExecution(signal, wait);
     Wait(presubmit_tick);
@@ -77,6 +80,9 @@ void Scheduler::WaitWorker() {
     }
 
     MICROPROFILE_SCOPE(Vulkan_WaitForWorker);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerWorkerDrains);
+    VideoCore::ScopedFrameProfileTimer timer{
+        VideoCore::FrameProfileEvent::SchedulerWorkerDrainNanoseconds};
     DispatchWork();
 
     // Ensure the queue is drained.
@@ -91,6 +97,9 @@ void Scheduler::WaitWorker() {
 }
 
 void Scheduler::Wait(u64 tick) {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerWaits);
+    VideoCore::ScopedFrameProfileTimer timer{
+        VideoCore::FrameProfileEvent::SchedulerWaitNanoseconds};
     if (tick >= master_semaphore->CurrentTick()) {
         // Make sure we are not waiting for the current tick without signalling
         Flush();
@@ -177,6 +186,7 @@ void Scheduler::AllocateWorkerCommandBuffers() {
 }
 
 u64 Scheduler::PrepareSubmission() {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerSubmissions);
     state = StateFlags::AllDirty;
     const u64 signal_value = master_semaphore->NextTick();
     on_submit();

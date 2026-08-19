@@ -13,6 +13,7 @@
 #include "core/core.h"
 #include "core/memory.h"
 #include "video_core/debug_utils/debug_utils.h"
+#include "video_core/frame_profile.h"
 #include "video_core/pica/command_list_utils.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/pica/vertex_cache.h"
@@ -1205,6 +1206,8 @@ void PicaCore::SubmitImmediate(u32 value) {
 }
 
 void PicaCore::DrawImmediate() {
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::ImmediateVertices);
+
     // Compile the vertex shader.
     shader_engine->SetupBatch(vs_setup, regs.internal.vs.main_offset);
 
@@ -1248,6 +1251,7 @@ void PicaCore::DrawImmediate() {
 
 void PicaCore::DrawArrays(bool is_indexed) {
     MICROPROFILE_SCOPE(GPU_Drawing);
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::DrawBatches);
 
     // Track vertex in the debug recorder.
     if (debug_context) {
@@ -1281,11 +1285,24 @@ void PicaCore::DrawArrays(bool is_indexed) {
                                 regs.internal.pipeline.triangle_topology);
 
     // Attempt to use hardware vertex shaders if possible.
-    if (accelerate_draw && rasterizer->AccelerateDrawBatch(is_indexed)) {
-        return;
+    if (accelerate_draw) {
+        if (rasterizer->AccelerateDrawBatch(is_indexed)) {
+            VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::AcceleratedDraws);
+            return;
+        }
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::FallbackBackend);
+    } else if (regs.internal.pipeline.use_gs == PipelineRegs::UseGS::Yes) {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::FallbackGeometryShader);
+    } else if (!Settings::values.use_hw_shader) {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::FallbackHwShaderDisabled);
+    } else if (!primitive_assembler.IsEmpty()) {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::FallbackPrimitiveState);
+    } else {
+        VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::FallbackTopology);
     }
 
     // We cannot accelerate the draw, so load and execute the vertex shader for each vertex.
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SoftwareDraws);
     LoadVertices(is_indexed);
 
     // Draw emitted triangles.
