@@ -67,8 +67,9 @@
 - Preserve ARM64 signed-narrow fusion only when `LeastSignificantByte`/`LeastSignificantHalf` has
   exactly one use and the immediately following IR instruction is the matching word/long signed
   extension. In that case the narrow value aliases its source and `SXTB`/`SXTH` performs both jobs.
-  Keep `UXTB`/`UXTH` for zero extensions, stores, shared/non-adjacent values, and every unrecognized
-  consumer; only the separately documented sole-consumer shift-count fusion may bypass `UXTB`.
+  Keep `UXTB`/`UXTH` for zero extensions, shared/non-adjacent values, exclusive stores, ordinary
+  stores outside the separately documented exact-width gate, and every unrecognized consumer; only
+  the separately documented sole-consumer shift-count and ordinary-store fusions may bypass it.
   Retain the real A32 `SXTB`, `SXTH`, `SMULBB`, and dirty-high-byte `LSL` regression so an over-broad
   alias cannot silently corrupt shift semantics.
 - ARM64 Dynarmic may omit the second `AND #0xff` in no-carry A32 `LogicalShiftLeft32`,
@@ -702,6 +703,16 @@
   were 2.6231x/2.0075x independent/dependent on A510, 2.8808x/2.0001x on A715,
   2.9015x/1.9990x on A710, and 2.7145x/1.9993x on X3 for a representative nonzero immediate.
   Keep these claims path-local until a matched title and battery-power A/B exists.
+- ARM64 Dynarmic ordinary A32 byte/halfword stores may alias
+  `LeastSignificantByte`/`LeastSignificantHalf` to the raw word only when that value has exactly
+  one use and its consumer is matching `A32WriteMemory8`/`A32WriteMemory16`. Native `STRB`/`STRH`
+  must then perform the final truncation with no preceding `UXTB`/`UXTH`. Do not extend this to
+  shared or non-store U8/U16 values, exclusive writes, mismatched widths, or the endian-reversal
+  path. Preserve exact low-width callback arguments and fastmem writes for dirty-upper-bit inputs,
+  ARM/Thumb encodings, data/base aliases, unrelated GPRs, NZCV/Q/GE, and FPSCR in permanent tests.
+  The exact store-saturated Thor benchmark was throughput-neutral, so describe this only as one
+  removed host instruction and lower code-cache/front-end/integer-issue work until a matched title
+  and battery-power A/B exists.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

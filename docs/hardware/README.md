@@ -259,6 +259,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   removing a dependency and an integer-pipeline operation. Do not apply this to shift counts or
   other U8/U16 consumers that require canonical zero extension; preserve a dirty-upper-bits guest
   regression alongside the fused signed cases.
+- Apply the same use-data discipline to ordinary A32 byte and halfword stores. AArch64 `STRB` and
+  `STRH` architecturally consume only the low 8 or 16 source bits, so a sole matching store
+  consumer can use the raw word without first issuing the `UBFM` alias `UXTB`/`UXTH`. The same X3
+  page 18, A715 page 20, A710 pages 27-28, and A510 pages 22-23 rows prove that this removes a real
+  integer operation, but they do not imply that a store-throughput-limited loop gets faster. Keep
+  canonical narrowing for shared/non-store consumers, exclusive writes, mismatched widths, and
+  endian-reversal paths, and verify both callback and fastmem stores with dirty upper bits.
 - Reuse that canonical `UXTB` result in a following no-carry variable shift instead of masking it
   a second time. The logical-instruction tables list the removed `AND` at latency/throughput 1/6
   on X3 page 15, 1/4 on A715 and A710 page 17, and 1/3 on A510 page 14. The variable-shift rows list

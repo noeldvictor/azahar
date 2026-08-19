@@ -5418,3 +5418,62 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Capture FPS, frametime stability, speed percentage, battery temperature, and whether audio crackles.
 - Run one cold-cache pass and one warm-cache pass.
 - Record the title ID, region, ROM revision, cheat preset, renderer, internal resolution, secondary display layout, and GPU driver.
+
+## ARM64 A32 Narrow-Store Extension Elision (2026-08-18)
+
+- Ordinary A32 byte and halfword stores previously materialized
+  `LeastSignificantByte`/`LeastSignificantHalf` as ARM64 `UXTB`/`UXTH`, then immediately used
+  `STRB`/`STRH`, whose architectural write width discarded the upper bits again. The ARM64 emitter
+  now aliases the raw word only when the narrow value has exactly one use and that use is matching
+  `A32WriteMemory8`/`A32WriteMemory16`. Shared values, other U8/U16 consumers, exclusive stores,
+  mismatched widths, and endian-reversal paths retain canonical narrowing.
+- The local Cortex software-optimization manuals identify `UXTB`/`UXTH` as aliases in the baseline
+  `UBFM` group on X3 page 18, A715 page 20, A710 pages 27-28, and A510 pages 22-23. `STRB` and
+  `STRH` consume the low byte/halfword by definition. This proves that the extension is redundant
+  for the gated shape and that removing it saves an integer instruction; it does not prove a
+  store-pipeline throughput or battery-power gain. No PDF or rendered manual page entered Git.
+- Temporary emitter traces captured raw JIT words `38334b34` and `78334b34`. Capstone decoded the
+  complete wrapper spans as exactly `strb w20, [x25, w19, uxtw]` and
+  `strh w20, [x25, w19, uxtw]`, with no hidden extension or register copy. The diagnostic was
+  removed. The final trace-free stripped test binary is 26,136,392 bytes, contains no
+  `THOR_NARROW117` marker, and has SHA-256
+  `295DDE99220E6B7BD7651A87EB348370AAFDB70F6F65E185890210A7F341F9FE`.
+- A disassembly-checked standalone helper compared four independent old `UXTB/UXTH; STRB/STRH`
+  chains against four direct stores. Each of 15 alternating-order samples executed 32,000,000
+  affected stores and required matching byte/halfword checksums of 510/131070. The values below
+  are old time divided by new time; A510 uses five invocation medians, A715 and A710 use three,
+  and X3 reports the one valid invocation before Android `core_ctl` intermittently rejected later
+  CPU 6/7 affinity masks with `EINVAL`:
+
+  | Thor core | Direct `STRB` | Direct `STRH` |
+  | --- | ---: | ---: |
+  | A510 CPU 0 | 0.999368x | 1.002850x |
+  | A715 CPU 3 | 0.999791x | 0.999637x |
+  | A710 CPU 5 | 1.000054x | 1.000341x |
+  | X3 CPU 7, one accepted invocation | 1.000024x | 1.000072x |
+
+- The store-saturated loop is therefore throughput-neutral within noise even though the generated
+  path falls from two host instructions to one. The accepted benefit is lower generated-code size
+  and less fetch/decode/integer-issue work when these guest stores execute; a watt reduction is a
+  plausible hypothesis, not a measured result.
+- Permanent ARM and Thumb-16 coverage exercises `STRB`/`STRH`, distinct data/base operands and
+  data-equals-base aliases, eight dirty/boundary inputs, callback and fastmem paths, all unrelated
+  GPRs, NZCV/Q/GE, and FPSCR. The focused case passed 2,592 assertions on A510 CPU 0, A715 CPU 3,
+  A710 CPU 6, and X3 CPU 7. The clean CPU-3 ARM64 Dynarmic suite passed 90,052 assertions in 39
+  cases. The source change is commit `8bb915e32` and is pushed to `origin/master`.
+- The exact post-commit JDK 17 `:app:assembleVanillaRelWithDebInfoLite`
+  `--no-configuration-cache` build passed. The 29,003,652-byte APK has SHA-256
+  `6241014BD33858C1A3BB37FC017C28968167398B02DC4E598B2E7B870D6AC58F`, package
+  `org.azahar_emu.azahar.debug`, and version `8bb915e32-vanilla-thor`. It was installed over Wi-Fi
+  ADB at `192.168.1.33:5555`, then verified `stopped=true` with no PID; the app/game was not
+  launched.
+- Cleanup removed 2,575,311,320 logical bytes: the 104,561,839-byte local scratch tree, the
+  448,896,104-byte unstripped native test executable, and all reproducible Gradle staging. The
+  reusable ARM64 CMake/Ninja cache is 2,796,842,775 bytes; retained Gradle output is only the
+  29,003,652-byte APK and its 476-byte metadata. C: free space increased by 1,909,010,432 physical
+  bytes from the pre-clean audit. All five exact `/data/local/tmp` helpers were removed.
+- This is optimization 117 in the overlapping Thor work tally. It is not additive with the other
+  116 entries and does not establish whole-game FPS, frametime, thermal, or wattage gains. Those
+  claims still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
+  performance-mode/fan/brightness/duration A/B run, which was intentionally not performed because
+  the current instruction is not to launch the app.

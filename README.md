@@ -204,7 +204,15 @@ include:
 - signed narrow fusion that recognizes an immediately adjacent, single-use byte/halfword sign
   extension and emits only `SXTB`/`SXTH`, instead of first canonicalizing with `UXTB`/`UXTH`.
   Exact-sequence Thor measurements were **1.67x-4.50x faster** on A510/A710/A715; register shifts,
-  zero extensions, stores, shared values, and non-adjacent uses retain the original narrowing;
+  zero extensions, shared values, non-adjacent uses, and exclusive stores retain the original
+  narrowing;
+- ordinary A32 byte/halfword store-width fusion that recognizes a sole `A32WriteMemory8/16`
+  consumer and lets native `STRB`/`STRH` perform the architectural truncation, eliminating the
+  preceding `UXTB`/`UXTH`. Actual JIT words decode as exactly one store with no hidden extension
+  or copy. Cross-run-median exact store-loop results were 0.9994x/1.0028x on A510,
+  0.9998x/0.9996x on A715, and 1.0001x/1.0003x on A710 for byte/halfword stores; one accepted X3
+  run was 1.0000x/1.0001x. This is an instruction-count, code-cache, and integer-issue reduction,
+  not a whole-game FPS or measured-watt claim;
 - register-shift byte-mask elision for ordinary no-flags A32 `LSL`, `LSR`, and `ASR`. When the
   shift amount is already the result of `LeastSignificantByte`, its required `UXTB` is reused
   directly instead of emitting a second `AND #0xff`. Generic U8 producers and carry-producing
