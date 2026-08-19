@@ -211,6 +211,16 @@
   randomized coverage, final linked-code inspection, and every-accessible-core Thor timing. Do not
   convert the 1.23x-3.02x attribute-kernel result into whole-game FPS or watts: hardware vertex
   shaders and vertex-cache hits can bypass this work.
+- PICA physical attribute translation is also fixed for one `VertexLoader`/draw lifetime. Resolve
+  each non-default attribute's base plus loader offset once in the constructor and keep the direct
+  backing pointer; do not restore per-uncached-vertex `MemorySystem::GetPhysicalPointer()` calls.
+  Keep one pointer per attribute so separate loader offsets remain distinct, preserve strides and
+  default attributes, and map a failed constructor lookup to the established invalid/retention
+  route before any pointer arithmetic. Do not retain these pointers beyond the loader lifetime.
+  Permanent coverage must use the real `MemorySystem`, combine multiple formats with a default
+  attribute, and prove that guest writes after construction remain visible. Inspect final ThinLTO
+  for direct pointer-plus-stride math and no physical lookup inside `LoadVertex()`. The measured
+  1.95x-3.38x address/load loop result is path-local, not whole-game FPS or watts.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register
   block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the

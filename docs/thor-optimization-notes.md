@@ -6590,3 +6590,64 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   conversion work makes lower energy plausible on this path; whole-game frametime, thermal slope,
   and battery power still require a controlled matched title/scene/cache/renderer/driver/
   resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## Draw-Lifetime PICA Vertex Stream Pointers (2026-08-19)
+
+- After entry 133 predecoded format/count, the remaining CPU-side recurring path still called
+  `MemorySystem::GetPhysicalPointer()` for every non-default attribute of every uncached vertex.
+  That repeated physical-region classification, backing-object dereference, virtual `GetPtr()`,
+  and region-offset addition even though the physical base, loader offset, format, and stride are
+  fixed for one `VertexLoader`/draw.
+- `VertexLoader` now resolves a separate direct backing pointer for every configured attribute in
+  its constructor. `LoadVertex()` performs only the established descriptor dispatch after loading
+  that pointer and adding `stride * vertex`. FCRAM, VRAM, DSP, and New-3DS backing allocations are
+  stable for the `MemorySystem` lifetime, so writes still update the storage seen by the cached
+  pointer. A null constructor lookup changes the descriptor to `Invalid`, preserving the existing
+  retention/error route without null pointer arithmetic. Default attributes remain pointer-free.
+- A temporary Android 29 ARM64 benchmark compared the exact old recurring address lookup with the
+  new pointer-plus-stride operation while keeping the same `VertexLoaderUtils::LoadAttribute()`
+  work. It used four independent BYTE4/UBYTE4/SHORT4/FLOAT4 streams, 256 source vertices, two
+  million loop iterations, 11 alternating-order median samples, and equal nonzero checksums. The
+  Thor was AC-powered, charge-limited/status 3 at 80%, and 23.0 C, so these are wall-powered exact-
+  path timings rather than battery-discharge watts:
+
+  | Thor core | Old ns/attribute | Cached ns/attribute | Old/cached |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0 | 28.906693 | 14.861517 | 1.945070x |
+  | A715 CPU 3 | 10.614219 | 4.828092 | 2.198429x |
+  | A710 CPU 6 | 9.793997 | 2.897591 | 3.380048x |
+
+  Android's shell affinity mask excluded CPU7 during this run, so no X3 timing is claimed.
+- Final ThinLTO shrank `Pica::VertexLoader::LoadVertex()` from entry 133's 780 bytes (`0x30c`) to
+  728 bytes (`0x2d8`). Linked AArch64 disassembly loads the cached pointer, multiplies stride by
+  vertex, and adds the two directly; it contains no `GetPhysicalPointer()` or
+  `GetPhysMemRegionInfo()` call. The corresponding physical-region and backing `GetPtr()` work is
+  visible once in the constructor.
+- The permanent test uses the actual `Core::System`, `MemorySystem`, register descriptors, and
+  `VertexLoader`. It combines BYTE4 and SHORT3 streams with a default attribute, loads two
+  vertices, mutates guest FCRAM after loader construction, and byte-compares the resulting `f24`
+  attributes against an independent scalar reference. Focused `[video_core][pica]` tests passed
+  21 assertions in two cases on A510 CPU0, A715 CPU3, and A710 CPU6. Full `[video_core]` passed
+  135,067 assertions in 76 cases on A715.
+- Source/test commit `772fea8d0` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 2 minutes 38 seconds.
+  The ARM64-only, v2-signed APK is 29,007,272 bytes with SHA-256
+  `0FCC0649B4228EE70193119DB1721485D28F3D3682B21FC0EA3C1D767ACE08CB`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `772fea8d0-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it, an immediate force-stop left no app PID, and the
+  original `stay_on_while_plugged_in=0` remained unchanged. Neither app nor game was launched.
+- Bounded cleanup removed 2,498,793,651 logical host bytes and recovered 2,055,999,488 physical
+  bytes, leaving 53,488,480,256 bytes free on C:. The retained active ARM64 CMake/Ninja cache is
+  2,799,804,317 bytes; retained build output is only the 29,007,272-byte APK and 476-byte metadata.
+  The 449,575,344-byte native test ELF, 26,204,856-byte stripped test, Gradle/JNI/R8/symbol/mapping
+  staging, and the exact `/data/local/tmp` helper were removed. No PDF, benchmark, test binary,
+  rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 134 in the overlapping Thor ledger. It accelerates only
+  uncached CPU-side vertex attributes; hardware vertex loading, default attributes, and vertex-
+  cache hits bypass some or all of the work. The 1.95x-3.38x exact-loop ratios cannot be added to
+  the prior 133 entries or converted into whole-emulator FPS or battery watts. Fewer recurring
+  lookups, indirect calls, and address operations make lower energy plausible on this path, but
+  whole-game frametime, thermal slope, and battery power still require a controlled matched title/
+  scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.

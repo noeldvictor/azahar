@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **133 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **134 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -396,6 +396,17 @@ contains the intended `SSHLL`/`USHLL`, `SCVTF`/`UCVTF`, and Q-load/store sequenc
 randomized byte comparisons and the 135,064-assertion video-core suite pass on Thor. This is
 optimization 133. Hardware-vertex-shader draws and vertex-cache hits avoid some or all of this CPU
 loader work, so these ratios are not whole-game FPS or battery-watt gains.
+
+CPU-side PICA vertex loading now resolves each configured attribute's physical backing pointer once
+when the draw-lifetime loader is built, instead of repeating `MemorySystem` region lookup and a
+virtual backing-store call for every non-default attribute of every uncached vertex. An exact
+four-stream Thor benchmark with equal nonzero checksums reduced address-plus-load time from
+28.906693 to 14.861517 ns/attribute on A510, 10.614219 to 4.828092 on A715, and 9.793997 to
+2.897591 on A710: **1.95x, 2.20x, and 3.38x** respectively. Final ThinLTO shrank
+`VertexLoader::LoadVertex()` from 780 to 728 bytes and contains direct pointer-plus-stride math with
+no physical-memory lookup. The permanent multi-stream/default-attribute test and all 135,067
+video-core assertions pass on Thor. This is optimization 134; hardware vertex loading and vertex-
+cache hits can bypass it, so the exact-loop ratios are not whole-game FPS or battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

@@ -415,6 +415,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   widening, exact `f24` storage bits, the missing `(0,0,0,1)` defaults, and the scalar/non-AArch64
   forms. The X3 being parked during the final run is a recorded limitation, not permission to infer
   its result from the other cores or from the manuals.
+- Physical translation of each PICA vertex stream is likewise invariant for one CPU draw. Resolve
+  the direct FCRAM/VRAM backing pointer when the loader is constructed, then use pointer plus
+  `stride * vertex` in the recurring path. This removes region classification, backing-object
+  dereference, and a virtual `GetPtr()` call per non-default attribute while retaining live guest
+  writes because the `MemorySystem` backing allocations are stable for the loader lifetime. Keep
+  separate pointers for separately configured attributes and retain the null-lookup invalid route.
+  The exact four-stream operation improved 1.95x on A510, 2.20x on A715, and 3.38x on A710, but
+  hardware vertex loading and cache hits bypass it; do not report those ratios as game FPS or watts.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,
