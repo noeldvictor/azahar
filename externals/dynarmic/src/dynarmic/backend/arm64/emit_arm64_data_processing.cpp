@@ -215,6 +215,36 @@ static const IR::Inst* GetImmediatelyShiftedLogicalOperand(const IR::Inst* logic
     return shift;
 }
 
+static const IR::Inst* GetImmediatelyShiftedNotOperand(const IR::Inst* bit_not) {
+    if (!bit_not || bit_not->GetOpcode() != IR::Opcode::Not32 ||
+        bit_not->HasAssociatedPseudoOperation()) {
+        return nullptr;
+    }
+
+    const IR::Value shifted_value = bit_not->GetArg(0);
+    if (shifted_value.IsImmediate()) {
+        return nullptr;
+    }
+
+    const IR::Inst* shift = shifted_value.GetInst();
+    const IR::Opcode shift_opcode = shift->GetOpcode();
+    if ((shift_opcode != IR::Opcode::LogicalShiftLeft32 &&
+         shift_opcode != IR::Opcode::LogicalShiftRight32 &&
+         shift_opcode != IR::Opcode::ArithmeticShiftRight32 &&
+         shift_opcode != IR::Opcode::RotateRight32) ||
+        shift->HasAssociatedPseudoOperation() || shift->UseCount() != 1 ||
+        shift->GetNextInstruction() != bit_not || shift->GetArg(0).IsImmediate() ||
+        !shift->GetArg(1).IsImmediate()) {
+        return nullptr;
+    }
+
+    const u8 shift_amount = shift->GetArg(1).GetU8();
+    if (shift_amount < 1 || shift_amount > 31) {
+        return nullptr;
+    }
+    return shift;
+}
+
 template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -434,7 +464,8 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
     if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
-        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedNotOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -592,7 +623,8 @@ void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitCo
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
     if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
-        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedNotOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -748,7 +780,8 @@ void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, Emi
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
     if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
-        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedNotOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -884,7 +917,8 @@ void EmitIR<IR::Opcode::RotateRight32>(oaknut::CodeGenerator& code, EmitContext&
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedNotOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -1541,6 +1575,38 @@ static bool TryEmitImmediatelyShiftedLogical(oaknut::CodeGenerator& code, EmitCo
     return true;
 }
 
+static bool TryEmitImmediatelyShiftedNot(oaknut::CodeGenerator& code, EmitContext& ctx,
+                                         IR::Inst* inst) {
+    const IR::Inst* shift = GetImmediatelyShiftedNotOperand(inst);
+    if (!shift) {
+        return false;
+    }
+
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Wresult = ctx.reg_alloc.WriteW(inst);
+    auto Woperand = ctx.reg_alloc.ReadW(args[0]);
+    RegAlloc::Realize(Wresult, Woperand);
+
+    const u8 shift_amount = shift->GetArg(1).GetU8();
+    switch (shift->GetOpcode()) {
+    case IR::Opcode::LogicalShiftLeft32:
+        code.MVN(Wresult, *Woperand, LSL, shift_amount);
+        break;
+    case IR::Opcode::LogicalShiftRight32:
+        code.MVN(Wresult, *Woperand, LSR, shift_amount);
+        break;
+    case IR::Opcode::ArithmeticShiftRight32:
+        code.MVN(Wresult, *Woperand, ASR, shift_amount);
+        break;
+    case IR::Opcode::RotateRight32:
+        code.MVN(Wresult, *Woperand, ROR, shift_amount);
+        break;
+    default:
+        ASSERT_FALSE("Unexpected shifted NOT operand");
+    }
+    return true;
+}
+
 template<size_t bitsize>
 static void EmitAndNot(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto nz_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetNZFromOp);
@@ -1660,6 +1726,9 @@ void EmitIR<IR::Opcode::Or64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR:
 
 template<>
 void EmitIR<IR::Opcode::Not32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmediatelyShiftedNot(code, ctx, inst)) {
+        return;
+    }
     EmitTwoOp<32>(
         code, ctx, inst,
         [&](auto& Wresult, auto& Woperand) { code.MVN(Wresult, Woperand); });
