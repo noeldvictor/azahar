@@ -25,9 +25,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   300 `SwapBuffers()` calls and log a warning that their atomic counters and timers make them
   unsuitable for FPS, watt, or thermal A/B comparisons.
 - The windows count swap calls and actual presented images; presentation blits/copies and pixels;
-  presentation queue/fence waits; scheduler flushes, finishes, submissions, timeline waits, and
-  worker drains; render-pass starts, reuse, ends, end-of-render-pass image barriers, and Mali-only
-  flushes; texture upload/download/custom-upload bytes plus copy/blit pixels; and PICA draw batches,
+  presentation queue waits and combined submissions; scheduler flushes, finishes, submissions,
+  timeline waits, and worker drains; render-pass starts, reuse, ends, end-of-render-pass image
+  barriers, and Mali-only flushes; texture upload/download/custom-upload bytes plus copy/blit pixels;
+  and PICA draw batches,
   immediate vertices, backend-handled draws, software draws, and categorized hardware-shader
   fallback reasons.
   `RenderPassImageBarriers` is intentionally scoped to barriers emitted by
@@ -326,6 +327,67 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   whole-frame FPS, frametime, watts, thermals, and battery life remain unmeasured. A future permitted
   matched Thor A/B must hold title, scene, save, caches, renderer, resolution, driver, layout,
   brightness, performance/fan mode, power source, and duration fixed before making those claims.
+
+## 2026-08-19 Combined Vulkan Presentation Submission
+
+- Optimization/candidate 149 addresses the largest structurally recurring host-side synchronization
+  sequence left in Vulkan's final presentation path after entries 143 and 145. The old path
+  submitted composition through the scheduler, signaled a per-frame `render_ready` binary
+  semaphore, acquired a swapchain image,
+  recorded a second presentation command buffer, and called `vkQueueSubmit` again with a per-frame
+  `present_done` fence. Frame reuse later performed a host `waitForFences`/`resetFences` cycle.
+- Final composition and swapchain transfer now occupy one scheduler command buffer and one queue
+  submission. A worker-time prepare callback acquires and captures the exact swapchain image,
+  image-acquired semaphore, and image-specific present-ready semaphore; records the exact image
+  barriers plus copy/blit; and supplies an `image_acquired` wait scoped to `Transfer`. The scheduler
+  submission signals both its ordinary completion primitive and `present_ready`. Its post-submit
+  callback then queues the frame, and the present thread only calls `vkQueuePresentKHR`.
+- The recurring separate presentation command-buffer begin/end/cycle, second `vkQueueSubmit`,
+  `render_ready` signal/wait handoff, and `present_done` fence signal/wait/reset are removed. At 60
+  displayed frames per second, render plus present therefore changes from up to 120 graphics-queue
+  submissions to 60. This is a structural driver-call count, not a 2x emulator-speed claim: the
+  guest CPU/GPU work, final layout composition, swapchain acquisition/present, and full-frame
+  copy/blit all remain.
+- Correctness remains explicit. Final color-attachment writes become transfer reads in the same
+  command buffer; the acquired image transitions from `Undefined` through `TransferDstOptimal` to
+  `PresentSrcKHR`; and the intermediate image returns from `TransferSrcOptimal` to `General` with
+  a `TransferRead` to future `ColorAttachmentWrite` dependency. Vulkan queue order makes that
+  barrier apply to later submissions on the same queue, so frame reuse no longer needs a host
+  fence. Acquisition failure records a restore-only barrier before swapchain recreation, and
+  `submit_mutex` externally synchronizes graphics submit and present calls.
+- This design follows current [RPCS3 Vulkan presentation
+  structure](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/RSX/VK/VKPresent.cpp), which
+  records presentation transfer work in its frame context and submits once with acquire/present
+  semaphore handoff. Khronos' [`vkCmdPipelineBarrier`
+  reference](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdPipelineBarrier.html)
+  defines the same-queue memory dependency across commands and later submissions, while the
+  official [synchronization
+  examples](https://github.com/KhronosGroup/Vulkan-Docs/wiki/synchronization-examples) and
+  [pipeline-barrier performance
+  sample](https://docs.vulkan.org/samples/latest/samples/performance/pipeline_barriers/README.html)
+  support matching waits/barriers to the real transfer consumer. No RPCS3 code was copied.
+- The profiling-off ARM64 native rebuild passed in 2 minutes 27 seconds. Its cache records
+  `ENABLE_THOR_FRAME_PROFILING=OFF`; linked symbols include the combined scheduler command,
+  `PrepareForPresent`, `FinishPresent`, and the exact-stage master-semaphore submission API, while
+  the normal library contains zero `ThorFrameProfile` strings. A separate profiling-on cache built
+  and linked all 2,203 actions in 13 minutes 27 seconds and contains the new
+  `combined_submissions` proof field.
+- Source commit `e35688c03d` was pushed directly to `origin/master` with command-line Git over SSH.
+  The post-commit normal APK build passed in 3 minutes 43 seconds. The retained APK contains only
+  `arm64-v8a`, reports `e35688c03-vanilla-thor`, is 29,004,056 bytes, and has SHA-256
+  `9740416CF9B6F8A4C24B3D409BB29C6BF61987DE6325F9600ECB01A4C18285CF`; its active cache keeps
+  profiling off.
+- Exact bounded cleanup removed 6,212,291,027 logical bytes: the disposable profiling cache plus
+  reproducible Gradle/JNI/R8/native-symbol/mapping staging. The retained output is the
+  3,242,354,720-byte normal ARM64 CMake/Ninja cache, the APK, and its 476-byte metadata; C: reports
+  55,263,846,400 bytes free. No ADB command, install, app launch, game launch, or runtime capture
+  was used.
+- The latest fetched `upstream/master` remains `f6a3e3aa5` and is already an ancestor of this fork.
+  Static proof guarantees one fewer queue submission and host fence cycle per successfully
+  presented frame, but the effect on FPS, frametime variance, watts, thermals, and battery life is
+  workload- and driver-dependent. Expect the strongest benefit in driver/CPU-bound or lightly
+  loaded scenes and a smaller result when Adreno shader/fill work dominates. A matched Thor A/B is
+  still required before attaching a numeric speed or power claim.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

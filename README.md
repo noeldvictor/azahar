@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **148 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **149 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -539,6 +539,16 @@ masks already used by ordinary texture blits. Upload scaling, download scaling, 
 only unrelated pipeline work is no longer included in those dependencies. The normal 1x path does
 not call this scale blit, so the gain is conditional on resolution scaling and remains unmeasured
 until a matched Thor FPS/frametime/power A/B is permitted.
+
+Optimization 149 combines Vulkan's final composition and swapchain transfer into one scheduler
+command buffer and one graphics-queue submission. The separate presentation command buffer,
+`render_ready` semaphore handoff, `present_done` fence wait/reset, and second `vkQueueSubmit` are
+gone; swapchain acquisition now supplies the exact image and binary semaphores to the scheduler's
+final transfer stage. At 60 displayed FPS this changes the render-plus-present structure from up to
+120 queue submissions to 60, but it does **not** imply 2x FPS: rendering, emulation, and the
+full-frame copy/blit remain. The likely benefit is lower CPU/driver synchronization overhead and
+better frame pacing in driver-bound or lightly loaded scenes. FPS, watts, thermals, and battery
+life remain unmeasured until a matched Thor A/B.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

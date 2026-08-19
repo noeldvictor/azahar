@@ -468,12 +468,15 @@
   completed timeline ticks. Keep synchronous `Finish()` at explicit CPU readbacks, render-frame
   recreation, presentation-window destruction, and renderer teardown where the host actually needs
   completed work or is about to destroy its backing resources.
-- Native threaded Vulkan presentation must use `Scheduler::FlushWithCallback()` to keep the render
-  submission and present-queue notification in one typed worker command and one routine dispatch.
-  The worker must submit and release `submit_mutex`, enqueue the frame while holding `queue_mutex`,
-  release that predicate mutex, and only then notify the presentation thread. Do not split this
-  back into `Flush()` plus a separately recorded/dispatched callback. Keep the original worker
-  drain for LibRetro cache ticks and the synchronous presentation fallback. Deferred
+- Native Vulkan presentation must use `Scheduler::FlushWithDynamicSubmission()` so final
+  composition and the swapchain transfer stay in one scheduler command buffer and one graphics-
+  queue submission. The worker-side prepare callback must acquire and capture the exact swapchain
+  image plus its binary semaphores, record the transfer and both post-transfer image transitions,
+  and wait for `image_acquired` at `Transfer`. Only after `vkQueueSubmit` may the post-submit
+  callback enqueue the frame while holding `queue_mutex`; release that predicate mutex before
+  notifying the present thread. Do not restore a separate presentation command pool/buffer, second
+  `vkQueueSubmit`, `render_ready` handoff, or `present_done` fence wait/reset. Keep the worker drain
+  for LibRetro cache ticks and the synchronous presentation fallback. Deferred
   rasterizer-cache destruction is safe only when the runtime completion tick is strictly newer
   than the sentenced resource tick; equality must retain the resource because that tick can still
   be queued or in flight. Any value read by a worker callback while the producer may begin the next
@@ -484,13 +487,15 @@
   blit with a 1:1 mapping. Keep `vkCmdBlitImage` for actual extent scaling when the destination
   supports blitting, and keep the established overlapping copy fallback when it does not. Do not
   infer equal extents from Android alone; select the route from the acquired swapchain extent.
-- Vulkan presentation's `render_ready` semaphore owns availability for the intermediate image once
-  the render submission leaves it in `TransferSrcOptimal`; do not re-add a redundant same-layout
-  image barrier. Both `image_acquired` and `render_ready` waits must target the transfer stage, their
-  first consumer. Keep the acquired-image transition `TopOfPipe` to `Transfer` and the completed
-  transfer's present transition `Transfer` to `BottomOfPipe` with no destination access mask; never
-  restore the former `AllCommands`-to-`AllCommands` full-pipeline barrier. Preserve the existing
-  per-frame fence/reuse waits and queue-idle synchronization for swapchain/surface recreation.
+- Vulkan presentation's combined submission must make final color-attachment writes visible to
+  the transfer read, transition the acquired image from `Undefined` to `TransferDstOptimal`, and
+  wait for `image_acquired` only at `Transfer`. After copy/blit, restore the intermediate image from
+  `TransferSrcOptimal` to `General` with `TransferRead` to `ColorAttachmentWrite`, and transition
+  the acquired image to `PresentSrcKHR` with no destination access. The next render pass starts in
+  `General`; same-queue order plus that post-copy barrier owns intermediate-image reuse. Preserve
+  the restore-only path when acquisition/recreation fails, serialize queue submit/present with
+  `submit_mutex`, and retain queue-idle synchronization for swapchain/surface recreation. Never
+  restore the former `AllCommands` scopes, `render_ready` binary handoff, or host fence reuse wait.
 - Vulkan `Surface::BlitScale()` must use the surface's `PipelineStageFlags()` and `AccessFlags()` as
   the producer/consumer scopes around the transfer stage; the Base and Scaled images share the same
   surface-use flags. Do not restore `AllCommands` or generic memory read/write scopes around these
@@ -1032,7 +1037,17 @@
   exact A510 `SMUSD` kernel regressed from 2.599973 to 2.702699 ns/op (0.961991x), while `SMUSDX`
   was only a 0.999915x tie. Big-core wins do not override the efficiency-core regression; retain
   the established lowering unless a narrower dependency-aware gate wins on every intended core.
-- Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
+- Keep generated Android storage bounded. Check free C: space and the sizes of
+  `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain
+  only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after
+  verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle
+  intermediate trees using exact validated paths inside this repository. An opt-in profiling hash
+  must be removed in the same work tranche after its binary proof is captured; stop the Gradle
+  daemon first if it holds an intermediate open. Before handoff, verify that only the active release
+  hash remains under `.cxx/RelWithDebInfo`, retain `build/outputs/apk` instead of packaging/mapping/
+  symbol staging, and report the logical bytes removed. Do not leave tens of gigabytes of
+  reproducible build output behind or run a broad cleanup that could touch source, manuals, saves,
+  or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
   after native and APK tasks succeed. Use `--no-configuration-cache`; the ordinary Gradle build
