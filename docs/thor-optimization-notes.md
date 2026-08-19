@@ -6509,3 +6509,84 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   watts. Fewer recurring control instructions make lower energy plausible only on this route;
   whole-game frametime, thermal slope, and battery power still require a controlled matched title/
   scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## AArch64 Predecoded PICA Vertex Attributes (2026-08-19)
+
+- `VertexLoader::LoadVertex()` previously switched on a draw-invariant PICA format for every
+  non-default attribute of every uncached vertex. A second runtime-counted loop converted one to
+  four components and a third filled missing components. Format and component count are fixed when
+  the loader is constructed, so that recurring decode/control work was inherited x86-oriented C++
+  structure rather than guest behavior.
+- The constructor now predecodes the four formats and four legal component counts into one-byte
+  `AttributeLoader` values. The recurring path dispatches through one compact 16-way jump table to
+  compile-time-unrolled bodies. One- through three-component bodies retain scalar conversions and
+  exact missing `(0,0,0,1)` defaults. AArch64 BYTE4 and UBYTE4 load four bytes, widen twice with
+  signed `SSHLL` or unsigned `USHLL`, convert four lanes with `SCVTF` or `UCVTF`, and store one Q
+  vector. SHORT4 uses one D load, `SSHLL`, `SCVTF`, and one Q store; FLOAT4 is an exact Q load/store.
+  Invalid zero/>4 component descriptors retain the existing vertex-retention error route, and
+  default attributes, guest addresses, strides, and cache behavior are unchanged.
+- The exact Android 29 standalone helper was compiled and disassembled before timing. The old
+  dynamic helper occupied `0x470` bytes; the predecoded helper occupied `0x218` bytes. Each run
+  first made 500,000 randomized byte-for-byte comparisons across all 16 legal shapes, then timed
+  four independent attribute outputs for 300,000 loop iterations across 11 alternating-order
+  median samples. Final old/new ratios were:
+
+  | Format/count | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 |
+  | --- | ---: | ---: | ---: |
+  | BYTE1 | 2.2910x | 1.8115x | 1.5968x |
+  | BYTE2 | 1.5250x | 1.8512x | 1.6278x |
+  | BYTE3 | 1.3322x | 1.8929x | 1.6645x |
+  | BYTE4 | 2.1967x | 1.8381x | 1.5415x |
+  | UBYTE1 | 2.2988x | 1.8198x | 1.5920x |
+  | UBYTE2 | 1.4685x | 1.8519x | 1.6376x |
+  | UBYTE3 | 1.2266x | 1.6575x | 1.4308x |
+  | UBYTE4 | 1.5754x | 1.9553x | 1.6298x |
+  | SHORT1 | 2.3440x | 1.8301x | 1.6072x |
+  | SHORT2 | 1.5550x | 1.6292x | 1.6307x |
+  | SHORT3 | 1.3563x | 1.8985x | 2.1109x |
+  | SHORT4 | 2.8787x | 1.8905x | 1.5433x |
+  | FLOAT1 | 3.0161x | 2.6831x | 1.5864x |
+  | FLOAT2 | 2.4746x | 1.7840x | 1.5865x |
+  | FLOAT3 | 2.1257x | 1.7895x | 1.6096x |
+  | FLOAT4 | 2.3760x | 2.6991x | 1.4988x |
+
+  Android's core control exposed masks through CPU5 during the final run but parked CPU6/CPU7, so
+  A710 CPU5 was measured and X3 was not. No power setting was changed to force the X3 online. At
+  the final evidence capture, `dumpsys battery` reported AC powered, charge-limited/status 3 at
+  80%, and 23.0 C. These are exact-path wall-powered timings, not battery-discharge watts.
+- Final ThinLTO keeps `Pica::VertexLoader::LoadVertex()` as a 780-byte (`0x30c`) AArch64 function
+  with the 16-way descriptor table. Linked disassembly contains the intended Q load/store,
+  `SSHLL`/`USHLL`, and vector `SCVTF`/`UCVTF` bodies rather than reconstructing scalar runtime
+  loops. The permanent test independently converts 4,096 random inputs for every legal shape:
+  65,536 byte-for-byte comparisons plus invalid zero/five-count checks. Its focused test passed 18
+  assertions on A510 CPU0, A715 CPU3, and A710 CPU5. Full `[video_core]` passed 135,064 assertions
+  in 75 cases on A715. The exact stripped test was 26,202,744 bytes with SHA-256
+  `7BDF5990E62877A617D38E27D61E5E4F8AA87FF070B37E39BC71DB4B5A6D6283`.
+- The adjacent scalar-DSP audit did not inflate the accepted count. `UXTB16` already compiled to
+  one AArch64 mask, while changing `SMUSD`/`SMUSDX` from four extracts, two multiplies, and a
+  subtraction to four extracts plus `SMULL`/`SMSUBL` shortened static code but failed the all-core
+  gate. With both loops aligned to 64 bytes, A510 `SMUSD` changed from 2.599973 to 2.702699 ns/op
+  (0.961991x) and `SMUSDX` from 2.141290 to 2.141473 ns/op (0.999915x). The big-core wins were
+  rejected because the little-core regression matters to Thor efficiency and sustained power.
+- Source/test commit `2fa9ca8ce` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 1 minute 36 seconds.
+  The ARM64-only, v2-signed APK is 29,007,260 bytes with SHA-256
+  `66A3FE227C613E27A70B34106C7796DD43B777EFD16CFEDBFE8237A38D6F5A7F`; its signer certificate
+  SHA-256 is `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `2fa9ca8ce-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it, an immediate force-stop left no app PID, and the
+  original `stay_on_while_plugged_in=0` remained unchanged. Neither app nor game was launched.
+- Bounded cleanup removed 2,498,906,352 logical host bytes and recovered 2,056,413,184 physical
+  bytes, leaving 53,492,310,016 bytes free on C:. The retained active ARM64 CMake/Ninja cache is
+  2,805,610,423 bytes; retained build output is only the 29,007,260-byte APK and 476-byte metadata.
+  The 449,552,336-byte native test ELF, stripped test, both standalone benchmarks/sources,
+  Gradle/JNI/R8/symbol/mapping staging, and all three `/data/local/tmp` helpers were removed. No
+  PDF, benchmark, test binary, rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 133 in the overlapping Thor ledger. It accelerates vertex
+  attribute conversion only when CPU-side PICA loading occurs; hardware-vertex-shader draws and
+  cache hits can bypass it. The 1.23x-3.02x kernel ratios cannot be added to the prior 132 entries
+  or converted into whole-emulator FPS or battery watts. Less recurring branch, integer, and
+  conversion work makes lower energy plausible on this path; whole-game frametime, thermal slope,
+  and battery power still require a controlled matched title/scene/cache/renderer/driver/
+  resolution/layout/performance-mode/fan/brightness/duration A/B.

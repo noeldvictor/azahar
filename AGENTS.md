@@ -201,6 +201,16 @@
   measurements regressed at least one intended shape/core. Retain randomized byte-exact coverage
   for every count and all mapping slots, inspect final ThinLTO for six unconditional mappings with
   no count ladder, and keep the measured result path-local until a matched title/power A/B exists.
+- PICA vertex attribute format and component count are loader-construction invariants. Keep the
+  compact `VertexLoaderUtils::AttributeLoader` predecode outside `LoadVertex()` so an uncached
+  vertex does not repeat the format switch or runtime component/default loops. Preserve all 16
+  BYTE/UBYTE/SHORT/FLOAT x one-to-four-component shapes, the invalid/retention path, default
+  attributes, source addresses/strides, and missing `(0,0,0,1)` components. On AArch64, BYTE4 must
+  sign-widen twice before `SCVTF`, UBYTE4 must zero-widen twice before `UCVTF`, SHORT4 must
+  sign-widen once before `SCVTF`, and FLOAT4 may use an exact 16-byte copy. Retain byte-for-byte
+  randomized coverage, final linked-code inspection, and every-accessible-core Thor timing. Do not
+  convert the 1.23x-3.02x attribute-kernel result into whole-game FPS or watts: hardware vertex
+  shaders and vertex-cache hits can bypass this work.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register
   block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the
@@ -875,6 +885,11 @@
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the
   split `MUL` plus `ADD`/`SUB` lowering unless a future title-gated, dependency-aware proof wins
   on every intended Thor core class.
+- Do not replace A32 `SMUSD`/`SMUSDX` lane extraction and multiply/subtract lowering with the
+  shorter-looking scalar `SMULL`/`SMSUBL` sequence globally. After 64-byte loop alignment, the
+  exact A510 `SMUSD` kernel regressed from 2.599973 to 2.702699 ns/op (0.961991x), while `SMUSDX`
+  was only a 0.999915x tie. Big-core wins do not override the efficiency-core regression; retain
+  the established lowering unless a narrower dependency-aware gate wins on every intended core.
 - Keep generated Android storage bounded. Check free C: space and the sizes of `src/android/app/.cxx` and `src/android/app/build` before and after large native builds. Retain only the active `arm64-v8a` release configuration cache and APKs still needed for testing; after verification, remove stale Debug, x86/x86_64, obsolete CMake configuration-hash, and Gradle intermediate trees using exact validated paths inside this repository. Do not leave tens of gigabytes of reproducible build output behind or run a broad cleanup that could touch source, manuals, saves, or unrelated user files.
 - Do not pass Gradle `--configuration-cache` for Android packaging. `app/build.gradle.kts` runs
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even

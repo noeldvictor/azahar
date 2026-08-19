@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **132 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **133 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -384,6 +384,18 @@ effectively tied on A710, and 2.2% on X3**. Byte-exact randomized coverage prese
 slots, default values, the 96-byte visible vertex, and color clamping. This is optimization 132;
 the result applies only when CPU vertex construction sees exactly six outputs and is not a
 whole-game FPS or battery-watt claim.
+
+PICA vertex attribute format and component count are fixed while a loader is active, so they are
+now decoded once into a compact 16-way descriptor instead of being switched and loop-counted for
+every uncached vertex. One- through three-component loads are compile-time-unrolled and preserve
+the exact missing-component defaults; four signed-byte, unsigned-byte, and signed-short loads use
+packed AArch64 widening plus vector integer-to-float conversion, while four floats use one Q load
+and store. Exact old/new helper medians improved **1.23x-3.02x on A510, 1.63x-2.70x on A715, and
+1.43x-2.11x on A710** across all 16 legal format/count shapes. The final linked Android function
+contains the intended `SSHLL`/`USHLL`, `SCVTF`/`UCVTF`, and Q-load/store sequences; 65,536
+randomized byte comparisons and the 135,064-assertion video-core suite pass on Thor. This is
+optimization 133. Hardware-vertex-shader draws and vertex-cache hits avoid some or all of this CPU
+loader work, so these ratios are not whole-game FPS or battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

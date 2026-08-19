@@ -407,6 +407,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   rejected direct-write and seven-output forms that looked shorter but regressed measured cores.
   Preserve all-core exact-path timing and byte-exact semantic tests instead of extrapolating an
   instruction-count reduction into game FPS or watts.
+- PICA vertex input descriptors are also draw/loader invariants. Predecode format plus component
+  count once, then use fixed-shape loads instead of repeating a switch and two runtime-counted loops
+  per uncached vertex. The indexed Cortex manuals' AdvSIMD widening, conversion, and load/store
+  tables motivated packed BYTE4/UBYTE4/SHORT4 candidates, but physical Thor results controlled
+  acceptance: every legal shape improved on A510, A715, and A710. Preserve signed versus unsigned
+  widening, exact `f24` storage bits, the missing `(0,0,0,1)` defaults, and the scalar/non-AArch64
+  forms. The X3 being parked during the final run is a recorded limitation, not permission to infer
+  its result from the other cores or from the manuals.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,
