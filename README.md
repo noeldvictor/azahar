@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **146 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **147 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -521,6 +521,16 @@ an empty Vulkan command chunk; any real emulation commands still flush normally.
 unthrottled 0%, VSync off, low-refresh handling, explicit waits, and presentation signaling are
 unchanged. This removes recurring queue/driver work, but its sustained-speed and watt effect remains
 pending a matched Thor A/B.
+
+Optimization 147 moves default-on duplicate-frame suppression ahead of guest display preparation.
+On Vulkan, a suppressed duplicate now avoids the two normal mono display-surface cache lookups (or
+three when the right-eye surface is required) before the existing pending-command flush. On Android
+OpenGL, a swap with no presentation, screenshot, or nonduplicate video-dump output also avoids the
+presentation-state apply/restore round trip. Explicit
+screenshots still force preparation; video dumping, event polling, frame limiting, rasterizer frame
+ticks, right-eye state, and real Vulkan emulation submissions keep their prior semantics. This is a
+recurring CPU/driver-work reduction for duplicate-heavy workloads such as many 30 FPS games on a
+60 Hz host cadence, not a measured emulator-wide speed or watt percentage.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

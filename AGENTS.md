@@ -74,6 +74,16 @@
   resource-retirement safety remain unchanged. Track elided submissions with
   `SchedulerEmptyFlushesSkipped` in opt-in Thor frame-profiler builds, while ordinary builds must
   compile the counter/logging path out.
+- Duplicate-frame suppression must be decided before preparing guest display render targets. An
+  explicit screenshot always overrides suppression. Preserve the existing video-dump duplicate
+  policy, defer right-eye skipped-state consumption until a frame is actually prepared, and keep
+  the inner mailbox/window duplicate guard as a correctness backstop. Android OpenGL's no-output
+  exit must still poll the secondary window, close swap timing, run `EndFrame()` (including primary
+  event polling and the frame limiter), and call `rasterizer.TickFrame()` without switching to the
+  presentation GL state. Vulkan's suppressed path must still call `FlushIfPending()` so recorded
+  emulation commands submit. Track Vulkan's early preparation elision with
+  `DuplicateFramePreparationsSkipped` in opt-in Thor profiler builds; normal builds must compile the
+  counter and profiler strings out.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

@@ -237,6 +237,48 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Thor A/B must hold title, scene, save, caches, renderer, resolution, driver, layout, brightness,
   performance/fan mode, power source, and duration fixed before any speed, watt, or thermal claim.
 
+## 2026-08-19 Duplicate-Frame Preparation Elision
+
+- Optimization/candidate 147 moves default-on duplicate-frame suppression ahead of guest display
+  preparation. Previously both renderers prepared the guest screen textures before their final
+  mailbox/window duplicate guard. Vulkan therefore performed two `GetSurfaceSubRect` display-
+  surface cache lookups in a normal mono layout, or up to three when the right-eye surface was
+  required, on a frame it would not present. Android OpenGL additionally captured the
+  rasterizer state, applied presentation state, and restored the prior state even when no host
+  output would be drawn.
+- The shared compile-time decision table makes an explicit screenshot override suppression. A
+  nonduplicate presentation or video-dump frame still prepares normally, while a duplicate dump
+  retains the old inner-mailbox behavior and remains suppressed. The inner renderer guards remain
+  in place. Right-eye skipped state is consumed only inside actual preparation, so a suppressed
+  duplicate cannot steal the fact from the next visible frame.
+- Android OpenGL now exits before `OpenGLState::Apply()` only when there is no presentation,
+  screenshot, or required dump output. That exit still polls the secondary window, calls
+  `EndSwap()`, runs `EndFrame()` so primary event polling and frame limiting remain intact, and
+  ticks the rasterizer. Vulkan still reaches `Scheduler::FlushIfPending()`: a real emulation command
+  chunk submits, while only an actually empty chunk is elided by optimization 146.
+- Compile-time assertions cover ordinary presentation, suppressed presentation, screenshot
+  override, duplicate/nonduplicate dumping, and a swap with no output. The normal pre-commit ARM64
+  APK build passed in 3 minutes 42 seconds. Linked AArch64 inspection of
+  `RendererOpenGL::SwapBuffers()` shows the no-output branch reaching `EndFrame()`/`TickFrame()`
+  before the later presentation-state `OpenGLState::Apply()` call.
+- A separate profiler-enabled native build compiled and linked all 2,203 steps in 11 minutes 51
+  seconds. Its cache recorded `ENABLE_THOR_FRAME_PROFILING=ON`, and its final shared library
+  contained the new `duplicate_prepare_skipped` log field. The post-commit production package build
+  passed in 2 minutes 33 seconds with profiling OFF and zero profiler strings.
+- Source commit `1d15baafb` was pushed directly to `origin/master` using command-line Git over SSH.
+  The retained APK contains only `arm64-v8a`, reports `1d15baafb-vanilla-thor`, is 29,015,052 bytes,
+  and has SHA-256
+  `6769A549B36CAEC70CE74BE1EA6CF76288E80D5C67E6E8078DE2EB636BD3087E`.
+- Exact validated cleanup removed 6,213,355,496 logical bytes of the disposable profiler cache and
+  reproducible Gradle/JNI/R8/native-symbol/mapping staging. Reported C: free space increased by
+  about 5.32 GB to 56,325,787,648 bytes. The retained output is the 3,242,355,745-byte normal
+  profiler-OFF ARM64 CMake/Ninja cache, the APK, and its 476-byte metadata. No ADB command, install,
+  app/game launch, or runtime capture was used.
+- The latest fetched `upstream/master` remains `f6a3e3aa5` and is already an ancestor of this fork.
+  This change removes real recurring host work on duplicate frames, but its frequency depends on
+  the title and pacing. No FPS, frametime, watt, temperature, or battery-life gain is claimed until
+  a future permitted matched Thor A/B holds the full test matrix fixed.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
