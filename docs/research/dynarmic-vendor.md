@@ -22,8 +22,9 @@ Dynarmic remote.
 - Clear the A32 dispatch table and block-range bookkeeping at the same explicit
   cache-clear boundary.
 - Add focused A32 invalidation and full-cache correctness tests.
-- Store adjusted absolute-offset page-table entries on AArch64 so ordinary mapped guest
-  loads and stores no longer need a separate page-offset mask instruction.
+- An adjusted absolute-offset page-table experiment was built but later withdrawn. On the Thor it
+  caused reproducible non-fastmem JIT faults while booting Art Academy and 7th Dragon. AArch64 now
+  retains ordinary host page-base pointers and Dynarmic's normal page-offset masking path.
 - Keep A32 guest NZCV in callee-saved `W23` throughout a JIT run. Generated callback
   boundaries synchronize the cached value with `A32JitState`, while A64 retains its
   upstream state-memory path and full register-allocation set.

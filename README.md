@@ -28,10 +28,12 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **149 accepted optimization/candidate
-entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
-slice are subsets, not the project total. The entries are not additive percentages: many affect
-different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
+The Thor evidence ledger currently has **150 numbered entries, 149 of them active**. Entry 150 added
+a recurring Vulkan presentation reduction, while the earlier ARM64 absolute-offset page-table entry
+was withdrawn after it caused reproducible game-start crashes on the Thor. Smaller figures quoted
+for a recent time window or code slice are subsets, not the project total. The active entries are
+not additive percentages: many affect different paths, and whole-game FPS or battery watts still
+require a matched title/scene/device A/B.
 
 The project has now reached the point where more isolated instruction wins risk missing the real
 system bottleneck. The next accepted performance work is selected from opt-in whole-frame counters
@@ -211,8 +213,8 @@ include:
 
 - an ARM64 FastDispatch path with a measured **1.69x-1.95x isolated dispatch-throughput gain** on
   the Thor; this is a microbenchmark result, not a whole-game FPS claim;
-- absolute-offset page-table entries that remove one address-add instruction from ordinary mapped
-  guest loads and stores;
+- pointer-based page-table entries restored after the shorter absolute-offset experiment caused
+  reproducible ARM64 JIT faults in two Thor game boots;
 - a callee-saved A32 NZCV register cache that removes repeated guest-flag state loads/stores across
   linked blocks while preserving callback-visible CPSR behavior;
 - direct capture of arithmetic NZCV into that reserved register, eliminating the temporary GPR and
@@ -549,6 +551,22 @@ final transfer stage. At 60 displayed FPS this changes the render-plus-present s
 full-frame copy/blit remain. The likely benefit is lower CPU/driver synchronization overhead and
 better frame pacing in driver-bound or lightly loaded scenes. FPS, watts, thermals, and battery
 life remain unmeasured until a matched Thor A/B.
+
+Optimization 150 removes per-screen CPU vertex streaming from Vulkan's final presentation pass.
+The vertex shader now generates each four-vertex screen quad from `gl_VertexIndex`, while a compact
+push-constant block supplies its screen rectangle, texture coordinates, orientation, layer, and
+resolution data. A normal dual-screen frame no longer maps, fills, commits, or binds two 64-byte
+host vertex slices; stereo/additional-screen layouts avoid the same work per extra draw. All five
+present shader variants compile for Vulkan 1.1, all four display orientations preserve the old UV
+mapping, and both Art Academy and 7th Dragon rendered on the Thor after the change. This is a small
+recurring CPU/driver-work reduction, not a measured FPS or watt claim.
+
+The same Thor smoke run exposed and removed an older ARM64 regression: absolute-offset Dynarmic
+page-table entries could fault at ordinary inline page-table accesses that were not valid fastmem
+patch sites, aborting both tested games during startup. The table again stores real host page-base
+pointers and Dynarmic's absolute-offset mode is disabled. With the corrected path, both titles
+remained alive and rendered after the prior 1.5-3 second failure window. Because that earlier entry
+is no longer active, entry 150 leaves the active accepted count at 149 rather than inflating it.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

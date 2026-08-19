@@ -389,6 +389,35 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   loaded scenes and a smaller result when Adreno shader/fill work dominates. A matched Thor A/B is
   still required before attaching a numeric speed or power claim.
 
+## 2026-08-19 Procedural Vulkan Presentation Quads
+
+- Optimization/candidate entry 150 removes recurring CPU buffer work from Vulkan's final layout
+  pass. The prior renderer built a four-vertex `ScreenRectVertex` array for every visible 3DS
+  screen, mapped a host stream-buffer slice, copied and committed 64 bytes, and bound that vertex
+  buffer before each draw. A normal two-screen frame paid that sequence twice; stereo and
+  additional-screen layouts paid it for every extra draw.
+- The present vertex shader now derives the quad corner from `gl_VertexIndex`. Push constants carry
+  the screen rectangle, texture-coordinate rectangle, framebuffer transform, input/output
+  resolutions, screen ID, layer, reverse flag, and orientation. Landscape, portrait, and both
+  flipped orientations generate the same four clip-space positions and texture coordinates as the
+  former CPU arrays. The final-present pipelines have no vertex-input binding. The retained
+  128 KiB stream buffer remains available only for the optional software cursor path.
+- NDK 27 `glslc` compiled the normal, anaglyph, interlaced, and Anime4K fragment variants plus the
+  shared vertex shader for Vulkan 1.1. A table-driven equivalence check covered all four vertices
+  in all four orientations. The profiling-off ARM64 release APK build passed in 3 minutes 53
+  seconds, and source commit `4dba0e934` was pushed directly to `origin/master` over SSH.
+- On-device testing initially exposed an unrelated earlier Dynarmic page-table regression before
+  any presentation result could be trusted. A clean build without this entry reproduced that same
+  JIT abort, excluding the quad change. After the page-table fix, builds containing entry 150 kept
+  Art Academy and 7th Dragon alive and visibly rendered both title screens on the Thor. No Vulkan
+  shader, pipeline, or layout error was logged.
+- This guarantees fewer host maps, tiny CPU copies, stream-buffer commits, and vertex-buffer bind
+  commands per presented frame. Vertex work remains four trivial vertices per screen draw, and the
+  full composition/render-target/swapchain transfer still occurs. FPS, frametime, watts, thermals,
+  and battery life remain unmeasured. Because the absolute-offset page-table entry was withdrawn,
+  this is numbered ledger entry 150 but leaves 149 active accepted entries rather than hiding the
+  regression by inflating the total.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
@@ -806,30 +835,31 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   It installed on the Thor, restored the user's original config after testing, and booted the same
   game at the original 100% limit with Eco Turbo defaulting on and no fatal exception or signal.
 
-## 2026-08-16 Dynarmic A32 ARM64 Absolute-Offset Page Table
+## 2026-08-16 Rejected Dynarmic A32 ARM64 Absolute-Offset Page Table
 
-- Every ordinary mapped A32 guest load/store uses Dynarmic's inline page-table lookup. The old
-  ARM64 sequence loaded the host page pointer and then emitted `AND guest_address, 0xfff` into a
-  second scratch register before the host access. Dynarmic already supports an absolute-offset
-  table whose entry is `host_page_pointer - guest_page_base`; adding the full guest address then
-  reaches the same host byte and removes that `AND` plus its scratch-register dependency.
-- The implementation does not allocate a duplicate page table. The existing 1,048,576-entry raw
-  table stores adjusted entries on AArch64, while its C++ wrapper decodes them before any normal
-  memory-system caller sees a pointer. Mapping, unmapping, rasterizer-cache transitions,
-  watchpoints, and savestate reconstruction already route through that wrapper or the shared
-  rebuild helper. Non-AArch64 hosts retain ordinary host pointers and Dynarmic's original mode.
-- Correctness relies only on unsigned `uintptr_t` arithmetic, so encoding and decoding are exact
-  modulo the host address width. Null mappings remain null. An always-on assertion rejects the one
-  value Dynarmic cannot represent in this mode: a valid host page whose adjusted entry is null.
-  A focused test checks the C++ pointer round trip, the exact Dynarmic entry equation, and unmapping.
-- `:app:buildCMakeRelWithDebInfo[arm64-v8a]` passed in 3m50s, including compilation and linking of
-  the ARM64 test executable and `libcitra-android.so`. Per the active no-launch restriction, the app
-  and ARM64 test executable were not run on the Thor.
-- This is a generated-instruction reduction, not yet a game FPS or battery-watt result. It affects
-  mapped page-table loads/stores; the page-index extraction, entry load, null check, and callback
-  fallback remain. The required Thor A/B is the same fixed title/scene, caches, Vulkan driver,
-  resolution, layout, brightness, fan/performance mode, and run duration, recording FPS,
-  frametimes, process CPU time, battery power, temperature, and thermal slope.
+- This experiment changed every AArch64 page-table entry from a real host page-base pointer to
+  `host_page_pointer - guest_page_base`, allowing Dynarmic to add the full guest address and omit
+  one page-offset mask instruction. Its arithmetic-only unit test and ARM64 package build passed,
+  but the then-active no-launch restriction meant the JIT path was not executed on the Thor.
+- Runtime testing on 2026-08-19 proved that evidence insufficient. Art Academy
+  (`0004000000095800`) and 7th Dragon III Code: VFD (`000400000018F800`) both aborted about
+  1.5-3 seconds after launch in
+  `Dynarmic::Backend::Arm64::AddressSpace::FastmemCallback`. The callback rejected the faulting JIT
+  instruction because it was an ordinary inline page-table access, not a registered fastmem patch
+  site. A clean build before the procedural presentation-quad change reproduced the same fault,
+  excluding that Vulkan change.
+- Disabling only `absolute_offset_page_table` and restoring real page-base entries made both games
+  remain alive past 15 seconds and render their title screens. The clean fix removes the encoding,
+  decoding, architecture branch, and absolute-offset configuration instead of leaving a dormant
+  option. The raw page table, normal C++ accessor, unmapping, and savestate reconstruction again
+  share the same real pointer representation. The pointer-consistency unit test now asserts that
+  invariant directly on every host architecture.
+- The corrected profiling-off ARM64 package build passed in 4 minutes 27 seconds. A second Thor
+  smoke run of the clean implementation kept 7th Dragon and Art Academy alive past 12 seconds with
+  no native fatal signal. Source commit `5a4f33ee1` was pushed directly to `origin/master` over SSH.
+- This entry is withdrawn from the active optimization count. Saving one generated instruction is
+  irrelevant when the representation can crash normal games, and an algebra-only test is not an
+  adequate acceptance gate for a JIT memory-path representation change.
 
 ## 2026-08-16 Dynarmic A32 ARM64 NZCV Register Cache
 
@@ -2806,8 +2836,8 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   until guest-output equivalence can be proved, consistent with the fork's no-approximate-PICA rule.
   See [3dbrew's hardware-tested PICA shader instruction behavior](https://www.3dbrew.org/wiki/GPU/Shader_Instruction_Set).
 - A true RPCS3-style 4 GiB fastmem view was also rejected as a local toggle. Azahar's current
-  AArch64 absolute-offset page table already emits a compact page-index extraction, page-entry load,
-  null fallback, and guest access. A safe direct-address view would require coherent 4 GiB virtual
+  AArch64 pointer page table emits page-index extraction, a page-entry load, null fallback, a
+  page-offset mask, and the guest access. A safe direct-address view would require coherent 4 GiB virtual
   aliases for each 3DS process and a redesign of the ordinary-array backing/remapping model.
   Pointing Dynarmic fastmem at the existing storage without that aliasing would be incorrect; this
   remains a separately scoped VM architecture project rather than an unsafe shortcut.

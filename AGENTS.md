@@ -84,6 +84,13 @@
   emulation commands submit. Track Vulkan's early preparation elision with
   `DuplicateFramePreparationsSkipped` in opt-in Thor profiler builds; normal builds must compile the
   counter and profiler strings out.
+- `Memory::PageTable` raw entries must remain actual host page-base pointers on AArch64, identical
+  to the pointers exposed to normal C++ memory callers and rebuilt from savestates. Do not set
+  Dynarmic's `absolute_offset_page_table` or restore guest-base-adjusted entries based only on
+  arithmetic tests or shorter generated code. That experiment caused reproducible non-fastmem JIT
+  faults while booting Art Academy and 7th Dragon on the Thor. Any future page-table representation
+  change requires real A32 JIT memory coverage plus multi-title on-device boot/render validation;
+  a successful compile and pointer round-trip test are not sufficient.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target
