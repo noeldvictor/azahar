@@ -926,6 +926,19 @@ split after their base-dependent forms regressed to about 0.50x on A715/A710/X3.
 optimization 120 in the overlapping optimization/candidate ledger, not an additive speedup or a
 whole-emulator FPS, thermal, or battery-watt claim.
 
+The same strict producer/consumer gate now folds sole-use adjacent A32 `LSR` or `ASR #1..#31`
+feeding a flag-free `ADD` into one ARM64 shifted-register `ADD`. Carry/flag users, shared or
+non-adjacent shifts, immediate sources, variable/zero/32 shifts, subtraction, and unrelated
+consumers retain the established lowering; the separately measured `LSL` gate remains limited to
+1..4. Actual JIT words decoded as `add Wd,Wbase,Windex,lsr/asr #shift`, while LSL 5/16/31 and
+encoded-zero LSR/ASR decoded on their split fallback paths. Exact affected-kernel medians improved
+**1.38x-1.87x on A510, 1.073x-1.101x on A715, and 1.059x-1.170x on A710**. Corrected X3 runs were
+neutral for independent work (0.999x-1.002x) and positive for dependency chains; a long isolated
+LSR#1 confirmation measured 1.025x base-dependent and 1.337x index-dependent. The clean test passed
+32,640 assertions on every Thor CPU class and the complete suite passed 129,812 assertions in 42
+cases. This is optimization 121 in the overlapping ledger, not a whole-game FPS or measured-watt
+claim.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

@@ -5704,3 +5704,72 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   frametime, or thermal improvement. Those still require a controlled matched title/scene/cache/
   renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run, which was
   intentionally not performed because the app/game was not to be launched.
+
+## ARM64 Right-Shifted ADD Folding (2026-08-18)
+
+- Command-line Git fetched authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 221 commits ahead and zero behind before
+  this work, so no upstream merge was needed. Work remained on `master` and used the configured SSH
+  remotes.
+- Dynarmic previously materialized a sole A32 `LogicalShiftRight32` or
+  `ArithmeticShiftRight32` before an immediately following flag-free `Add32`, even though AArch64
+  can encode the shift directly in `ADD`. The retained gate requires one use, immediate adjacency,
+  a non-immediate source, an immediate 1..31, no shift carry pseudo, no ADD flag/overflow pseudo,
+  and carry-in false. Shared, non-adjacent, immediate-source, variable, zero/32, flag/carry,
+  subtraction, and unrelated forms retain the old lowering. The separately measured LSL gate stays
+  at 1..4.
+- A disassembly-checked helper compared eight independent, eight base-dependent, and eight
+  index-dependent old `LSR/ASR; ADD` bodies with one shifted-register `ADD`. Representative shifts
+  1/2/3/4/8/16/31 used 4,000,000 iterations, or 32,000,000 affected operations per body, and nine
+  alternating-order samples. Every old/fused checksum matched. Old-over-fused median ranges were:
+
+  | Thor core | Independent | Base dependency | Index dependency |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.381850x-1.771904x | 1.437729x-1.872461x | 1.379672x-1.826679x |
+  | A715 CPU 3 | 1.072932x-1.077689x | 1.087407x-1.093244x | 1.094345x-1.100728x |
+  | A710 CPU 6 | 1.061272x-1.064909x | 1.059394x-1.064169x | 1.166458x-1.170341x |
+  | X3 CPU 7 | 0.999391x-1.002055x | 1.015065x-1.124654x | 1.057515x-1.337368x |
+
+  Thor reported AC power, 80% charge, 4.271 V, and 25.0 C at the start. These are wall-powered
+  instruction-kernel timings, not battery-discharge watt measurements.
+
+- The first X3 confirmation was discarded because the temporary core-wake workers were still
+  eligible to run on CPU 7. The corrected protocol killed and reaped those workers before timing.
+  Its first LSR#1 row still caught frequency settling, so a preconditioned 20,000,000-iteration,
+  21-sample confirmation replaced it: 0.999391x independent, 1.024746x base-dependent, and
+  1.337368x index-dependent. The table conservatively excludes one benefit-inflating LSR#2
+  frequency-settling outlier. No contaminated result controls the gate.
+- Temporary actual-emitter tracing plus `llvm-objdump` proved the generated words. LSR shifts
+  1/2/3/4/5/16/31 decoded from `0b530674`, `0b530a74`, `0b530e74`, `0b531274`, `0b531674`,
+  `0b534274`, and `0b537e74`; ASR used `0b930674`, `0b930a74`, `0b930e74`, `0b931274`,
+  `0b931674`, `0b934274`, and `0b937e74`. Each is one
+  `add w20,w19,w19,lsr/asr #shift`. Negative gates decoded as standalone LSL for shifts 5/16/31,
+  `mov w20,wzr` for LSR32, and standalone `asr w20,w19,#31` for ASR32. The trace hook was removed;
+  the 449,035,480-byte clean unstripped and 26,154,632-byte stripped test binaries contained zero
+  trace markers and the clean stripped SHA-256 returned to
+  `579B9E94800A20B8FA32FB5CC465104A672981BE242537CFF28F3B852EBDB8E7`.
+- Permanent ARM and Thumb-2 coverage now exercises LSL/LSR/ASR; encoded shifts
+  0/1/2/3/4/5/16/31; distinct operands; destination/base/index, base/index, and all-way aliases;
+  signed ASR boundaries; modular wrap; every unrelated GPR; NZCV/Q/GE; and FPSCR. The clean focused
+  case passed 32,640 assertions separately on A510 CPU 0, A715 CPU 3, A710 CPU 6, and X3 CPU 7.
+  The clean full `[core][arm][dynarmic]` suite passed 129,812 assertions in 42 cases on A715.
+  Source/test commit `752115dc9` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact JDK 17 packaging from source commit `752115dc9` with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 1 second.
+  The ARM64-only APK is 29,008,576 bytes, has SHA-256
+  `69937CA0CF18154A214FB3525ED5556169625A0493D310D0DB38F216219460AE`, and reports package
+  `org.azahar_emu.azahar.debug` version `752115dc9-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID. Neither app nor game was launched.
+- Exact cleanup removed 2,497,807,188 logical host bytes: 26,712,598 bytes of bounded scratch, the
+  449,035,480-byte unstripped test ELF, and 2,022,059,110 bytes of reproducible Gradle/JNI/R8/
+  native-symbol/mapping staging. C: recovered 2,027,413,504 physical bytes and reports
+  56,242,896,896 bytes free. The retained active ARM64 CMake/Ninja cache is 2,797,658,936 bytes;
+  retained build output is only the 29,008,576-byte APK and 476-byte metadata. Both exact device
+  helpers totaling 26,697,560 bytes were removed from `/data/local/tmp`. No PDF, benchmark, test
+  binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 121 in the overlapping Thor ledger. It removes one host
+  instruction only when matching guest shifts execute; its kernel ratios cannot be added to the
+  other 120 entries or converted into emulator-wide FPS or watts. Lower code-cache, fetch/decode,
+  dependency, and integer-issue work makes lower energy plausible, but whole-game frametime,
+  temperature, thermal slope, and battery watts still require a controlled matched title/scene/
+  cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.

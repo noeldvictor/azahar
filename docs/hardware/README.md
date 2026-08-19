@@ -24,6 +24,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   shared, flag-setting, variable, immediate-source, and wider forms remain split. Exact all-core
   measurements overruled the tempting instruction-count generalization because base-dependent
   shifts 16/31 fell to about half speed on A715/A710/X3.
+- Treat right shifts as a separately measured instruction family. AArch64 shifted-register `ADD`
+  encodes `LSR` and `ASR` immediates through 31, and representative 1/2/3/4/8/16/31 measurements
+  retained or improved throughput on every Thor core class. The accepted Dynarmic path therefore
+  folds sole immediately adjacent flag-free A32 LSR/ASR producers across 1..31, while encoded-zero
+  LSR/ASR (guest shift 32), carry-producing, shared, variable, and non-adjacent forms stay split.
+  This does not relax the LSL 1..4 gate: encoding availability and lower instruction count are not
+  substitutes for per-family heterogeneous-core evidence.
 - Do not globally substitute same-width `SABA/UABA` for `SABD/UABD` plus `ADD`. The checked rows
   list `SABD/UABD` latency/throughput as 2/4 on X3 page 25, 2/2 on A715 pages 27-28 and A710 page
   42, and latency 3 with split `2,1` throughput on A510 page 35. Accumulating `SABA/UABA` is 4(1)/2

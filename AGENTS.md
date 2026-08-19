@@ -745,6 +745,16 @@
   full-width wrap, unrelated GPRs, NZCV/Q/GE, and FPSCR in permanent tests. Do not widen the gate
   from instruction-count intuition: exact Thor base-dependent shifts 16/31 regressed to about
   0.50x on A715/A710/X3, while the accepted 1..4 range was independently rechecked on A510.
+- ARM64 Dynarmic may apply that same symmetrical sole-use/immediately-adjacent/non-immediate gate
+  to A32 `LogicalShiftRight32` and `ArithmeticShiftRight32` feeding flag-free/carry-free `Add32`
+  for immediates 1 through 31. Emit one `ADD Wd,Wbase,Windex,LSR/ASR #shift`. Keep carry or flag
+  pseudos, shared/non-adjacent producers, immediate sources, variable/zero/32 shifts, subtraction,
+  and unrelated consumers on the established lowering; do not widen the separately measured LSL
+  gate beyond 1..4. Preserve ARM and Thumb-2 encodings, destination/base/index aliases, signed ASR
+  behavior, modular 32-bit wrap, unrelated GPRs, NZCV/Q/GE, and FPSCR. Actual-JIT trace words and
+  representative shifts 1/2/3/4/8/16/31 must remain the performance gate: affected-path medians
+  improved on A510/A715/A710, while X3 independent work was neutral and dependency chains won.
+  Keep all claims path-local until a matched title and battery-power A/B exists.
 - Do not globally replace A32/A64 same-width `SABD/UABD` plus `ADD` for `VABA` with native
   `SABA/UABA`. Although independent and big-core dependency patterns can win, exact accumulator-
   chain measurements regressed to 0.6595x-0.6890x on A510 for signed/unsigned 8/16/32-bit forms.
