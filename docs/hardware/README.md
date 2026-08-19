@@ -398,6 +398,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   per sixteen entries—especially on the A510, where the reduction has the highest listed latency—
   and retain scalar handling for the short tail. Prove first-match and every valid-prefix length
   against a scalar reference before relying on the manual-backed instruction shape.
+- For PICA CPU output-vertex construction, treat the Cortex manuals' integer branch/load/store
+  tables as candidate guidance rather than proof that an unrolled constructor wins. An exact-six
+  specialization can remove the generic attribute-count ladder while retaining the same 32-slot
+  scratch initialization, mapped stores, visible copy, and color clamp, but it must be selected
+  outside the recurring constructor. Physical Thor timing accepted six outputs because A510 won
+  materially and the larger cores stayed above the 0.995 acceptance floor; the same reasoning
+  rejected direct-write and seven-output forms that looked shorter but regressed measured cores.
+  Preserve all-core exact-path timing and byte-exact semantic tests instead of extrapolating an
+  instruction-count reduction into game FPS or watts.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,

@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **131 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **132 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -373,6 +373,17 @@ on X3**. Designs that returned through X16/X17 or compacted the guest root frame
 A510 and were rejected. All 18,332 shader assertions pass on every Thor core class, and the broader
 video-core suite passes 135,046 assertions. This is optimization 131; the figures apply only to
 this guest-subroutine math-call path, not whole-game FPS or watts.
+
+PICA CPU-fallback and immediate vertices with exactly six shader outputs now use a draw-selected
+AArch64 constructor that maps all six outputs without the generic constructor's recurring
+attribute-count ladder. Counts 0-5 and 7 keep the established generic route, and the selected
+handler changes only when the configured count crosses the exact-six boundary. The final linked
+specialization is 368 bytes versus 496 bytes for the generic constructor and has no output-count
+branches. A one-million-vertex exact-path benchmark measured **16.2% faster on A510, 2.0% on A715,
+effectively tied on A710, and 2.2% on X3**. Byte-exact randomized coverage preserves all 32 mapping
+slots, default values, the 96-byte visible vertex, and color clamping. This is optimization 132;
+the result applies only when CPU vertex construction sees exactly six outputs and is not a
+whole-game FPS or battery-watt claim.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

@@ -6447,3 +6447,65 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - This synchronization is not optimization entry 132 and adds no FPS or watt claim. It keeps the
   fork current with upstream Android packaging and cutout safety while entry 131 remains the latest
   measured performance change.
+
+## AArch64 Exact-Six PICA Output Vertices (2026-08-19)
+
+- The generic CPU output-vertex constructor initializes a 32-`f24` scratch array to one, loops over
+  `vs_output_total & 7`, scatters each four-component shader output through the guest mapping,
+  copies the first 96 bytes into `OutputVertex`, and applies the established absolute-value and
+  one-saturating color clamp. That exact overflow-map behavior matters: guest mappings 24-31 may
+  receive writes even though they are outside the visible vertex, and later outputs must overwrite
+  earlier outputs when mappings alias.
+- AArch64 now keeps the generic source and linked constructor unchanged for counts 0-5 and 7. When
+  the configured count is exactly six, `PicaCore` selects a stored handler that calls a dedicated
+  constructor with six unconditional mappings. The selection is reconciled before CPU vertex
+  processing and rewires both the geometry pipeline and geometry-shader emitter only when the mode
+  changes. The exact-six constructor still uses the same 32-slot default array, mapping order,
+  96-byte copy, and color clamp; it removes only the generic loop's five recurring count checks.
+- The final ThinLTO-linked test ELF retains separate constructors. The generic form remains 496
+  bytes with its threshold ladder. The exact-six form is 368 bytes, contains the six mapped output
+  groups, and has no output-count branch; its only conditional branch is the compiler's stack-
+  canary failure check.
+- A static Android AArch64 benchmark used the real constructors, one million vertices per sample,
+  seven alternating-order median samples, and identical output checks. The Thor was AC-powered,
+  so these are wall-powered exact-path timings rather than battery-discharge watts:
+
+  | Thor core | Generic ns/vertex | Exact-six ns/vertex | Time saved | Generic/exact-six |
+  | --- | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 45.053021 | 38.758854 | 13.970% | 1.162393x |
+  | A715 CPU 3 | 11.787291 | 11.559375 | 1.934% | 1.019717x |
+  | A710 CPU 5 | 15.082084 | 15.103438 | -0.142% | 0.998586x |
+  | X3 CPU 7 | 12.940365 | 12.665625 | 2.123% | 1.021692x |
+
+  The A710 result is a tie inside the ledger's 0.995 floor rather than a claimed gain.
+- Broader-looking variants were rejected. A direct-write stackless constructor regressed the A510
+  realistic five-output case by 3.1% and a dense seven-output case by 4.1%. A hybrid looked good in
+  a simplified clone but the real constructor made counts zero through five slower. A per-vertex
+  count specialization added about 1.5 ns to common low counts. An unrolled seven-output variant
+  regressed A710 by 1.34%. None of those variants is in the committed code.
+- Permanent tests compare every byte of the visible vertex with an independent 32-slot reference
+  for counts 0-7 and 4,096 randomized maps per count, then compare 100,000 randomized exact-six
+  vertices against the generic constructor on AArch64. The focused `PICA*` selection passed 17,953
+  assertions in 11 cases independently on A510 CPU 0, A715 CPU 3, A710 CPU 5, and X3 CPU 7. Full
+  `[video_core]` passed 135,046 assertions in 74 cases on A715. The complete native ARM64 build,
+  including both tests and the ThinLTO Android library, passed all 2,201 steps in 11 minutes.
+- Source/test commit `afee0ebd9` was pushed directly to `origin/master` with command-line Git over
+  SSH. JDK 17 packaging with `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache`
+  passed in 2 minutes 54 seconds. The ARM64-only, v2-signed APK is 29,007,556 bytes with SHA-256
+  `5B53E28E0EC3A2C8502E595970467E86BFA3170D35E49AB41FAA81B9378737A2`; it reports package
+  `org.azahar_emu.azahar.debug`, version `afee0ebd9-vanilla-thor`, minimum SDK 29, and target SDK 37.
+  Wi-Fi ADB installed it, then an immediate force-stop left no app PID. Neither app nor game was
+  launched, and the device's original `stay_on_while_plugged_in=0` remained unchanged.
+- Exact bounded cleanup removed 2,472,386,503 logical bytes: the 449,476,144-byte native test ELF
+  plus reproducible Gradle/JNI/R8/symbol/mapping staging. It recovered 2,034,024,448 physical bytes
+  and left 53,729,521,664 bytes (50.04 GiB) free on C:. Retained repo build output is only the
+  29,007,556-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,805,175,558
+  bytes. The stripped test, benchmark binary, CPU7 helper, and repo-local benchmark scratch were
+  removed. No PDF, benchmark, test binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 132 in the overlapping Thor ledger. It accelerates only CPU
+  output-vertex construction when the guest configures exactly six shader outputs; hardware vertex
+  shaders and every other output count see no constructor change. The 1.162393x A510 exact-path
+  result cannot be added to the prior 131 entries or converted into whole-emulator FPS or battery
+  watts. Fewer recurring control instructions make lower energy plausible only on this route;
+  whole-game frametime, thermal slope, and battery power still require a controlled matched title/
+  scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.

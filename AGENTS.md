@@ -191,6 +191,16 @@
   invariant before the cache fills, hit behavior that does not advance replacement state, and the
   existing circular replacement order after 64 misses. Keep exhaustive count/value differential
   coverage and inspect final ThinLTO before treating the source shape as a performance result.
+- AArch64 PICA output-vertex construction may use the exact-six handler only when
+  `vs_output_total & 7` equals six. Select it before CPU vertex submission, rewire the geometry and
+  geometry-shader handlers only when that exact-six mode changes, and keep counts 0-5 and 7 on the
+  established generic constructor. The specialization must still initialize all 32 overflow-map
+  slots to `f24::One()`, apply all four components of outputs 0-5 in order, copy only the 96-byte
+  visible `OutputVertex`, and preserve absolute-value/saturating color clamping. Do not restore the
+  rejected direct-write, per-vertex count switch, or seven-output specialization: exact Thor
+  measurements regressed at least one intended shape/core. Retain randomized byte-exact coverage
+  for every count and all mapping slots, inspect final ThinLTO for six unconditional mappings with
+  no count ladder, and keep the measured result path-local until a matched title/power A/B exists.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register
   block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the
