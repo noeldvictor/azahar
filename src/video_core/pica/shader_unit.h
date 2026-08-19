@@ -22,6 +22,14 @@ using WindingSetter = std::function<void()>;
 struct ShaderRegs;
 struct GeometryEmitter;
 
+/// Draw-invariant packed mapping from vertex attributes to shader input registers.
+struct ShaderInputMap {
+    explicit ShaderInputMap(const ShaderRegs& config);
+
+    u64 registers{};
+    u32 count{};
+};
+
 /**
  * This structure contains the state information that needs to be unique for a shader unit. The 3DS
  * has four shader units that process shaders in parallel.
@@ -31,6 +39,8 @@ struct ShaderUnit {
     ~ShaderUnit();
 
     void LoadInput(const ShaderRegs& config, const AttributeBuffer& input);
+
+    void LoadInput(const ShaderInputMap& input_map, const AttributeBuffer& input);
 
     void WriteOutput(const ShaderRegs& config, AttributeBuffer& output);
 

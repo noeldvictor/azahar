@@ -1284,6 +1284,7 @@ void PicaCore::LoadVertices(bool is_indexed) {
 
     // Compile the vertex shader for this batch.
     ShaderUnit shader_unit;
+    const ShaderInputMap shader_input_map{regs.internal.vs};
     AttributeBuffer vs_output;
     shader_engine->SetupBatch(vs_setup, regs.internal.vs.main_offset);
 
@@ -1356,7 +1357,7 @@ void PicaCore::LoadVertices(bool is_indexed) {
                 }
 
                 // Invoke the vertex shader for this vertex.
-                shader_unit.LoadInput(regs.internal.vs, input);
+                shader_unit.LoadInput(shader_input_map, input);
                 shader_engine->Run(vs_setup, shader_unit);
                 AttributeBuffer* output = &vs_output;
                 if constexpr (direct_vertex_cache) {

@@ -13,11 +13,26 @@ ShaderUnit::ShaderUnit(GeometryEmitter* emitter) : emitter_ptr{emitter} {}
 
 ShaderUnit::~ShaderUnit() = default;
 
+ShaderInputMap::ShaderInputMap(const ShaderRegs& config)
+    : registers{(static_cast<u64>(config.input_attribute_to_register_map_high) << 32) |
+                config.input_attribute_to_register_map_low},
+      count{static_cast<u32>(config.max_input_attribute_index) + 1} {}
+
 void ShaderUnit::LoadInput(const ShaderRegs& config, const AttributeBuffer& buffer) {
     const u32 max_attribute = config.max_input_attribute_index;
     for (u32 attr = 0; attr <= max_attribute; ++attr) {
         const u32 reg = config.GetRegisterForAttribute(attr);
         input[reg] = buffer[attr];
+    }
+}
+
+void ShaderUnit::LoadInput(const ShaderInputMap& input_map, const AttributeBuffer& buffer) {
+    u64 registers = input_map.registers;
+    u32 remaining = input_map.count;
+    const auto* attribute = buffer.data();
+    while (remaining-- != 0) {
+        input[registers & 0xF] = *attribute++;
+        registers >>= 4;
     }
 }
 

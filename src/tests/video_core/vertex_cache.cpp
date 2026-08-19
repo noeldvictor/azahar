@@ -11,6 +11,8 @@
 
 #include "common/common_types.h"
 #include "video_core/pica/output_vertex.h"
+#include "video_core/pica/regs_shader.h"
+#include "video_core/pica/shader_unit.h"
 #include "video_core/pica/vertex_cache.h"
 
 namespace {
@@ -86,5 +88,52 @@ TEST_CASE("PICA vertex cache direct-output gate preserves observable prefixes", 
                             produced * sizeof(source[0])) == 0);
         REQUIRE(std::memcmp(direct_cache.data() + produced, cache_initial.data() + produced,
                             (source.size() - produced) * sizeof(source[0])) == 0);
+    }
+}
+
+TEST_CASE("PICA packed shader input map preserves register assignment semantics", "[video_core]") {
+    constexpr u32 mapping_seeds = 32;
+
+    Pica::AttributeBuffer source{};
+    auto* source_bytes = reinterpret_cast<u8*>(source.data());
+    for (u32 byte = 0; byte < sizeof(source); ++byte) {
+        source_bytes[byte] = static_cast<u8>(byte * 43 + 17);
+    }
+
+    for (u32 count = 1; count <= source.size(); ++count) {
+        for (u32 seed = 0; seed < mapping_seeds; ++seed) {
+            Pica::ShaderRegs config{};
+            config.max_input_attribute_index.Assign(count - 1);
+
+            u64 packed_map{};
+            u32 random = seed * 0x9E3779B9U + count;
+            for (u32 attribute = 0; attribute < count; ++attribute) {
+                random = random * 1664525U + 1013904223U;
+                const u32 reg = seed == 0   ? attribute
+                                : seed == 1 ? 15 - attribute
+                                : seed == 2 ? 7
+                                            : random >> 28;
+                packed_map |= static_cast<u64>(reg) << (attribute * 4);
+            }
+            config.input_attribute_to_register_map_low = static_cast<u32>(packed_map);
+            config.input_attribute_to_register_map_high = static_cast<u32>(packed_map >> 32);
+
+            Pica::ShaderUnit reference;
+            Pica::ShaderUnit packed;
+            auto* reference_bytes = reinterpret_cast<u8*>(reference.input.data());
+            auto* packed_bytes = reinterpret_cast<u8*>(packed.input.data());
+            for (u32 byte = 0; byte < sizeof(reference.input); ++byte) {
+                reference_bytes[byte] = static_cast<u8>(byte * 61 + seed * 13 + count);
+                packed_bytes[byte] = reference_bytes[byte];
+            }
+
+            reference.LoadInput(config, source);
+            const Pica::ShaderInputMap input_map{config};
+            packed.LoadInput(input_map, source);
+
+            CAPTURE(count, seed, packed_map);
+            REQUIRE(std::memcmp(reference.input.data(), packed.input.data(),
+                                sizeof(reference.input)) == 0);
+        }
     }
 }
