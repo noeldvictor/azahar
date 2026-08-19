@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **145 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **146 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -513,6 +513,14 @@ so the duplicate same-layout image barrier is gone. Swapchain acquisition and re
 wait at the transfer stage that first consumes them, and the final present transition no longer uses
 an `ALL_COMMANDS`-to-`ALL_COMMANDS` full-pipeline barrier. This removes recurring driver/GPU
 synchronization work, but the FPS, frametime, and watt effect remains pending a matched Thor A/B.
+
+Optimization 146 keeps Android Eco Turbo's capped >100% path on FIFO presentation instead of
+MAILBOX, allowing mobile-friendly queue back-pressure rather than continuously replacing frames
+that the 60 FPS host-composition cap will not display. Skipped Eco Turbo frames also avoid submitting
+an empty Vulkan command chunk; any real emulation commands still flush normally. Eco Turbo off,
+unthrottled 0%, VSync off, low-refresh handling, explicit waits, and presentation signaling are
+unchanged. This removes recurring queue/driver work, but its sustained-speed and watt effect remains
+pending a matched Thor A/B.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

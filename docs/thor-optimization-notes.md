@@ -188,6 +188,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   if the driver had already optimized the old dependency. A future allowed matched Thor A/B remains
   mandatory before claiming speed or watt gains.
 
+## 2026-08-19 Eco Turbo FIFO and Empty-Submit Elision
+
+- Optimization/candidate 146 removes two sources of recurring Android Vulkan queue work. Azahar's
+  swapchain policy selected MAILBOX whenever the frame limit exceeded 100%, but Android Eco Turbo
+  already limits host presentation/composition to 60 FPS on that path. A swapchain created or
+  recreated while both conditions are active now keeps FIFO, letting the presentation queue apply
+  back-pressure instead of continuously replacing frames that cannot be displayed. Eco Turbo off,
+  the 0/unthrottled limit, VSync off, and the existing low-refresh override retain their prior
+  behavior. Compile-time assertions cover all five policy cases.
+- Present mode is chosen when the swapchain is created, not dynamically on every hotkey change.
+  Therefore, a typical session that starts at 100% may already retain FIFO when Turbo is toggled.
+  The direct policy change most clearly affects startup/per-game limits above 100% and swapchain
+  recreation while Eco Turbo is active; no broader frequency claim is made without a runtime trace.
+- On an Eco Turbo frame whose final screen is not rendered, `RendererVulkan::SwapBuffers()` now calls
+  `Scheduler::FlushIfPending()`. A truly empty `CommandChunk` returns without allocating a timeline
+  tick, dispatching the worker, or submitting an empty Vulkan command buffer. Any recorded emulation
+  command still follows the normal `Flush()` path. This helper is used only on the no-signal/no-wait
+  skipped-presentation path: render-ready/present-ready signaling, explicit readback and finish
+  waits, frame fences, and resource-reuse ordering are unchanged. Delaying timeline progress after
+  an empty chunk is conservative because no unfinished resource can become prematurely reusable.
+- Khronos' mobile [swapchain-image and present-mode guidance](https://docs.vulkan.org/samples/latest/samples/performance/swapchain_images/README.html)
+  says MAILBOX lets the CPU and GPU continue submitting and is generally not optimal for mobile,
+  while FIFO reduces CPU/GPU load. The Vulkan [present-mode specification](https://registry.khronos.org/VulkanSC/specs/1.0-extensions/man/html/VkPresentModeKHR.html)
+  defines MAILBOX as replacing the single pending presentation and FIFO as appending to a queue
+  consumed at vertical blank. Android's [Frame Pacing library guidance](https://developer.android.com/games/sdk/frame-pacing)
+  likewise warns that submitting as quickly as possible can stuff the presentation queue. Azahar
+  retains explicit semaphores, fences, and barriers as required by Android's [Vulkan native-engine
+  guidance](https://developer.android.com/games/develop/vulkan/native-engine-support); FIFO is used
+  for output pacing/back-pressure, not as a substitute for unrelated synchronization.
+- A pre-commit normal JDK 17 package build passed in 3 minutes 35 seconds. A separate clean
+  profiler-enabled ARM64 native build compiled and linked all 2,203 objects in 12 minutes 18 seconds;
+  its cache recorded `ENABLE_THOR_FRAME_PROFILING=ON`, and its production shared library contained
+  the new `empty_flushes_skipped` field. The normal library recorded profiling OFF and contained
+  zero `ThorFrameProfile`, `empty_flushes_skipped`, or profiler-warning strings.
+- Source commit `614ae8c0c` was pushed directly to `origin/master` using command-line Git over SSH.
+  The exact post-commit normal package rebuild passed in 1 minute 53 seconds. The retained APK is
+  ARM64-only, reports `614ae8c0c-vanilla-thor`, is 29,013,808 bytes, and has SHA-256
+  `81444DFD71D5DECE0544CC78F9D88E6060ADC9F3331734C9634C62DD36673AA6`.
+- Exact bounded cleanup removed 6,213,338,824 logical bytes of the temporary profiler configuration
+  and reproducible Gradle/JNI/R8/native-symbol/mapping staging. Reported C: free space increased by
+  4,699,185,152 physical bytes to 56,501,727,232. The retained build output is only the APK plus its
+  476-byte metadata and the 3,242,035,281-byte normal profiler-OFF ARM64 CMake/Ninja cache. No ADB
+  command, install, app/game launch, or runtime capture was used.
+- The code removes an empty queue submission whenever the skipped-frame chunk is empty and avoids
+  non-FIFO queue stuffing in the bounded swapchain cases above. That is a real whole-frame/driver-
+  work reduction, not proof of a visible FPS or battery-watt percentage. A future allowed matched
+  Thor A/B must hold title, scene, save, caches, renderer, resolution, driver, layout, brightness,
+  performance/fan mode, power source, and duration fixed before any speed, watt, or thermal claim.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

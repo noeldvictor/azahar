@@ -62,6 +62,18 @@
   point, driver call, wakeup, or panel/compositor request. Keep merely plausible instruction-level
   ideas in the candidate ledger until a profile ranks their subsystem. Never add isolated speedup
   ratios together or translate them into whole-game FPS or watt estimates.
+- Android Eco Turbo already caps host presentation/composition to 60 FPS above 100% emulation
+  speed. With VSync enabled, keep that capped path on FIFO so the mobile swapchain supplies
+  back-pressure instead of MAILBOX replacing undisplayed frames. Preserve the established non-FIFO
+  handling when Eco Turbo is off, the frame limit is 0/unthrottled, VSync is off, or the display is
+  classified as low refresh. Present-mode selection occurs during swapchain creation, so do not
+  claim every hotkey-Turbo session changed modes without proving that the swapchain was recreated.
+- A skipped-presentation path may use `Scheduler::FlushIfPending()` only when it supplies no signal
+  or wait semaphore and `CommandChunk::Empty()` proves that no GPU command was recorded. Any real
+  emulation work must still submit; presentation signaling, explicit readback/finish waits, and
+  resource-retirement safety remain unchanged. Track elided submissions with
+  `SchedulerEmptyFlushesSkipped` in opt-in Thor frame-profiler builds, while ordinary builds must
+  compile the counter/logging path out.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target
