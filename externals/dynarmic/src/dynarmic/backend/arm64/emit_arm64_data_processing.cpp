@@ -181,6 +181,40 @@ static const IR::Inst* GetImmediatelyShiftedAddSubOperand(const IR::Inst* arithm
     return shift;
 }
 
+static const IR::Inst* GetImmediatelyShiftedLogicalOperand(const IR::Inst* logical) {
+    if (!logical ||
+        (logical->GetOpcode() != IR::Opcode::And32 &&
+         logical->GetOpcode() != IR::Opcode::Eor32 &&
+         logical->GetOpcode() != IR::Opcode::Or32) ||
+        logical->HasAssociatedPseudoOperation()) {
+        return nullptr;
+    }
+
+    const IR::Value shifted_value = logical->GetArg(1);
+    if (shifted_value.IsImmediate()) {
+        return nullptr;
+    }
+
+    const IR::Inst* shift = shifted_value.GetInst();
+    const IR::Opcode shift_opcode = shift->GetOpcode();
+    if ((shift_opcode != IR::Opcode::LogicalShiftLeft32 &&
+         shift_opcode != IR::Opcode::LogicalShiftRight32 &&
+         shift_opcode != IR::Opcode::ArithmeticShiftRight32 &&
+         shift_opcode != IR::Opcode::RotateRight32) ||
+        shift->HasAssociatedPseudoOperation() || shift->UseCount() != 1 ||
+        shift->GetNextInstruction() != logical || shift->GetArg(0).IsImmediate() ||
+        !shift->GetArg(1).IsImmediate()) {
+        return nullptr;
+    }
+
+    const u8 shift_amount = shift->GetArg(1).GetU8();
+    // Every shifted logical family retained or improved throughput across all Thor core classes.
+    if (shift_amount < 1 || shift_amount > 31) {
+        return nullptr;
+    }
+    return shift;
+}
+
 template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -399,7 +433,8 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -556,7 +591,8 @@ void EmitIR<IR::Opcode::LogicalShiftRight32>(oaknut::CodeGenerator& code, EmitCo
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -711,7 +747,8 @@ void EmitIR<IR::Opcode::ArithmeticShiftRight32>(oaknut::CodeGenerator& code, Emi
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
 
-    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst) {
+    if (GetImmediatelyShiftedAddSubOperand(inst->GetNextInstruction()) == inst ||
+        GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
         ctx.reg_alloc.DefineAsExisting(inst, args[0]);
         return;
     }
@@ -846,6 +883,12 @@ void EmitIR<IR::Opcode::RotateRight32>(oaknut::CodeGenerator& code, EmitContext&
     const auto carry_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetCarryFromOp);
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    if (GetImmediatelyShiftedLogicalOperand(inst->GetNextInstruction()) == inst) {
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     auto& operand_arg = args[0];
     auto& shift_arg = args[1];
     auto& carry_arg = args[2];
@@ -1450,6 +1493,54 @@ static void EmitBitOp(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* i
     }
 }
 
+template<IR::Opcode logical_opcode>
+static bool TryEmitImmediatelyShiftedLogical(oaknut::CodeGenerator& code, EmitContext& ctx,
+                                             IR::Inst* inst) {
+    static_assert(logical_opcode == IR::Opcode::And32 ||
+                  logical_opcode == IR::Opcode::Eor32 ||
+                  logical_opcode == IR::Opcode::Or32);
+
+    const IR::Inst* shift = GetImmediatelyShiftedLogicalOperand(inst);
+    if (!shift) {
+        return false;
+    }
+
+    auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+    auto Wresult = ctx.reg_alloc.WriteW(inst);
+    auto Wbase = ctx.reg_alloc.ReadW(args[0]);
+    auto Windex = ctx.reg_alloc.ReadW(args[1]);
+    RegAlloc::Realize(Wresult, Wbase, Windex);
+
+    const u8 shift_amount = shift->GetArg(1).GetU8();
+    const auto emit = [&](auto shift_type) {
+        if constexpr (logical_opcode == IR::Opcode::And32) {
+            code.AND(Wresult, *Wbase, Windex, shift_type, shift_amount);
+        } else if constexpr (logical_opcode == IR::Opcode::Eor32) {
+            code.EOR(Wresult, *Wbase, Windex, shift_type, shift_amount);
+        } else {
+            code.ORR(Wresult, *Wbase, Windex, shift_type, shift_amount);
+        }
+    };
+
+    switch (shift->GetOpcode()) {
+    case IR::Opcode::LogicalShiftLeft32:
+        emit(LSL);
+        break;
+    case IR::Opcode::LogicalShiftRight32:
+        emit(LSR);
+        break;
+    case IR::Opcode::ArithmeticShiftRight32:
+        emit(ASR);
+        break;
+    case IR::Opcode::RotateRight32:
+        emit(ROR);
+        break;
+    default:
+        ASSERT_FALSE("Unexpected shifted logical operand");
+    }
+    return true;
+}
+
 template<size_t bitsize>
 static void EmitAndNot(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     const auto nz_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetNZFromOp);
@@ -1506,6 +1597,9 @@ static void EmitAndNot(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* 
 
 template<>
 void EmitIR<IR::Opcode::And32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmediatelyShiftedLogical<IR::Opcode::And32>(code, ctx, inst)) {
+        return;
+    }
     EmitBitOp<32>(
         code, ctx, inst,
         [&](auto& result, auto& a, auto& b) { code.AND(result, a, b); },
@@ -1532,6 +1626,9 @@ void EmitIR<IR::Opcode::AndNot64>(oaknut::CodeGenerator& code, EmitContext& ctx,
 
 template<>
 void EmitIR<IR::Opcode::Eor32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmediatelyShiftedLogical<IR::Opcode::Eor32>(code, ctx, inst)) {
+        return;
+    }
     EmitBitOp<32>(
         code, ctx, inst,
         [&](auto& result, auto& a, auto& b) { code.EOR(result, a, b); });
@@ -1546,6 +1643,9 @@ void EmitIR<IR::Opcode::Eor64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR
 
 template<>
 void EmitIR<IR::Opcode::Or32>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
+    if (TryEmitImmediatelyShiftedLogical<IR::Opcode::Or32>(code, ctx, inst)) {
+        return;
+    }
     EmitBitOp<32>(
         code, ctx, inst,
         [&](auto& result, auto& a, auto& b) { code.ORR(result, a, b); });
