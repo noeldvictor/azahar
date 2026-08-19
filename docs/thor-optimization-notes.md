@@ -6996,3 +6996,70 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   prior 138 entries or converted into whole-emulator FPS or battery watts. One vector load/store
   pair and fewer decoded instructions make lower energy plausible on this path, but whole-game
   frametime, thermal slope, and battery power still require a controlled matched A/B.
+
+## Grouped AArch64 Float32 Uniform Upload (2026-08-19)
+
+- `ShaderSetup::WriteUniformFloatRegRange()` previously sent every transfer word through
+  `PackedAttribute::Push()`. That repeated queue-index branching and storage per word, then compared
+  each completed uniform even when the setup was already dirty. Entry 140 adds an AArch64-only,
+  out-of-line `WriteUniformFloat32Groups()` helper for aligned, empty-queue, complete float32 groups.
+  Each four-word group uses one Q load, `REV64` plus `EXT #8` to map transfer order to the guest
+  `Vec4`, and one Q store. An already-dirty batch uses a store-only loop; a clean batch XORs each old
+  vector with its replacement, ORs those differences, and performs one final `UMAXV` reduction.
+  The last packed raw group is copied to `uniform_queue.buffer`, preserving observable/save-state
+  queue representation.
+- Partial queues, float24 writes, scalar tails, out-of-range uniform indices, and non-AArch64 hosts
+  still use the original word-at-a-time route. The permanent differential test spans float24 and
+  float32, start indices 0/1/94/95/96/127, every partial queue prefix, clean and already-dirty
+  states, counts from zero through 63 around group boundaries, and raw bit patterns including both
+  zero signs, infinities, quiet/signaling-NaN-like values, subnormals, normals, and randomized data.
+  It compares every uniform, queue word/index, configuration index, and dirty flag against repeated
+  scalar writes. A separate exact-rewrite test proves an identical clean float32 range remains
+  clean.
+- The local Cortex manuals guided the candidate. A510 pages 43-46 list `REV64`/`EXT` at latency 3
+  with split `2,1` throughput and a one-register Q load at latency 3/throughput 2. A715 pages 34-36
+  list the permutations at 2/2 and the Q load at 6/3; A710 pages 52-55 list 2/2 and 6/3; X3 pages
+  31-33 list 2/4 and 6/3. The tables did not decide acceptance. A separate grouped float24 candidate
+  was rejected because small batches on A510 were unstable or regressive even where larger or
+  already-dirty batches won; production contains no grouped float24 path.
+- The exact differential benchmark validated both formats first, then ran seven alternating old/new
+  order samples with 65,536 repeats per sample in unchanged-clean, already-dirty, and changing-clean
+  modes. Median old-over-new ranges over one, two, four, eight, sixteen, and twenty-four groups were:
+
+  | Thor core | Exact uploader-kernel improvement |
+  | --- | ---: |
+  | A510 CPU 0 | 1.150440x-3.819898x |
+  | A715 CPU 3 | 1.957553x-14.839140x |
+  | A710 CPU 6 | 1.875851x-12.244903x |
+
+  The one-group cases improved in every mode: A510 1.150440x-1.499645x, A715
+  1.957553x-2.217076x, and A710 1.875851x-2.096214x. X3 was parked by Android `core_ctl`, so no X3
+  result is inferred.
+- Final ThinLTO emits a 144-byte (`0x90`) grouped helper. Its store-only loop is one post-index Q
+  load, `REV64`, `EXT #8`, one post-index Q store, and a loop branch; the clean loop adds one old Q
+  load plus XOR/OR accumulation and performs one final `UMAXV`. The range dispatcher remains 532
+  bytes (`0x214`) with scalar float24, partial, and tail paths intact. The focused shader-setup tests
+  passed 286,361 assertions in five cases on Thor's A510. The complete benchmark-free
+  `[video_core]` suite passed 411,912 assertions in 81 cases independently on A510 CPU0, A715 CPU3,
+  and A710 CPU6.
+- Source/test commit `8f6479d0b` was pushed directly to `origin/master` with command-line Git over
+  SSH. The post-commit JDK 17 `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache`
+  package build passed in 2 minutes 8 seconds. The ARM64-only, v2-signed APK is 29,009,252 bytes
+  with SHA-256 `A97C4F59A6B7F3792B96EE97EB30921B9B02E053A6AF0CDC863BB2F3DD3A1FCC`; its signer certificate
+  SHA-256 is `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `8f6479d0b-vanilla-thor`, minimum SDK 29,
+  and target SDK 37. Wi-Fi ADB installed it successfully; the app was immediately force-stopped,
+  its PID remained absent, and `stay_on_while_plugged_in` was restored and verified as `0`. Neither
+  app nor game was launched.
+- Exact bounded cleanup removed 2,472,995,339 logical host bytes and recovered 2,028,593,152 physical
+  bytes, leaving 52,510,937,088 bytes free on C:. Retained repo build output is only the 29,009,252-
+  byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,801,242,638 bytes. The
+  449,761,696-byte native test ELF, Gradle/JNI/R8/symbol/mapping staging, and all host/device benchmark
+  helpers and rendered manual pages were removed. No PDF, benchmark, test binary, rendered page,
+  APK, or scratch note was committed.
+- This is optimization/candidate entry 140 in the overlapping Thor ledger. It is the total accepted
+  ledger count; earlier references to 78 described only a narrower recent-work subset. These exact
+  1.15x-14.84x ratios accelerate only the float32 uniform-upload kernel and cannot be added to the
+  prior 139 entries or converted into whole-emulator FPS or battery watts. Fewer queue writes,
+  comparisons, loads, branches, and decoded instructions make lower energy plausible on this path,
+  but whole-game frametime, thermal slope, and battery power still require a controlled matched A/B.

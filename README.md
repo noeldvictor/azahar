@@ -28,9 +28,10 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **139 accepted optimization/candidate
-entries**. Those entries are not additive percentages: many affect different paths, and whole-game
-FPS or battery watts still require a matched title/scene/device A/B.
+The overlapping Thor evidence ledger currently contains **140 accepted optimization/candidate
+entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
+slice are subsets, not the project total. The entries are not additive percentages: many affect
+different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
 
 See [Thor optimization notes](docs/thor-optimization-notes.md) for current performance hooks and candidate code paths.
 
@@ -451,6 +452,17 @@ Alternating-order exact-kernel medians improved unchanged and changing writes by
 A510, 1.83x on A715, and 1.42x-1.47x on A710**. Final ThinLTO emits an 84-byte straight-line
 function. X3 was parked by Android `core_ctl`. These are boolean-uniform write-path ratios, not
 whole-game FPS or measured battery-watt gains.
+
+Optimization 140 batches aligned AArch64 PICA float32 uniform uploads four guest words at a time.
+Each group uses one Q load, `REV64` plus `EXT` to restore guest component order, and one Q store.
+Already-dirty batches skip old-value loads entirely; clean batches aggregate all comparisons and
+perform one final reduction. Partial queues, float24, tails, out-of-range writes, and non-AArch64
+hosts retain the scalar route, and the final queue contents remain exact. Differential coverage
+passed 286,361 assertions, while the complete 411,912-assertion video-core suite passed separately
+on Thor's A510, A715, and A710 classes. Alternating-order exact-uploader medians improved by
+**1.15x-3.82x on A510**, **1.96x-14.84x on A715**, and **1.88x-12.24x on A710**, depending on batch
+length and dirty/change state. X3 was parked by Android `core_ctl`. These ratios cover only the
+float32 uniform-upload kernel and are not whole-game FPS or measured battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

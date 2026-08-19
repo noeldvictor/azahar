@@ -463,6 +463,16 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   stale suffix may still be observable. The manuals' X3/A715/A710/A510 load/store tables identify
   the removed work, but final linked-code inspection and physical timing—not table arithmetic—
   remain the acceptance evidence; X3 was parked and therefore has no inferred result.
+- Batch aligned PICA float32 uniform uploads in four-word Q-register groups on AArch64, reversing
+  transfer order with `REV64` plus `EXT #8`. A510 pages 43-46 list those permutations at latency 3
+  with split `2,1` throughput and a one-register Q load at latency 3/throughput 2. A715 pages 34-36
+  list the permutations at 2/2 and the Q load at 6/3; A710 pages 52-55 list the same 2/2 and 6/3;
+  X3 pages 31-33 list the permutations at 2/4 and the Q load at 6/3. Use an already-dirty store-only
+  loop and aggregate clean-state comparisons across the batch, but preserve the final queue buffer
+  plus scalar partial-queue, float24, tail, out-of-range, and non-AArch64 behavior. These tables
+  explain the chosen instruction shape; exact differential tests, final linked disassembly, and
+  physical A510/A715/A710 timing control acceptance. A grouped float24 candidate remains rejected
+  because small A510 batches were unstable or slower.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,

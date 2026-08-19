@@ -247,6 +247,16 @@
   AArch64 body. Do not replace this with the rejected packed-float24 `TBL` experiment: despite exact
   random equality, it ran at about 0.52x-0.54x on A510. Treat the 1.03x-1.83x measured gain as
   boolean-uniform-path work, not whole-game FPS or watts.
+- AArch64 `ShaderSetup::WriteUniformFloatRegRange()` may batch only complete float32 groups when the
+  packed queue starts empty. Reverse each four-word transfer with `REV64` plus `EXT #8`, skip old-
+  value loads when `uniforms_dirty` is already set, and otherwise aggregate vector XOR results for
+  one final `UMAXV`. Preserve the final packed queue buffer because save states can observe it.
+  Partial queues, float24 writes, scalar tails, out-of-range writes, and non-AArch64 hosts must keep
+  the scalar `WriteUniformFloatReg()` route. Retain differential tests across both formats, boundary
+  indices, every partial queue prefix, dirty/clean state, special float bit patterns, and identical
+  rewrites. Do not restore the rejected grouped-float24 candidate: its small-batch A510 timing was
+  unstable or regressive. Treat the 1.15x-14.84x measurements as uploader-kernel ratios, not whole-
+  game FPS or watts.
 - Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
   `ShaderUnit::WriteOutput()`. When its output-mask popcount exactly equals the rasterizer or
   geometry-pipeline consumer count, select one direct-cache loop before the draw: a hit must pass
