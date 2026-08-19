@@ -6934,3 +6934,65 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   plausible on this route, but whole-game frametime, thermal slope, and battery power still
   require a controlled matched title/scene/cache/renderer/driver/resolution/layout/performance-
   mode/fan/brightness/duration A/B.
+
+## Packed AArch64 Boolean-Uniform Write (2026-08-19)
+
+- `ShaderSetup::WriteUniformBoolReg()` previously looped over sixteen guest boolean registers,
+  extracted each source bit separately, compared sixteen old bytes, and performed sixteen byte
+  stores. Entry 139 replaces only the AArch64 path with one packed 16-byte update. It duplicates
+  the 16-bit input's low and high bytes into the vector halves, masks both halves with
+  `[1,2,4,8,16,32,64,128]`, normalizes the set bits to byte `1`, XORs against one old Q load,
+  reduces change with `UMAXV`, and performs one Q store. The existing scalar implementation remains
+  the non-AArch64 fallback.
+- The local Cortex optimization guides were read directly before acceptance. A510 pages 36 and
+  43-44 list byte compare/logical work at latency 3 with split `2,1` throughput, GPR `DUP` at 3/1,
+  and 16-byte `UMAXV` at 4/1. A715 pages 29 and 34-35 list 16-byte `UMAXV` at latency 6/throughput
+  1/2, GPR `DUP` at 3/1, and generally stronger logical throughput. A710 pages 43 and 52-53 list
+  compare/logical at 2/2, 16-byte `UMAXV` at 4/1/2, and GPR `DUP` at 3/1. X3 pages 26 and 31-32
+  list compare/logical at 2/4 and 4H/4S `UMAXV` at 2/2, but CPU7 was parked by Android `core_ctl`.
+  These tables guided the shape; only physical Thor results accepted it.
+- A separate packed-float24 attribute candidate used `TBL` plus vector exact conversion and passed
+  one million randomized equality cases, but it was rejected after A510 medians fell to
+  0.536978x/0.522080x for the branch form and 0.541669x/0.529736x for the fully vector form on
+  normal/special inputs. No part of that experiment entered production or increments the ledger.
+- The exact old-scalar/new-packed benchmark first checked all 65,536 possible register values, then
+  used seven alternating-order samples over 256 changing or unchanged inputs and 32,768 repeats:
+
+  | Thor core | Changing write | Unchanged rewrite |
+  | --- | ---: | ---: |
+  | A510 CPU 0 | 89.722766 -> 86.142626 ns; 1.041561x | 89.225719 -> 86.220199 ns; 1.034859x |
+  | A715 CPU 3 | 7.599741 -> 4.146931 ns; 1.832618x | 7.594979 -> 4.140058 ns; 1.834510x |
+  | A710 CPU 5 | 5.657480 -> 3.861586 ns; 1.465066x | 5.503595 -> 3.863660 ns; 1.424451x |
+
+  The A510 samples were bimodal under Android scheduling/frequency behavior, so the conservative
+  slow-frequency medians above are the claim; faster same-run samples are not substituted. X3
+  affinity was unavailable and no X3 result is inferred.
+- Final production ThinLTO emits an 84-byte (`0x54`), 21-instruction, straight-line function with
+  two `DUP`s, one constant Q load, vector `AND`/normalization, one old Q load, `EOR`, one new Q
+  store, and `UMAXV`; the prior compiled scalar mirror was 360 bytes (`0x168`) with repeated scalar
+  byte loads/stores and bit extraction. The permanent test exhaustively checks all 65,536 inputs
+  from inverse initial values, verifies exact byte `0`/`1` mapping and dirty-on-change, then rewrites
+  the same value and verifies no false dirty flag. The complete `[video_core]` suite passed 398,847
+  assertions in 79 cases independently on A510 CPU0, A715 CPU3, and A710 CPU5.
+- Source/test commit `785056d04` was pushed directly to `origin/master` with command-line Git over
+  SSH. The post-commit JDK 17 ARM64 native build and
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` packaging both passed. The
+  ARM64-only, v2-signed APK is 29,009,032 bytes with SHA-256
+  `087AAF72BC7E7C56B5F700084ECB747F373AE8465B4D676B975E9F104D2C2AEA`; its signer certificate
+  SHA-256 is `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `785056d04-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it successfully; the app was immediately force-stopped,
+  no app PID remained, and `stay_on_while_plugged_in` was restored and verified as `0`. Neither app
+  nor game was launched.
+- Exact bounded cleanup removed 2,472,794,359 logical host bytes and recovered 2,028,003,328
+  physical bytes, leaving 52,972,720,128 bytes free on C:. Retained repo build output is only the
+  29,009,032-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,800,888,899
+  bytes. The 449,664,136-byte native test ELF, Gradle/JNI/R8/symbol/mapping staging, and all host/
+  device benchmark helpers were removed. No PDF, benchmark, test binary, rendered manual page,
+  APK, or scratch note was committed.
+- This is optimization/candidate entry 139 in the overlapping Thor ledger. It accelerates only PICA
+  boolean-uniform register writes; call frequency depends on each game's command stream, and many
+  frames spend most time elsewhere. The exact 1.03x-1.83x kernel ratios cannot be added to the
+  prior 138 entries or converted into whole-emulator FPS or battery watts. One vector load/store
+  pair and fewer decoded instructions make lower energy plausible on this path, but whole-game
+  frametime, thermal slope, and battery power still require a controlled matched A/B.

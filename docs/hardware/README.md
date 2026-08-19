@@ -281,6 +281,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   `CMN`, and `TST` on Cortex-X3 page 15, Cortex-A715 page 17, Cortex-A710 page 17, and Cortex-A510
   page 14. These are baseline operations across every Thor core class. Prove all sixteen reference/
   input combinations and every branch consumer because the true condition is not always EQ/NE.
+- Pack PICA boolean-uniform writes as one 16-byte AdvSIMD operation on AArch64, but keep physical
+  Thor timing as the acceptance gate. The relevant manual rows are A510 pages 36 and 43-44, A715
+  pages 29 and 34-35, A710 pages 43 and 52-53, and X3 pages 26 and 31-32. They document the
+  compare/logical, GPR `DUP`, element-move, and `UMAXV` costs: notably, A510 lists 16-byte `UMAXV`
+  at latency 4/throughput 1 and compare/logical work at latency 3 with split `2,1` throughput,
+  while the larger cores have stronger surrounding vector issue. That predicted the smaller A510
+  win but did not prove it. Exhaustive mapping/dirty-flag tests plus exact Thor measurements
+  accepted the packed update at 1.03x-1.04x on A510, 1.83x on A715, and 1.42x-1.47x on A710.
+  X3 was parked, so do not infer an X3 result or convert these path-local ratios into FPS or watts.
 - Treat instruction tables as candidate guidance rather than proof across the heterogeneous SoC.
   X3 page 15, A715/A710 page 16, and A510 pages 12-13 make `CBZ`/`CBNZ` look attractive, but a
   disassembly-checked Thor benchmark rejected replacing the PICA uniform `CMP` plus conditional

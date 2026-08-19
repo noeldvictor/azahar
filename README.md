@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **138 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **139 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -441,6 +441,15 @@ medians across one through sixteen attributes improved **1.19x-1.89x on A510**,
 **1.10x-1.31x on A715**, and **1.07x-1.30x on A710**. Final ThinLTO inlines the compact loop into
 both production callers, and 136,703 video-core assertions pass on every accessible core class.
 X3 was parked by Android `core_ctl`. These figures cover only input-register mapping and are not
+whole-game FPS or measured battery-watt gains.
+
+Optimization 139 packs each AArch64 PICA boolean-uniform update into one 16-byte AdvSIMD load,
+compare, reduction, and store instead of sixteen scalar bit tests, byte comparisons, and stores.
+All 65,536 register values pass an exhaustive exact-mapping and dirty-flag test, and the complete
+398,847-assertion video-core suite passes independently on Thor's A510, A715, and A710 classes.
+Alternating-order exact-kernel medians improved unchanged and changing writes by **1.03x-1.04x on
+A510, 1.83x on A715, and 1.42x-1.47x on A710**. Final ThinLTO emits an 84-byte straight-line
+function. X3 was parked by Android `core_ctl`. These are boolean-uniform write-path ratios, not
 whole-game FPS or measured battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root

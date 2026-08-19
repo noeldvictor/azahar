@@ -237,6 +237,16 @@
   branch. Retain independent scalar-reference coverage for both overloads and the exact config-
   path Thor gate. Do not add the rejected output-register byte-map loop; its one-output and A510
   cases regressed.
+- AArch64 `ShaderSetup::WriteUniformBoolReg()` must keep the 16 guest boolean registers as exact
+  byte values `0` or `1`. Duplicate the input register's low and high bytes into the two vector
+  halves, mask them with `1,2,4,8,16,32,64,128`, normalize with compare/not, compare the resulting
+  16 bytes against the old vector, reduce the XOR with `UMAXV`, and perform one full 16-byte store.
+  Preserve dirty semantics: a changed byte sets `uniforms_dirty`, an identical rewrite does not,
+  and an already-dirty state remains dirty. Keep the scalar non-AArch64 fallback and the exhaustive
+  0-65535 permanent test. Final ThinLTO should retain the 84-byte/21-instruction straight-line
+  AArch64 body. Do not replace this with the rejected packed-float24 `TBL` experiment: despite exact
+  random equality, it ran at about 0.52x-0.54x on A510. Treat the 1.03x-1.83x measured gain as
+  boolean-uniform-path work, not whole-game FPS or watts.
 - Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
   `ShaderUnit::WriteOutput()`. When its output-mask popcount exactly equals the rasterizer or
   geometry-pipeline consumer count, select one direct-cache loop before the draw: a hit must pass
