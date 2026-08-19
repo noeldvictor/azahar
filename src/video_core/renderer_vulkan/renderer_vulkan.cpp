@@ -1177,6 +1177,9 @@ void RendererVulkan::SwapBuffers() {
 
     const Layout::FramebufferLayout& layout = render_window.GetFramebufferLayout();
     const bool screenshot_pending = IsScreenshotPending();
+    const bool skip_duplicate_frame =
+        Settings::values.use_skip_duplicate_frames.GetValue() &&
+        !Core::PerfStats::game_frames_updated;
     const auto mono_render_option = Settings::values.mono_render_option.GetValue();
     bool prepare_right_eye =
         should_present && VideoCore::PresentationNeedsRightEye(layout, mono_render_option);
@@ -1188,7 +1191,12 @@ void RendererVulkan::SwapBuffers() {
         prepare_right_eye |= VideoCore::PresentationNeedsRightEye(
             settings.screenshot_framebuffer_layout, mono_render_option);
     }
-    const bool prepare_rendertarget = should_present || screenshot_pending;
+    const bool prepare_rendertarget = VideoCore::NeedsFramePreparation(
+        should_present, screenshot_pending, false, skip_duplicate_frame);
+    if (should_present && skip_duplicate_frame && !screenshot_pending) {
+        VideoCore::AddFrameProfileEvent(
+            VideoCore::FrameProfileEvent::DuplicateFramePreparationsSkipped);
+    }
     if (prepare_rendertarget) {
         prepare_right_eye &=
             !system.GPU().GetRightEyeDisabler().ConsumeRightEyeSkippedForPresentation();

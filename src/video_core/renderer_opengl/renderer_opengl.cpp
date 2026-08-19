@@ -94,6 +94,28 @@ RendererOpenGL::~RendererOpenGL() = default;
 void RendererOpenGL::SwapBuffers() {
     system.perf_stats->StartSwap();
     const bool should_present = ShouldPresentFrame();
+    const bool screenshot_pending = IsScreenshotPending();
+    const bool frame_dumping = frame_dumper.IsDumping();
+    const bool skip_duplicate_frame =
+        Settings::values.use_skip_duplicate_frames.GetValue() &&
+        !Core::PerfStats::game_frames_updated;
+    const bool prepare_rendertarget = VideoCore::NeedsFramePreparation(
+        should_present, screenshot_pending, frame_dumping, skip_duplicate_frame);
+#ifdef ANDROID
+    if (!prepare_rendertarget) {
+        // There is no host output to draw. Avoid switching from the rasterizer's GL state to the
+        // presentation state and straight back on every suppressed Eco Turbo or duplicate frame.
+        secondaryWindowEnabled = secondary_window != nullptr;
+        isSecondaryWindow = secondaryWindowEnabled;
+        if (secondary_window) {
+            secondary_window->PollEvents();
+        }
+        system.perf_stats->EndSwap();
+        EndFrame();
+        rasterizer.TickFrame();
+        return;
+    }
+#endif
     // Maintain the rasterizer's state as a priority
     OpenGLState prev_state = OpenGLState::GetCurState();
     state.Apply();
@@ -115,8 +137,6 @@ void RendererOpenGL::SwapBuffers() {
     render_window.SetupFramebuffer();
 
     const auto& main_layout = render_window.GetFramebufferLayout();
-    const bool screenshot_pending = IsScreenshotPending();
-    const bool frame_dumping = frame_dumper.IsDumping();
     const auto mono_render_option = Settings::values.mono_render_option.GetValue();
     bool prepare_right_eye =
         should_present && VideoCore::PresentationNeedsRightEye(main_layout, mono_render_option);
@@ -132,7 +152,6 @@ void RendererOpenGL::SwapBuffers() {
         prepare_right_eye |=
             VideoCore::PresentationNeedsRightEye(frame_dumper.GetLayout(), mono_render_option);
     }
-    const bool prepare_rendertarget = should_present || screenshot_pending || frame_dumping;
     if (prepare_rendertarget) {
         prepare_right_eye &=
             !system.GPU().GetRightEyeDisabler().ConsumeRightEyeSkippedForPresentation();

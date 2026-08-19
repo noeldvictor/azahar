@@ -20,6 +20,7 @@ namespace VideoCore {
 enum class FrameProfileEvent : u32 {
     SwapCalls,
     PresentFrames,
+    DuplicateFramePreparationsSkipped,
     PresentBlits,
     PresentCopies,
     PresentPixels,

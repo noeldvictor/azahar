@@ -63,9 +63,11 @@ void ReportFrameProfileWindow() {
         draws == 0 ? 0.0 : 100.0 * static_cast<double>(accelerated) / draws;
 
     LOG_INFO(Render_Vulkan,
-             "ThorFrameProfile window_s={:.3f} swaps={} presented={} immediate_vertices={} "
-             "draw_batches={} accelerated={} accelerated_pct={:.2f} software={}",
+             "ThorFrameProfile window_s={:.3f} swaps={} presented={} duplicate_prepare_skipped={} "
+             "immediate_vertices={} draw_batches={} accelerated={} accelerated_pct={:.2f} "
+             "software={}",
              seconds, swaps, values[Index(FrameProfileEvent::PresentFrames)],
+             values[Index(FrameProfileEvent::DuplicateFramePreparationsSkipped)],
              values[Index(FrameProfileEvent::ImmediateVertices)], draws, accelerated,
              accelerated_percent, values[Index(FrameProfileEvent::SoftwareDraws)]);
     LOG_INFO(Render_Vulkan,

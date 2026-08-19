@@ -38,6 +38,21 @@ constexpr bool PresentationNeedsRightEye(const Layout::FramebufferLayout& layout
            mono_render_option == Settings::MonoRenderOption::RightEye;
 }
 
+/// Returns whether a host output needs the guest render targets prepared for this swap. Screenshots
+/// are explicit captures and therefore override duplicate-frame suppression.
+constexpr bool NeedsFramePreparation(bool should_present, bool screenshot_pending,
+                                     bool frame_dumping, bool skip_duplicate_frame) noexcept {
+    return screenshot_pending ||
+           (!skip_duplicate_frame && (should_present || frame_dumping));
+}
+
+static_assert(NeedsFramePreparation(true, false, false, false));
+static_assert(!NeedsFramePreparation(true, false, false, true));
+static_assert(NeedsFramePreparation(true, true, false, true));
+static_assert(!NeedsFramePreparation(false, false, true, true));
+static_assert(NeedsFramePreparation(false, false, true, false));
+static_assert(!NeedsFramePreparation(false, false, false, false));
+
 struct RendererSettings {
     // Screenshot
     std::atomic_bool screenshot_requested{false};
