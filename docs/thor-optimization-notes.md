@@ -6651,3 +6651,73 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   lookups, indirect calls, and address operations make lower energy plausible on this path, but
   whole-game frametime, thermal slope, and battery power still require a controlled matched title/
   scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## Bounded PICA Vertex-Cache Output Copies (2026-08-19)
+
+- Indexed CPU-fallback draws keep 64 cached `AttributeBuffer` objects. Each object is sixteen
+  16-byte shader-output attributes, so the established hit and insertion assignments transferred
+  all 256 bytes. `ShaderUnit::WriteOutput()` actually packs the `output_mask` registers into a
+  prefix. The no-geometry consumer reads `rasterizer.vs_output_total` attributes, while geometry
+  paths read `pipeline.vs_outmap_total_minus_1_a + 1`.
+- The accepted path computes those produced and consumed counts once per indexed draw. Only an
+  exact match of zero through six selects a dedicated vertex loop whose hit and insertion sites
+  enter one fallthrough prefix copier. Non-indexed draws, count mismatches, and counts 7-16 execute
+  the original full assignment. This preserves the old undefined/stale suffix when any consumer
+  might observe it, while matched bounded consumers can observe only bytes explicitly copied from
+  the cached vertex.
+- The six-output ceiling came from exact device evidence rather than assuming fewer bytes always
+  means less time. A temporary release ARM64 test used 64 cache entries, one million copies per
+  sample, 11 alternating-order median samples, a forced memory-visible destination, and equal
+  live-prefix checksums. The Thor was AC-powered, charge-limited/status 3 at 80%, and 24.0 C at the
+  evidence capture, so these are wall-powered kernel timings rather than battery-discharge watts:
+
+  | Outputs | A510 CPU 0 full -> prefix (ratio) | A715 CPU 3 full -> prefix (ratio) | A710 CPU 5 full -> prefix (ratio) |
+  | ---: | ---: | ---: | ---: |
+  | 1 | 23.977396 -> 10.444323 ns (2.295735x) | 3.524219 -> 2.097760 ns (1.679992x) | 4.639792 -> 2.193229 ns (2.115507x) |
+  | 2 | 25.069896 -> 14.489427 ns (1.730220x) | 3.526145 -> 2.144323 ns (1.644409x) | 4.642188 -> 2.196979 ns (2.112987x) |
+  | 3 | 24.530469 -> 15.545885 ns (1.577940x) | 3.599479 -> 3.556146 ns (1.012185x) | 4.649583 -> 3.569739 ns (1.302499x) |
+  | 4 | 23.869271 -> 17.615364 ns (1.355026x) | 3.414427 -> 2.169479 ns (1.573847x) | 4.696667 -> 2.217083 ns (2.118399x) |
+  | 5 | 24.528542 -> 19.026146 ns (1.289202x) | 3.578541 -> 3.469531 ns (1.031419x) | 4.689792 -> 3.520364 ns (1.332190x) |
+  | 6 | 23.827136 -> 22.483073 ns (1.059781x) | 3.560261 -> 3.521146 ns (1.011109x) | 4.668177 -> 3.571980 ns (1.306888x) |
+
+  CPU7/X3 was initially online but Android `core_ctl` parked it before the pinned benchmark; no
+  power or core setting was changed to force it online, so no X3 timing is claimed.
+- Two broader candidates were rejected. Copying every width through the fallthrough helper made a
+  full sixteen-output transfer 0.927145x on A510, 0.980161x on A715, and 0.975609x on A710. Adding
+  a recurring `count > 6` branch before the old full assignment was worse on A510: widths 8, 12,
+  15, and 16 measured only 0.818907x, 0.819426x, 0.775222x, and 0.828437x. The accepted draw-level
+  loop choice pays the width gate once and leaves the wide inner loop unchanged.
+- Final ThinLTO grows `PicaCore::LoadVertices()` from 1,424 bytes (`0x590`) to 2,392 bytes (`0x958`)
+  because it retains separate bounded and full loops. The bounded hit/insertion sites load and
+  store only the selected Q attributes. The full path still contains eight paired Q load/store
+  groups and no recurring output-count branch. That 968-byte code-footprint cost is explicit; only
+  one loop executes for a draw.
+- The permanent test fills source and destination with different byte patterns, verifies every
+  live prefix for counts 0-6, and proves every suffix byte remains its original canary. The final
+  benchmark-free `[video_core]` suite passed 135,081 assertions in 77 cases independently on A510
+  CPU0, A715 CPU3, and A710 CPU5. X3 was parked during the final attempt. Native Android ARM64
+  tests/library builds passed before and after removing the temporary benchmark.
+- Source/test commit `12aa05cf7` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 6 seconds.
+  The ARM64-only, v2-signed APK is 29,006,976 bytes with SHA-256
+  `C1BEB8DF79FE973AD2A08F5E995C9E405DE9C608416B1EC9C3589217F071FF94`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `12aa05cf7-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it, an immediate force-stop left no app process, and
+  `stay_on_while_plugged_in` was restored to its recorded original value 0. Neither app nor game
+  was launched.
+- Exact bounded cleanup removed 2,472,669,362 logical host bytes and recovered 2,028,470,272
+  physical bytes, leaving 53,457,612,800 bytes free on C:. The retained active ARM64 CMake/Ninja
+  cache is 2,806,151,867 bytes; retained build output is only the 29,006,976-byte APK, Gradle's
+  476-byte output metadata, and the 391-byte install metadata. The 449,605,752-byte native test
+  ELF, stripped test, Gradle/JNI/R8/symbol/mapping staging, and exact `/data/local/tmp` helper were
+  removed. No PDF, benchmark, test binary, rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 135 in the overlapping Thor ledger. It accelerates only
+  cache transfers in indexed draws that reach CPU vertex processing and expose a matching 0-6
+  output layout; hardware vertex shaders, non-indexed draws, shader execution on misses, and wider
+  outputs bypass the new copy. The 1.01x-2.30x exact-kernel ratios cannot be added to the prior 134
+  entries or converted into whole-emulator FPS or battery watts. Fewer recurring load/store bytes
+  make lower energy plausible on this path, but whole-game frametime, thermal slope, and battery
+  power still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
+  performance-mode/fan/brightness/duration A/B.

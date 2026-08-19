@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **134 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **135 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -407,6 +407,16 @@ four-stream Thor benchmark with equal nonzero checksums reduced address-plus-loa
 no physical-memory lookup. The permanent multi-stream/default-attribute test and all 135,067
 video-core assertions pass on Thor. This is optimization 134; hardware vertex loading and vertex-
 cache hits can bypass it, so the exact-loop ratios are not whole-game FPS or battery-watt gains.
+
+Indexed draws on the PICA CPU fallback previously copied all 256 bytes of cached vertex-shader
+output on every cache hit and insertion even when only a short packed prefix was live. A draw-level
+specialization now copies only the exact 0-6-output prefix when the shader's produced count matches
+the downstream consumer; wider or mismatched layouts retain the original branch-free full copy.
+Exact copy-kernel medians improved **1.06x-2.30x on A510, 1.01x-1.68x on A715, and 1.30x-2.12x
+on A710** while moving at most 96 instead of 256 bytes. The permanent suffix-canary test and all
+135,081 video-core assertions pass on Thor. This is optimization 135; hardware vertex shaders,
+non-indexed draws, cache misses' shader execution, and wider outputs limit whole-game impact, so
+these path-local ratios are not additive FPS or measured battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

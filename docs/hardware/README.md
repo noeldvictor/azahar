@@ -423,6 +423,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   separate pointers for separately configured attributes and retain the null-lookup invalid route.
   The exact four-stream operation improved 1.95x on A510, 2.20x on A715, and 3.38x on A710, but
   hardware vertex loading and cache hits bypass it; do not report those ratios as game FPS or watts.
+- Cached PICA vertex-shader output is another draw-invariant memory-traffic opportunity. One
+  `AttributeBuffer` is 256 bytes, but `ShaderUnit::WriteOutput()` packs live outputs into a prefix
+  of 16-byte attributes. The manuals' ordinary vector load/store tables on X3 page 23, A715 page
+  26, A710 page 39, and A510 page 32 support reducing those operations, but physical Thor timing
+  must choose the bound: only exact produced/consumed matches of 0-6 outputs passed the current
+  all-accessible-core gate. Select that path before the vertex loop, leave its suffix untouched,
+  and retain the established full copy for wider or mismatched layouts. A per-copy wide fallback
+  branch lost 17%-23% on A510 despite doing the same 256-byte transfer, demonstrating why manual
+  instruction counts are candidate guidance rather than acceptance evidence.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,

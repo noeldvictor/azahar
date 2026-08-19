@@ -221,6 +221,16 @@
   attribute, and prove that guest writes after construction remain visible. Inspect final ThinLTO
   for direct pointer-plus-stride math and no physical lookup inside `LoadVertex()`. The measured
   1.95x-3.38x address/load loop result is path-local, not whole-game FPS or watts.
+- Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
+  `ShaderUnit::WriteOutput()`. Copy only outputs 0-6 when the shader-output popcount exactly matches
+  the rasterizer or geometry-pipeline consumer count, and select that bounded loop once per draw.
+  Keep non-indexed draws, count mismatches, and counts 7-16 on the original full 256-byte copy;
+  never put a `count > 6` branch in that recurring fallback because it regressed A510 wide-copy
+  timing to 0.775x-0.829x. The bounded helper must leave every suffix byte untouched, while the
+  full fallback must retain eight paired Q loads/stores with no output-count branch. Preserve the
+  permanent prefix/suffix canary test, final linked-code inspection, and accessible-core Thor
+  measurements. The accepted 1.01x-2.30x copy-kernel result is path-local, not whole-game FPS or
+  battery watts.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
 - The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register
   block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the
