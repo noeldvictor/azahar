@@ -279,6 +279,54 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   the title and pacing. No FPS, frametime, watt, temperature, or battery-life gain is claimed until
   a future permitted matched Thor A/B holds the full test matrix fixed.
 
+## 2026-08-19 Targeted Vulkan Resolution-Scale Synchronization
+
+- Optimization/candidate 148 addresses the remaining broad synchronization in Vulkan's recurring
+  texture-scale route. `Surface::BlitScale()` previously surrounded each Base-to-Scaled or
+  Scaled-to-Base `vkCmdBlitImage` with two image-barrier calls whose outer stage was
+  `AllCommands`. The dependency could therefore include unrelated pipeline work even though the
+  operation's actual producer and consumer stages are known from the surface's permitted uses.
+- The two barrier calls remain, but their broad stage and generic access scopes do not. They now use
+  the same `PipelineStageFlags()` and `AccessFlags()` model as `TextureRuntime::BlitTextures()`, with
+  `TransferRead`/`TransferWrite` at the blit boundary. Base and Scaled images belong to the same
+  `Surface` and share those usage flags. The source and destination images, filter, aspect, general
+  and transfer layouts, mip/layer ranges, `eByRegion` dependency, and D24S8 unsupported-hardware
+  fallback are unchanged.
+- This route runs after scaled texture uploads, before scaled downloads, and once per mip during
+  `ScaleUp()`. It is not used when internal resolution is the default 1x, and uploads handled by the
+  specialized color-filter helper may bypass it. The change therefore removes two
+  `ALL_COMMANDS` stage scopes per scale blit only when this path actually executes; it is not a
+  universal per-frame or default-configuration gain.
+- The synchronization model follows Khronos' [synchronization
+  examples](https://github.com/KhronosGroup/Vulkan-Docs/wiki/synchronization-examples) and official
+  [pipeline-barrier performance
+  sample](https://docs.vulkan.org/samples/latest/samples/performance/pipeline_barriers/README.html),
+  which recommend matching dependencies to the real producer and consumer rather than draining
+  unrelated stages. Current [RPCS3 Vulkan presentation
+  code](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/RSX/VK/VKPresent.cpp) likewise uses
+  transfer-specific barriers; no RPCS3 code was copied.
+- An ordinary profiling-off ARM64 native build passed in 1 minute 50 seconds. Its linked AArch64
+  `BlitScale` command uses the captured surface stage mask on each side of literal Transfer and no
+  longer materializes an `ALL_COMMANDS` stage. A separate profiler-enabled build compiled and
+  linked all 2,203 actions in 12 minutes 3 seconds; its cache recorded
+  `ENABLE_THOR_FRAME_PROFILING=ON`, and the final shared library contained the new `scale_blits` and
+  `scale_blit_mpix` diagnostic fields.
+- Source commit `bea82a722` was pushed directly to `origin/master` using command-line Git over SSH.
+  The post-commit production package build passed in 3 minutes 22 seconds. The retained APK contains
+  only `arm64-v8a`, reports `bea82a722-vanilla-thor`, is 29,014,128 bytes, and has SHA-256
+  `139E9696E1DEE47AF26031A10793494F6F7DEBEDD29116BB35F170A8E7122D96`. Its normal cache records
+  profiling OFF, and its linked native library contains zero Thor profiler strings.
+- Exact bounded cleanup removed 6,213,332,852 logical bytes of the disposable profile cache and
+  reproducible Gradle/JNI/R8/native-symbol/mapping staging, recovering 6,045,159,424 physical bytes
+  on C:. The retained output is the 3,242,525,598-byte normal profiling-off ARM64 CMake/Ninja cache,
+  the APK, and its 476-byte metadata; C: reports 55,614,570,496 bytes free. No ADB command, install,
+  app/game launch, or runtime capture was used.
+- The latest fetched `upstream/master` remains `f6a3e3aa5` and is already an ancestor of this fork.
+  The static recurring-work reduction is real for affected scale blits, but driver scheduling,
+  whole-frame FPS, frametime, watts, thermals, and battery life remain unmeasured. A future permitted
+  matched Thor A/B must hold title, scene, save, caches, renderer, resolution, driver, layout,
+  brightness, performance/fan mode, power source, and duration fixed before making those claims.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

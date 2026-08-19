@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **147 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **148 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -531,6 +531,14 @@ screenshots still force preparation; video dumping, event polling, frame limitin
 ticks, right-eye state, and real Vulkan emulation submissions keep their prior semantics. This is a
 recurring CPU/driver-work reduction for duplicate-heavy workloads such as many 30 FPS games on a
 60 Hz host cadence, not a measured emulator-wide speed or watt percentage.
+
+Optimization 148 narrows Vulkan's internal-resolution Base-to-Scaled and Scaled-to-Base blits from
+two broad `ALL_COMMANDS` synchronization scopes to the exact producer/consumer stages and access
+masks already used by ordinary texture blits. Upload scaling, download scaling, and per-mip
+`ScaleUp()` still perform the same `vkCmdBlitImage`, format filter, layouts, layers, and fallback;
+only unrelated pipeline work is no longer included in those dependencies. The normal 1x path does
+not call this scale blit, so the gain is conditional on resolution scaling and remains unmeasured
+until a matched Thor FPS/frametime/power A/B is permitted.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

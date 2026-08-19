@@ -491,6 +491,13 @@
   transfer's present transition `Transfer` to `BottomOfPipe` with no destination access mask; never
   restore the former `AllCommands`-to-`AllCommands` full-pipeline barrier. Preserve the existing
   per-frame fence/reuse waits and queue-idle synchronization for swapchain/surface recreation.
+- Vulkan `Surface::BlitScale()` must use the surface's `PipelineStageFlags()` and `AccessFlags()` as
+  the producer/consumer scopes around the transfer stage; the Base and Scaled images share the same
+  surface-use flags. Do not restore `AllCommands` or generic memory read/write scopes around these
+  resolution-scale blits. Preserve the D24S8 unsupported-hardware fallback, format-selected filter,
+  image layouts, mip/layer ranges, and the upload, download, and `ScaleUp()` call semantics. The
+  opt-in `TextureScaleBlits` and `TextureScaleBlitPixels` profile fields must remain compiled out of
+  ordinary builds with the rest of `THOR_FRAME_PROFILING`.
 - HLE audio intermediate mixes deliberately use `PlanarQuadFrame32` from `Source::MixInto()` through
   aux exchange and final downmix. Preserve channel-major live storage, contiguous whole-buffer aux
   copies on little-endian hosts, the endian-converting fallback, and the historical sample-major
