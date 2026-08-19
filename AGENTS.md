@@ -229,8 +229,14 @@
   Preserve ascending attribute order, duplicate-register last-write behavior, attributes 8-15 in
   the high map word, and untouched-register state. Retain deterministic differential coverage for
   counts 1-16 and duplicate/random maps, final ThinLTO inspection, and A510/A715/A710 full-draw
-  timing. Keep the original config overload for immediate-mode and geometry paths. Do not add the
-  rejected output-register byte-map loop; its one-output and A510 cases regressed.
+  timing. Config-driven immediate-mode, point-geometry, and debug paths must likewise read the two
+  contiguous map words once per call and shift a local `u64`; keep the portable high/low-word
+  fallback for non-little-endian hosts. Preserve the one-attribute direct copy, the guaranteed
+  1-16 count invariant, and the no-stack/no-PLT final AArch64 form. Do not route this overload
+  through a separately linked `ShaderInputMap` constructor or restore the redundant zero-count
+  branch. Retain independent scalar-reference coverage for both overloads and the exact config-
+  path Thor gate. Do not add the rejected output-register byte-map loop; its one-output and A510
+  cases regressed.
 - Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
   `ShaderUnit::WriteOutput()`. When its output-mask popcount exactly equals the rasterizer or
   geometry-pipeline consumer count, select one direct-cache loop before the draw: a hit must pass

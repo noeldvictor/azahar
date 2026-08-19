@@ -6858,3 +6858,79 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Removing repeated config loads and variable shifts makes lower energy plausible on this path,
   but whole-game frametime, thermal slope, and battery power still require a controlled matched
   title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## Config-Packed Shader Input Map and Single-Attribute Fast Path (2026-08-19)
+
+- Entry 137 cached the packed input map once for ordinary CPU-fallback draws, but the remaining
+  config overload still called `ShaderRegs::GetRegisterForAttribute()` for every attribute. That
+  route is used by immediate-mode drawing, point-geometry input assembly, and the shader debug
+  interpreter. Final AArch64 reloaded the same unaligned 64-bit map and applied a variable shift in
+  every loop iteration.
+- Entry 138 gives both overloads one internal always-inlined packed loop. The config route handles
+  one active attribute with one direct 16-byte load/store. For two through sixteen attributes it
+  reads the adjacent low/high map words once with a little-endian `memcpy` that Clang lowers to one
+  unaligned `LDUR X`, then masks the low nibble and shifts the local `u64` by four per attribute.
+  A compile-time adjacency check guards that load, and a numeric high/low-word fallback preserves
+  other byte orders. The `ShaderInputMap` route uses its guaranteed 1-16 count in a do/while and
+  therefore no longer needs a recurring zero-count entry branch.
+- Two intermediate shapes were not accepted. Routing the config overload through the separately
+  linked `ShaderInputMap` constructor produced a 0x9c-byte method with a stack frame, canary, and
+  PLT call. A later direct expression removed that call but emitted two 32-bit loads plus `ORR`;
+  short 500,000-iteration A715 windows also exposed unstable count-4/count-16 outliers. The final
+  contiguous load is smaller, and the timing window was increased fourfold before acceptance.
+- The final temporary benchmark used the real `ShaderRegs`, `ShaderUnit`, and `AttributeBuffer`.
+  Each sample performed 2,000,000 config loads over 64 nonzero source buffers; eleven samples used
+  alternating old/new order and median selection, and old/new checksums had to match. It covered
+  active counts 1, 2, 4, 6, 8, 12, and 16. The Thor was AC-powered at 80% and 23.0 C, so these are
+  timing results and not battery-discharge watt measurements:
+
+  | Attributes | A510 CPU 0 | A715 CPU 3 | A710 CPU 5 |
+  | ---: | ---: | ---: | ---: |
+  | 1 | 7.598750 -> 6.063099 ns; 1.253278x | 1.979688 -> 1.509375 ns; 1.311594x | 2.047135 -> 1.568933 ns; 1.304795x |
+  | 2 | 11.655442 -> 9.104114 ns; 1.280239x | 2.636042 -> 2.389661 ns; 1.103102x | 2.721250 -> 2.535156 ns; 1.073405x |
+  | 4 | 19.310859 -> 12.611120 ns; 1.531257x | 3.983047 -> 3.510860 ns; 1.134493x | 4.344036 -> 3.785468 ns; 1.147556x |
+  | 6 | 26.787838 -> 22.585911 ns; 1.186042x | 5.489870 -> 4.584870 ns; 1.197388x | 5.701041 -> 4.956797 ns; 1.150146x |
+  | 8 | 34.602761 -> 19.749063 ns; 1.752122x | 7.135651 -> 5.774792 ns; 1.235655x | 7.261563 -> 6.239922 ns; 1.163726x |
+  | 12 | 50.674089 -> 26.832604 ns; 1.888527x | 9.737943 -> 8.319453 ns; 1.170503x | 10.040156 -> 9.061068 ns; 1.108054x |
+  | 16 | 71.097943 -> 38.928724 ns; 1.826362x | 12.624531 -> 10.458464 ns; 1.207111x | 12.968307 -> 11.524506 ns; 1.125281x |
+
+  CPU7/X3 was parked by Android `core_ctl`, so no X3 timing is inferred. No governor, frequency,
+  core-control, or app setting was changed. A transient CPU-wake helper was removed after the A710
+  process bound, and a final device check found no helper or emulator process.
+- Final ThinLTO makes the exported config overload 76 bytes (`0x4c`) and the packed-map overload 64
+  bytes (`0x40`, down from 0x48). Both are leaf functions with no stack frame or PLT call. The
+  config route contains one count check, one `LDUR X` for counts above one, and the compact
+  `AND`/`LSR` plus Q-load/indexed-Q-store loop. `PicaCore::DrawImmediate()` and
+  `GeometryPipeline_Point::SubmitVertex()` inline the same shape, proving the production callers
+  receive the optimization rather than only the benchmark wrapper.
+- The permanent test now uses an independent scalar reference instead of calling either optimized
+  overload. For every active count 1-16 and 32 identity/reverse/all-to-one/random mappings it
+  compares both the draw-cached and config-driven overloads byte-for-byte, including high-word
+  attributes, duplicate last-write ordering, and untouched canary registers. The final
+  benchmark-free `[video_core]` suite passed 136,703 assertions in 78 cases independently on A510
+  CPU0, A715 CPU3, and A710 CPU5. X3 affinity remained unavailable.
+- Source/test commit `e1379b962` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 2 minutes 53 seconds.
+  The ARM64-only, v2-signed APK is 29,008,796 bytes with SHA-256
+  `2D189933474FF0BEFE9DDBE13B700DA33BCEE07D570BEFA7EEE0E664D865DBF9`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `e1379b962-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it successfully, an immediate force-stop left no app
+  PID, and the original `stay_on_while_plugged_in=0` remained unchanged. Neither app nor game was
+  launched.
+- Exact bounded cleanup removed 2,472,737,762 logical host bytes and recovered 2,028,523,520
+  physical bytes, leaving 53,200,289,792 bytes free on C:. Retained repo build output is only the
+  29,008,796-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,806,751,027
+  bytes. The 449,635,192-byte native test ELF, stripped benchmark/final test binaries, Gradle/JNI/
+  R8/symbol/mapping staging, and device `/data/local/tmp` helper were removed. No PDF, benchmark,
+  test binary, rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 138 in the overlapping Thor ledger. It accelerates only
+  config-driven input-register mapping plus entry 137's one-attribute packed overload; ordinary
+  indexed draws can reuse entry 137's snapshot, hardware vertex shaders and cache hits can bypass
+  CPU mapping, and shader execution still dominates many misses. The exact 1.07x-1.89x path ratios
+  cannot be added to the prior 137 entries or converted into whole-emulator FPS or battery watts.
+  Fewer config loads, variable shifts, branches, and constructor overhead make lower energy
+  plausible on this route, but whole-game frametime, thermal slope, and battery power still
+  require a controlled matched title/scene/cache/renderer/driver/resolution/layout/performance-
+  mode/fan/brightness/duration A/B.

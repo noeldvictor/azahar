@@ -434,6 +434,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   the removed repeated load/address work, but linked-code inspection, differential semantics, and
   physical measurements remain the acceptance evidence. A separate output-map byte predecode was
   rejected after one-output and A510 regressions.
+- Immediate-mode and point-geometry input loads cannot amortize that snapshot across a normal
+  indexed draw, but they can still consume the contiguous low/high map words with one little-endian
+  64-bit load and shift a local copy. Keep an explicit high/low fallback for other byte orders and
+  bypass the packed loop entirely when the active count is one. Final ARM64 code must have no
+  temporary-object constructor call or stack frame, and the packed-map overload may use a
+  nonzero-count do/while because `max_input_attribute_index + 1` is always 1-16. Exact physical
+  config-path medians improved 1.19x-1.89x on A510, 1.10x-1.31x on A715, and 1.07x-1.30x on A710.
+  The Cortex load/integer tables explain why removing repeated loads and variable shifts is
+  plausible; linked code, differential tests, and the all-count Thor benchmark remain the proof.
 - Cached PICA vertex-shader output is another draw-invariant memory-traffic opportunity. One
   `AttributeBuffer` is 256 bytes, but `ShaderUnit::WriteOutput()` packs live outputs into a prefix
   of 16-byte attributes. When the produced and consumed counts match, bypass the transient output
