@@ -1555,16 +1555,11 @@ void JitShader::Compile_Log2(Label subroutine) {
     // align(16);
     l(subroutine);
 
-    // Here we handle edge cases: input in {NaN, 0, -Inf, Negative}.
-    // Ordinal(n) ? 0xFFFFFFFF : 0x0
-    FCMEQ(VSCRATCH0.toS(), SRC1.toS(), SRC1.toS());
-    MOV(XSCRATCH0.toW(), VSCRATCH0.Selem()[0]);
-    CMP(XSCRATCH0.toW(), 0);
-    B(Cond::EQ, input_is_nan); // SRC1 == NaN
-
-    // (0.0 >= n) ? 0xFFFFFFFF : 0x0
-    MOV(XSCRATCH0.toW(), SRC1.Selem()[0]);
-    CMP(XSCRATCH0.toW(), 0);
+    // A single compare classifies every edge case: VS reports unordered (NaN), while LE reports
+    // zero, negative finite values, and -Inf. Keep the predicates in NZCV instead of materializing
+    // SIMD masks and moving them through a GPR.
+    FCMP(SRC1.toS(), 0);
+    B(Cond::VS, input_is_nan); // SRC1 == NaN
     B(Cond::LE, input_out_of_range); // SRC1 <= 0.0
 
     // Split input: SRC1=MANT[1,2) VSCRATCH1=Exponent
