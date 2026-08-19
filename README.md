@@ -964,6 +964,17 @@ the dependency shape benefits; neutral shapes remained within about 0.02% after 
 confirmations. This is optimization 123. It removes one matching host instruction, not an additive
 whole-emulator speedup or a measured battery-watt reduction.
 
+Ordinary no-flags A32 ARM/Thumb-2 `MVN` now folds a sole immediately adjacent `LSL`, `LSR`,
+`ASR`, or `ROR #1..#31` into one native shifted-register ARM64 `MVN`. Actual JIT words decoded as
+the four exact shifted `mvn` forms, while zero/32/RRX, flag/carry, shared, non-adjacent, immediate,
+and variable cases retain the established fallback. Exact affected-loop independent medians were
+**1.94x-2.21x on A510, 1.53x-1.59x on A715, 1.79x-1.80x on A710, and 2.00x-2.02x on X3**. Long
+A510 dependency confirmations were neutral at 0.997x-1.006x, while A715/A710/X3 dependency chains
+were about 2.00x. The focused test passed 26,112 assertions on every Thor core class and the full
+ARM Dynarmic suite passed 345,236 assertions in 44 cases. This is optimization 124. A tempting
+shifted-`BIC` sibling was rejected after repeatable A510 base-dependent losses; these are path-local
+instruction-kernel results, not an additive whole-emulator speedup or measured watt reduction.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

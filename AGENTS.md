@@ -779,6 +779,21 @@
   all three logical families and all four shift kinds plus representative boundaries and all-core
   Thor measurements. This independent logical result does not widen ADD's measured LSL 1..4 gate;
   keep all gains path-local until a matched title and battery-power A/B exists.
+- ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32 LSL/LSR/ASR/ROR
+  producer into a no-flags/no-carry `Not32` for immediate shifts 1 through 31. Emit one native
+  shifted-register `MVN`. The producer and consumer must share one eligibility helper so the
+  producer aliases its raw source only when `Not32` will encode the shift. Keep flag/carry pseudos,
+  shared or non-adjacent producers, immediate sources, variable shifts, zero/32/RRX forms, and
+  unrelated consumers on the established lowering. Preserve ARM and Thumb-2 encodings, distinct
+  and source/destination-alias operands, full-width results, unrelated GPRs, NZCV/Q/GE, and FPSCR.
+  Require actual-JIT words for all four shift kinds, representative boundaries, and correctness
+  runs on every Thor core class. Keep gains path-local until a matched title and battery-power A/B.
+- Do not globally fold a shifted operand into ARM64 `BIC` for A32 `AndNot32`. Although the unary
+  shifted-input and independent shapes can improve, repeated A510 base-dependent confirmations
+  measured approximately 0.9857x and 0.9926x for representative ASR/LSL forms. Retain the split
+  shift plus `BIC` lowering unless a future dependency-aware predicate proves the exact safe shape
+  and wins on every intended Thor core class. Instruction count and the manuals' logical timing
+  rows are candidate guidance, not sufficient acceptance evidence.
 - Do not globally replace A32/A64 same-width `SABD/UABD` plus `ADD` for `VABA` with native
   `SABA/UABA`. Although independent and big-core dependency patterns can win, exact accumulator-
   chain measurements regressed to 0.6595x-0.6890x on A510 for signed/unsigned 8/16/32-bit forms.

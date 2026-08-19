@@ -5920,3 +5920,86 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   fetch/decode, dependency, and integer-issue work makes lower energy plausible, but whole-game
   frametime, thermal slope, and battery watts still require a controlled matched title/scene/cache/
   renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## ARM64 Shifted MVN Folding (2026-08-19)
+
+- Command-line Git fetched authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 227 commits ahead and zero behind before
+  this work, so no merge was needed. Work remained on `master`, and source was pushed directly to
+  the configured SSH remote. RPCS3's current
+  [`Avoid redundant XFloat normalization in SELB`](https://github.com/RPCS3/rpcs3/commit/82164a54c18e8255f8db86c4d7fe18a587b3a36d)
+  and
+  [`Stop inverting float-to-int saturation on ARM64`](https://github.com/RPCS3/rpcs3/commit/6161ecd7aaf631fdbaf78bc7714db839e15771c8)
+  changes reinforced the transferable rule: remove redundant ARM64 materialization only behind an
+  exact semantic predicate. No RPCS3 code was copied into Azahar.
+- A shifted-`BIC` candidate was tested first and rejected. A disassembly-checked helper covered
+  independent, base-dependent, and shifted-index-dependent `LSL`/`LSR`/`ASR`/`ROR` forms at eight
+  immediate amounts: 96 rows per core, 100,000 iterations, and nine alternating-order samples,
+  with matching checksums. Old-over-fused median ranges were 1.989558x-1.999476x independent,
+  0.999736x-1.002232x base-dependent, and 0.969527x-1.049735x index-dependent on A510;
+  1.530501x-1.635051x, 1.010393x-1.015156x, and 1.999814x-2.000007x on A715;
+  1.786136x-1.789721x, 0.986581x-1.000182x, and 1.999648x-2.014596x on A710; and
+  1.507809x-1.590860x, 1.000000x-1.000192x, and 1.999996x-2.000000x on X3. Longer A510
+  confirmations measured 1.013477x for base-dependent ROR #16 but only 0.985695x for ASR #5 and
+  0.992624x for LSL #16; index-dependent ROR #1 was 1.003267x. The binary base dependency makes a
+  global fold unsafe despite the attractive independent and big-core results, so production BIC
+  lowering was not changed.
+- Dynarmic previously emitted a standalone immediate shift followed by `MVN` for ordinary
+  no-flags A32 ARM/Thumb-2 operations. ARM64 now aliases a sole immediately adjacent
+  LSL/LSR/ASR/ROR producer to its non-immediate source and emits one shifted-register `MVN` for
+  immediates 1..31. The producer and consumer use the same eligibility helper. Flag/carry pseudos,
+  shared/non-adjacent producers, immediate sources, variable shifts, zero/32/RRX forms, and
+  unrelated consumers retain the established lowering.
+- A disassembly-checked MVN helper compared independent and input-dependency chains for all four
+  shift kinds and eight representative amounts: 64 rows per core, 1,000,000 iterations, and nine
+  alternating-order medians. Every checksum matched. Old-over-fused median ranges were:
+
+  | Thor core | Independent | Input dependency |
+  | --- | ---: | ---: |
+  | A510 CPU 0 | 1.939666x-2.206506x | 0.916487x-1.070433x |
+  | A715 CPU 3 | 1.531232x-1.592283x | 1.988148x-2.006246x |
+  | A710 CPU 6 | 1.786884x-1.798057x | 1.991944x-2.003972x |
+  | X3 CPU 7 | 1.999233x-2.016784x | 1.991326x-2.005043x |
+
+  The short A510 per-row dependency spread was DVFS noise around a 1.000647x mean. Corrected
+  10,000,000-iteration, 21-sample confirmations measured 1.000880x for LSR #8, 1.005599x for
+  ROR #16, and 0.996854x for LSL #4, so no repeated row crossed the 0.995 acceptance floor. Thor
+  began the benchmark on AC power with USB and wireless charging false, 80% charge, 4.271 V, and
+  25.0 C. These are wall-powered instruction-kernel timings, not battery-discharge watt results.
+- The checked core manuals list basic and shifted no-flags logical operations at
+  latency/throughput 1/3 ALU on A510 page 14, 1/4 I on A710 and A715 page 17, and 1/6 I on X3
+  page 15. Those rows support removing a real issued logical/shift instruction but do not erase the
+  measured dependency-shape distinction between accepted unary MVN and rejected binary BIC.
+- Temporary actual-emitter tracing captured 28 accepted opcode/amount groups, each 32 times across
+  the ARM/Thumb/layout/input matrix, and no shift-zero entry. `llvm-objdump` decoded representative
+  words `2a3317f4`, `2a7317f4`, `2ab317f4`, and `2af317f4` as exactly
+  `mvn w20,w19,lsl/lsr/asr/ror #5`. The trace hook was removed before the final build. The clean
+  unstripped test ELF was 449,185,640 bytes; its stripped copy was 26,171,144 bytes with SHA-256
+  `240AA4F4D795922CC3639CF6459F8F1F21893E721348CBE59746B5010207756F`.
+- Permanent ARM and Thumb-2 coverage exercises all four shift kinds, encoded amounts
+  0/1/2/3/4/5/16/31, distinct and source/destination-alias layouts, full-width boundary inputs,
+  flag-setting fallbacks including RRX and shift-32 carry semantics, every unrelated GPR,
+  NZCV/Q/GE, and FPSCR. The clean focused case passed 26,112 assertions independently on A510 CPU
+  0, A715 CPU 3, A710 CPU 6, and X3 CPU 7, then passed again on A715 after trace removal. The final
+  full `[core][arm][dynarmic]` suite passed 345,236 assertions in 44 cases on A715. Source/test
+  commit `54844eca7` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 1 second
+  with LTO and ARMv8 NEON enabled. The ARM64-only APK is 29,010,304 bytes, has SHA-256
+  `DE02C7732EDD18A890B8D031EEDE32953750054BC8404D4C84A0820C6354AC22`, and reports package
+  `org.azahar_emu.azahar.debug` version `54844eca7-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID. Neither app nor game was launched.
+- Exact cleanup removed 2,524,660,844 logical host bytes: 53,107,224 bytes of bounded scratch, the
+  449,185,640-byte unstripped test ELF, and 2,022,367,980 bytes of reproducible Gradle/JNI/R8/
+  native-symbol/mapping staging. C: recovered 2,082,582,528 physical bytes and reports
+  56,356,532,224 bytes free. The retained active ARM64 CMake/Ninja cache is 2,798,391,708 bytes;
+  retained build output is only the 29,010,304-byte APK and 476-byte metadata. Three exact device
+  helpers totaling 26,246,344 bytes were removed from `/data/local/tmp`. No PDF, benchmark, test
+  binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 124 in the overlapping Thor ledger: one bounded shifted-MVN
+  optimization shipped and one unsafe global shifted-BIC fusion was permanently rejected. The
+  exact-loop ratios cannot be added to the other 123 entries or converted into whole-emulator FPS
+  or watts. Lower code-cache, fetch/decode, dependency, and integer-issue work makes lower energy
+  plausible only when this guest path executes; whole-game frametime, thermal slope, and battery
+  watts still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
+  performance-mode/fan/brightness/duration A/B run.

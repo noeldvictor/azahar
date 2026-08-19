@@ -50,6 +50,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   shared, non-adjacent, immediate-source, variable, zero/32/RRX, flag/carry, and unrelated paths.
   Encoding availability and the manuals support the shape, but only the measured Thor gate supports
   the performance decision, which remains separate from ADD's narrower LSL rule.
+- Treat shifted `MVN` as a unary dependency shape, not as proof for every member of the logical
+  family. The no-flags shifted logical rows list latency/throughput 1/3 ALU on A510 page 14, 1/4 I
+  on A710 and A715 page 17, and 1/6 I on X3 page 15. Exact Thor runs accepted folding a sole
+  adjacent no-flags/no-carry LSL/LSR/ASR/ROR #1..31 into one `MVN`: independent loops improved
+  on every core, long A510 input-dependency checks were neutral, and big-core dependency loops
+  improved. Preserve zero/32/RRX, flag/carry, shared, non-adjacent, immediate, and variable forms.
+  Do not generalize this result to shifted `BIC`: its additional base dependency produced repeated
+  A510 regressions around 1.4% and 0.7%, so the split `shift; BIC` path remains the safe default.
 - Do not globally substitute same-width `SABA/UABA` for `SABD/UABD` plus `ADD`. The checked rows
   list `SABD/UABD` latency/throughput as 2/4 on X3 page 25, 2/2 on A715 pages 27-28 and A710 page
   42, and latency 3 with split `2,1` throughput on A510 page 35. Accumulating `SABA/UABA` is 4(1)/2
