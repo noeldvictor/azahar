@@ -15,8 +15,16 @@ struct RasterizerRegs;
 using AttributeBuffer = std::array<Common::Vec4<f24>, 16>;
 
 struct OutputVertex {
+#if defined(__aarch64__)
+    struct SixAttributes {};
+#endif
+
     OutputVertex() = default;
     explicit OutputVertex(const RasterizerRegs& regs, const AttributeBuffer& output);
+#if defined(__aarch64__)
+    explicit OutputVertex(SixAttributes, const RasterizerRegs& regs,
+                          const AttributeBuffer& output);
+#endif
 
     Common::Vec4<f24> pos;
     Common::Vec4<f24> quat;

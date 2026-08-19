@@ -57,6 +57,10 @@ void GeometryShaderUnit::SetVertexHandlers(VertexHandler vertex_handler,
     emitter.handlers->winding_setter = winding_setter;
 }
 
+void GeometryShaderUnit::SetVertexHandler(VertexHandler vertex_handler) {
+    emitter.handlers->vertex_handler = std::move(vertex_handler);
+}
+
 void GeometryShaderUnit::ConfigOutput(const ShaderRegs& config) {
     emitter.output_mask = config.output_mask;
 }

@@ -143,6 +143,14 @@ private:
 
     void LoadVertices(bool is_indexed);
 
+    void SubmitOutputVertex(const AttributeBuffer& buffer);
+
+#if defined(__aarch64__)
+    void SubmitOutputVertexSix(const AttributeBuffer& buffer);
+
+    void ConfigureOutputVertexHandler();
+#endif
+
 public:
     union Regs {
         static constexpr std::size_t NUM_REGS = 0x732;
@@ -366,6 +374,11 @@ public:
     Fog fog{};
     AttributeBuffer input_default_attributes{};
     ImmediateModeState immediate{};
+    VertexHandler output_vertex_handler;
+#if defined(__aarch64__)
+    VertexHandler output_vertex_six_handler;
+    bool using_output_vertex_six_handler{};
+#endif
 
     DelayGenerator delay_generator{};
 

@@ -77,22 +77,53 @@ PicaCore::PicaCore(Memory::MemorySystem& memory_, std::shared_ptr<DebugContext> 
     InitializeRegs();
     dirty_regs.SetAllDirty();
 
-    const auto submit_vertex = [this](const AttributeBuffer& buffer) {
-        const auto add_triangle = [this](const OutputVertex& v0, const OutputVertex& v1,
-                                         const OutputVertex& v2) {
-            rasterizer->AddTriangle(v0, v1, v2);
-        };
-        const auto vertex = OutputVertex(regs.internal.rasterizer, buffer);
-        primitive_assembler.SubmitVertex(vertex, add_triangle);
-    };
+    output_vertex_handler = [this](const AttributeBuffer& buffer) { SubmitOutputVertex(buffer); };
+#if defined(__aarch64__)
+    output_vertex_six_handler =
+        [this](const AttributeBuffer& buffer) { SubmitOutputVertexSix(buffer); };
+#endif
 
-    gs_unit.SetVertexHandlers(submit_vertex, [this]() { primitive_assembler.SetWinding(); });
-    geometry_pipeline.SetVertexHandler(submit_vertex);
+    gs_unit.SetVertexHandlers(output_vertex_handler,
+                              [this]() { primitive_assembler.SetWinding(); });
+    geometry_pipeline.SetVertexHandler(output_vertex_handler);
 
     primitive_assembler.Reconfigure(PipelineRegs::TriangleTopology::List);
 }
 
 PicaCore::~PicaCore() = default;
+
+void PicaCore::SubmitOutputVertex(const AttributeBuffer& buffer) {
+    const auto add_triangle = [this](const OutputVertex& v0, const OutputVertex& v1,
+                                     const OutputVertex& v2) {
+        rasterizer->AddTriangle(v0, v1, v2);
+    };
+    const auto vertex = OutputVertex(regs.internal.rasterizer, buffer);
+    primitive_assembler.SubmitVertex(vertex, add_triangle);
+}
+
+#if defined(__aarch64__)
+void PicaCore::SubmitOutputVertexSix(const AttributeBuffer& buffer) {
+    const auto add_triangle = [this](const OutputVertex& v0, const OutputVertex& v1,
+                                     const OutputVertex& v2) {
+        rasterizer->AddTriangle(v0, v1, v2);
+    };
+    const auto vertex =
+        OutputVertex(OutputVertex::SixAttributes{}, regs.internal.rasterizer, buffer);
+    primitive_assembler.SubmitVertex(vertex, add_triangle);
+}
+
+void PicaCore::ConfigureOutputVertexHandler() {
+    const bool use_six = (regs.internal.rasterizer.vs_output_total & 7) == 6;
+    if (use_six == using_output_vertex_six_handler) [[likely]] {
+        return;
+    }
+
+    const auto& handler = use_six ? output_vertex_six_handler : output_vertex_handler;
+    gs_unit.SetVertexHandler(handler);
+    geometry_pipeline.SetVertexHandler(handler);
+    using_output_vertex_six_handler = use_six;
+}
+#endif
 
 void PicaCore::InitializeRegs() {
     // Values initialized by GSP
@@ -1146,6 +1177,10 @@ void PicaCore::DrawImmediate() {
     shader_engine->Run(vs_setup, shader_unit);
     shader_unit.WriteOutput(regs.internal.vs, output);
 
+#if defined(__aarch64__)
+    ConfigureOutputVertexHandler();
+#endif
+
     // Reconfigure geometry pipeline if needed.
     if (immediate.reset_geometry_pipeline) {
         geometry_pipeline.Reconfigure();
@@ -1222,6 +1257,10 @@ void PicaCore::LoadVertices(bool is_indexed) {
     const PAddr base_address = pipeline.vertex_attributes.GetPhysicalBaseAddress();
     const auto loader = VertexLoader(memory, pipeline);
     regs.internal.rasterizer.ValidateSemantics();
+
+#if defined(__aarch64__)
+    ConfigureOutputVertexHandler();
+#endif
 
     // Locate index buffer.
     const auto& index_info = pipeline.index_array;

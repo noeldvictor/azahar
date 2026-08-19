@@ -32,6 +32,38 @@ OutputVertex::OutputVertex(const RasterizerRegs& regs, const AttributeBuffer& ou
     }
 }
 
+#if defined(__aarch64__)
+OutputVertex::OutputVertex(SixAttributes, const RasterizerRegs& regs,
+                           const AttributeBuffer& output) {
+    std::array<f24, 32> vertex_slots_overflow;
+    vertex_slots_overflow.fill(f24::One());
+
+    const auto write_attribute = [&](std::size_t attrib) {
+        const auto output_register_map = regs.vs_output_attributes[attrib];
+        vertex_slots_overflow[output_register_map.map_x] = output[attrib][0];
+        vertex_slots_overflow[output_register_map.map_y] = output[attrib][1];
+        vertex_slots_overflow[output_register_map.map_z] = output[attrib][2];
+        vertex_slots_overflow[output_register_map.map_w] = output[attrib][3];
+    };
+
+    // The draw-level handler selects this constructor only for exactly six attributes. Writing all
+    // six unconditionally removes the generic loop's five recurring count comparisons.
+    write_attribute(0);
+    write_attribute(1);
+    write_attribute(2);
+    write_attribute(3);
+    write_attribute(4);
+    write_attribute(5);
+
+    std::memcpy(this, vertex_slots_overflow.data(), sizeof(OutputVertex));
+
+    for (u32 i = 0; i < 4; ++i) {
+        const f32 c = std::fabs(color[i].ToFloat32());
+        color[i] = f24::FromFloat32(c < 1.0f ? c : 1.0f);
+    }
+}
+#endif
+
 #define ASSERT_POS(var, pos)                                                                       \
     static_assert(offsetof(OutputVertex, var) == pos * sizeof(f24), "Semantic at wrong "           \
                                                                     "offset.")

@@ -131,6 +131,7 @@ struct GeometryShaderUnit : public ShaderUnit {
     ~GeometryShaderUnit();
 
     void SetVertexHandlers(VertexHandler vertex_handler, WindingSetter winding_setter);
+    void SetVertexHandler(VertexHandler vertex_handler);
     void ConfigOutput(const ShaderRegs& config);
 
     GeometryEmitter emitter;
