@@ -66,6 +66,15 @@ void Scheduler::Flush(vk::Semaphore signal, vk::Semaphore wait) {
     SubmitExecution(signal, wait);
 }
 
+void Scheduler::FlushIfPending() {
+    if (chunk->Empty()) {
+        VideoCore::AddFrameProfileEvent(
+            VideoCore::FrameProfileEvent::SchedulerEmptyFlushesSkipped);
+        return;
+    }
+    Flush();
+}
+
 void Scheduler::Finish(vk::Semaphore signal, vk::Semaphore wait) {
     // When finishing, we need to wait for the submission to have executed on the device.
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::SchedulerFinishes);

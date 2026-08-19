@@ -78,10 +78,11 @@ void ReportFrameProfileWindow() {
     LOG_INFO(
         Render_Vulkan,
         "ThorFrameProfile scheduler submit_per_swap={:.3f} flush_per_swap={:.3f} "
-        "finish={} waits={} wait_ms_per_swap={:.3f} worker_drains={} "
+        "empty_flushes_skipped={} finish={} waits={} wait_ms_per_swap={:.3f} worker_drains={} "
         "worker_drain_ms_per_swap={:.3f}",
         PerSwap(values, FrameProfileEvent::SchedulerSubmissions, swaps),
         PerSwap(values, FrameProfileEvent::SchedulerFlushes, swaps),
+        values[Index(FrameProfileEvent::SchedulerEmptyFlushesSkipped)],
         values[Index(FrameProfileEvent::SchedulerFinishes)],
         values[Index(FrameProfileEvent::SchedulerWaits)],
         MillisecondsPerSwap(values, FrameProfileEvent::SchedulerWaitNanoseconds, swaps),

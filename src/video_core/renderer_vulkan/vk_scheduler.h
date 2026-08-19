@@ -34,6 +34,9 @@ public:
     /// Sends the current execution context to the GPU.
     void Flush(vk::Semaphore signal = nullptr, vk::Semaphore wait = nullptr);
 
+    /// Flushes only when commands have been recorded since the previous submission.
+    void FlushIfPending();
+
     /// Sends the current execution context to the GPU, then executes a worker callback after the
     /// queue submission. Keeping both operations in one command chunk avoids a second dispatch.
     template <typename T>

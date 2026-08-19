@@ -14,6 +14,21 @@ MICROPROFILE_DEFINE(Vulkan_Acquire, "Vulkan", "Swapchain Acquire", MP_RGB(185, 6
 MICROPROFILE_DEFINE(Vulkan_Present, "Vulkan", "Swapchain Present", MP_RGB(66, 185, 245));
 
 namespace Vulkan {
+namespace {
+
+constexpr bool NeedsNonFifoPresentMode(double frame_limit, bool low_refresh_rate,
+                                       bool eco_turbo_caps_present) noexcept {
+    return low_refresh_rate || frame_limit == 0 ||
+           (frame_limit > 100 && !eco_turbo_caps_present);
+}
+
+static_assert(!NeedsNonFifoPresentMode(100, false, false));
+static_assert(!NeedsNonFifoPresentMode(200, false, true));
+static_assert(NeedsNonFifoPresentMode(200, false, false));
+static_assert(NeedsNonFifoPresentMode(0, false, true));
+static_assert(NeedsNonFifoPresentMode(100, true, true));
+
+} // Anonymous namespace
 
 Swapchain::Swapchain(const Instance& instance_, u32 width, u32 height, vk::SurfaceKHR surface_,
                      bool low_refresh_rate)
@@ -206,11 +221,20 @@ void Swapchain::SetPresentMode() {
     }
 
     const auto frame_limit = Settings::GetFrameLimit();
+#ifdef ANDROID
+    // Eco Turbo already caps host composition to 60 FPS. Keep FIFO's mobile-friendly back-pressure
+    // instead of allowing MAILBOX to keep replacing undisplayed frames with extra CPU/GPU work.
+    const bool eco_turbo_caps_present =
+        Settings::values.eco_turbo.GetValue() && frame_limit > 100;
+#else
+    constexpr bool eco_turbo_caps_present = false;
+#endif
 
     // If vsync is enabled attempt to use mailbox mode in case the user wants to speedup/slowdown
     // the game. If mailbox is not available use immediate and warn about it.
     if (use_vsync &&
-        (frame_limit > 100 || frame_limit == 0 || low_refresh_rate)) { // 0 = unthrottled
+        NeedsNonFifoPresentMode(frame_limit, low_refresh_rate,
+                                eco_turbo_caps_present)) { // 0 = unthrottled
         present_mode = has_mailbox ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eImmediate;
         if (!has_mailbox) {
             LOG_WARNING(
