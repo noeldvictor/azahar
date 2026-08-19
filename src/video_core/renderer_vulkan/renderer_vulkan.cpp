@@ -39,25 +39,9 @@ MICROPROFILE_DEFINE(Vulkan_RenderFrame, "Vulkan", "Render Frame", MP_RGB(128, 12
 
 namespace Vulkan {
 
-struct ScreenRectVertex {
-    ScreenRectVertex() = default;
-    ScreenRectVertex(float x, float y, float u, float v)
-        : position{Common::MakeVec(x, y)}, tex_coord{Common::MakeVec(u, v)} {}
-
-    Common::Vec2f position;
-    Common::Vec2f tex_coord;
-};
-
-constexpr u32 VERTEX_BUFFER_SIZE = sizeof(ScreenRectVertex) * 8192;
-
-constexpr std::array<f32, 4 * 4> MakeOrthographicMatrix(u32 width, u32 height) {
-    // clang-format off
-    return { 2.f / width, 0.f,         0.f, -1.f,
-            0.f,         2.f / height, 0.f, -1.f,
-            0.f,         0.f,          1.f,  0.f,
-            0.f,         0.f,          0.f,  1.f};
-    // clang-format on
-}
+// Screen quads are generated procedurally from gl_VertexIndex. This stream buffer remains for the
+// optional software cursor, which is the only presentation geometry uploaded by the host.
+constexpr u32 VERTEX_BUFFER_SIZE = 128 * 1024;
 
 constexpr static std::array<vk::DescriptorSetLayoutBinding, 1> PRESENT_BINDINGS = {{
     {0, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eFragment},
@@ -384,33 +368,9 @@ void RendererVulkan::BuildLayouts() {
 }
 
 void RendererVulkan::BuildPipelines() {
-    const vk::VertexInputBindingDescription binding = {
-        .binding = 0,
-        .stride = sizeof(ScreenRectVertex),
-        .inputRate = vk::VertexInputRate::eVertex,
-    };
-
-    const std::array attributes = {
-        vk::VertexInputAttributeDescription{
-            .location = 0,
-            .binding = 0,
-            .format = vk::Format::eR32G32Sfloat,
-            .offset = offsetof(ScreenRectVertex, position),
-        },
-        vk::VertexInputAttributeDescription{
-            .location = 1,
-            .binding = 0,
-            .format = vk::Format::eR32G32Sfloat,
-            .offset = offsetof(ScreenRectVertex, tex_coord),
-        },
-    };
-
-    const vk::PipelineVertexInputStateCreateInfo vertex_input_info = {
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = static_cast<u32>(attributes.size()),
-        .pVertexAttributeDescriptions = attributes.data(),
-    };
+    // Final screen quads are four procedural vertices. Avoid a host vertex upload, stream-buffer
+    // bookkeeping, and vkCmdBindVertexBuffers for every displayed 3DS screen.
+    const vk::PipelineVertexInputStateCreateInfo vertex_input_info = {};
 
     const vk::PipelineInputAssemblyStateCreateInfo input_assembly = {
         .topology = vk::PrimitiveTopology::eTriangleStrip,
@@ -779,51 +739,14 @@ void RendererVulkan::DrawSingleScreen(u32 screen_id, float x, float y, float w, 
     const ScreenInfo& screen_info = screen_infos[screen_id];
     const auto& texcoords = screen_info.texcoords;
 
-    std::array<ScreenRectVertex, 4> vertices;
-    switch (orientation) {
-    case Layout::DisplayOrientation::Landscape:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x + w, y, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x, y + h, texcoords.top, texcoords.left),
-            ScreenRectVertex(x + w, y + h, texcoords.top, texcoords.right),
-        }};
-        break;
-    case Layout::DisplayOrientation::Portrait:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x + w, y, texcoords.top, texcoords.right),
-            ScreenRectVertex(x, y + h, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x + w, y + h, texcoords.top, texcoords.left),
-        }};
+    draw_info.screen_rect = Common::MakeVec(x, y, x + w, y + h);
+    draw_info.texcoords =
+        Common::MakeVec(texcoords.left, texcoords.top, texcoords.right, texcoords.bottom);
+    draw_info.orientation = static_cast<int>(orientation);
+    if (orientation == Layout::DisplayOrientation::Portrait ||
+        orientation == Layout::DisplayOrientation::PortraitFlipped) {
         std::swap(h, w);
-        break;
-    case Layout::DisplayOrientation::LandscapeFlipped:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.top, texcoords.right),
-            ScreenRectVertex(x + w, y, texcoords.top, texcoords.left),
-            ScreenRectVertex(x, y + h, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x + w, y + h, texcoords.bottom, texcoords.left),
-        }};
-        break;
-    case Layout::DisplayOrientation::PortraitFlipped:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.top, texcoords.left),
-            ScreenRectVertex(x + w, y, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x, y + h, texcoords.top, texcoords.right),
-            ScreenRectVertex(x + w, y + h, texcoords.bottom, texcoords.right),
-        }};
-        std::swap(h, w);
-        break;
-    default:
-        LOG_ERROR(Render_Vulkan, "Unknown DisplayOrientation: {}", orientation);
-        break;
     }
-
-    const u64 size = sizeof(ScreenRectVertex) * vertices.size();
-    auto [data, offset, invalidate] = vertex_buffer.Map(size, 16);
-    std::memcpy(data, vertices.data(), size);
-    vertex_buffer.Commit(size);
 
     const u32 scale_factor = GetResolutionScaleFactor();
     draw_info.i_resolution =
@@ -834,14 +757,11 @@ void RendererVulkan::DrawSingleScreen(u32 screen_id, float x, float y, float w, 
     draw_info.o_resolution = Common::MakeVec(h, w, 1.0f / h, 1.0f / w);
     draw_info.screen_id_l = screen_id;
 
-    scheduler.Record([this, offset = offset, info = draw_info](vk::CommandBuffer cmdbuf) {
-        const u32 first_vertex = static_cast<u32>(offset) / sizeof(ScreenRectVertex);
+    scheduler.Record([this, info = draw_info](vk::CommandBuffer cmdbuf) {
         cmdbuf.pushConstants(*present_pipeline_layout,
                              vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex,
                              0, sizeof(info), &info);
-
-        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {0});
-        cmdbuf.draw(4, 1, first_vertex, 0);
+        cmdbuf.draw(4, 1, 0, 0);
     });
 }
 
@@ -851,51 +771,14 @@ void RendererVulkan::DrawSingleScreenStereo(u32 screen_id_l, u32 screen_id_r, fl
     const ScreenInfo& screen_info_l = screen_infos[screen_id_l];
     const auto& texcoords = screen_info_l.texcoords;
 
-    std::array<ScreenRectVertex, 4> vertices;
-    switch (orientation) {
-    case Layout::DisplayOrientation::Landscape:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x + w, y, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x, y + h, texcoords.top, texcoords.left),
-            ScreenRectVertex(x + w, y + h, texcoords.top, texcoords.right),
-        }};
-        break;
-    case Layout::DisplayOrientation::Portrait:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x + w, y, texcoords.top, texcoords.right),
-            ScreenRectVertex(x, y + h, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x + w, y + h, texcoords.top, texcoords.left),
-        }};
+    draw_info.screen_rect = Common::MakeVec(x, y, x + w, y + h);
+    draw_info.texcoords =
+        Common::MakeVec(texcoords.left, texcoords.top, texcoords.right, texcoords.bottom);
+    draw_info.orientation = static_cast<int>(orientation);
+    if (orientation == Layout::DisplayOrientation::Portrait ||
+        orientation == Layout::DisplayOrientation::PortraitFlipped) {
         std::swap(h, w);
-        break;
-    case Layout::DisplayOrientation::LandscapeFlipped:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.top, texcoords.right),
-            ScreenRectVertex(x + w, y, texcoords.top, texcoords.left),
-            ScreenRectVertex(x, y + h, texcoords.bottom, texcoords.right),
-            ScreenRectVertex(x + w, y + h, texcoords.bottom, texcoords.left),
-        }};
-        break;
-    case Layout::DisplayOrientation::PortraitFlipped:
-        vertices = {{
-            ScreenRectVertex(x, y, texcoords.top, texcoords.left),
-            ScreenRectVertex(x + w, y, texcoords.bottom, texcoords.left),
-            ScreenRectVertex(x, y + h, texcoords.top, texcoords.right),
-            ScreenRectVertex(x + w, y + h, texcoords.bottom, texcoords.right),
-        }};
-        std::swap(h, w);
-        break;
-    default:
-        LOG_ERROR(Render_Vulkan, "Unknown DisplayOrientation: {}", orientation);
-        break;
     }
-
-    const u64 size = sizeof(ScreenRectVertex) * vertices.size();
-    auto [data, offset, invalidate] = vertex_buffer.Map(size, 16);
-    std::memcpy(data, vertices.data(), size);
-    vertex_buffer.Commit(size);
 
     const u32 scale_factor = GetResolutionScaleFactor();
     draw_info.i_resolution =
@@ -907,14 +790,11 @@ void RendererVulkan::DrawSingleScreenStereo(u32 screen_id_l, u32 screen_id_r, fl
     draw_info.screen_id_l = screen_id_l;
     draw_info.screen_id_r = screen_id_r;
 
-    scheduler.Record([this, offset = offset, info = draw_info](vk::CommandBuffer cmdbuf) {
-        const u32 first_vertex = static_cast<u32>(offset) / sizeof(ScreenRectVertex);
+    scheduler.Record([this, info = draw_info](vk::CommandBuffer cmdbuf) {
         cmdbuf.pushConstants(*present_pipeline_layout,
                              vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eVertex,
                              0, sizeof(info), &info);
-
-        cmdbuf.bindVertexBuffers(0, vertex_buffer.Handle(), {0});
-        cmdbuf.draw(4, 1, first_vertex, 0);
+        cmdbuf.draw(4, 1, 0, 0);
     });
 }
 
@@ -1056,7 +936,9 @@ void RendererVulkan::DrawScreens(Frame* frame, const Layout::FramebufferLayout& 
 
     const auto& top_screen = layout.top_screen;
     const auto& bottom_screen = layout.bottom_screen;
-    draw_info.modelview = MakeOrthographicMatrix(layout.width, layout.height);
+    draw_info.framebuffer_transform = Common::MakeVec(
+        2.0f / static_cast<float>(layout.width), 2.0f / static_cast<float>(layout.height), -1.0f,
+        -1.0f);
 
     draw_info.layer = 0;
 

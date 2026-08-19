@@ -26,13 +26,16 @@ layout(location = 0) in vec2 frag_tex_coord;
 layout(location = 0) out vec4 color;
 
 layout(push_constant, std140) uniform DrawInfo {
-    mat4 modelview_matrix;
+    vec4 screen_rect;
+    vec4 texcoords;
+    vec4 framebuffer_transform;
     vec4 i_resolution;
     vec4 o_resolution;
     int screen_id_l;
     int screen_id_r;
     int layer;
     int reverse_interlaced;
+    int orientation;
 };
 
 layout(set = 0, binding = 0) uniform sampler2D screen_textures[3];

@@ -55,15 +55,18 @@ struct ScreenInfo {
 };
 
 struct PresentUniformData {
-    std::array<f32, 4 * 4> modelview;
+    Common::Vec4f screen_rect;
+    Common::Vec4f texcoords;
+    Common::Vec4f framebuffer_transform;
     Common::Vec4f i_resolution;
     Common::Vec4f o_resolution;
     int screen_id_l = 0;
     int screen_id_r = 0;
     int layer = 0;
     int reverse_interlaced = 0;
+    int orientation = 0;
 };
-static_assert(sizeof(PresentUniformData) == 112,
+static_assert(sizeof(PresentUniformData) == 100,
               "PresentUniformData does not structure in shader!");
 
 class RendererVulkan : public VideoCore::RendererBase {
