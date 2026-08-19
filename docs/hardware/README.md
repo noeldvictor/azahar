@@ -423,6 +423,17 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   separate pointers for separately configured attributes and retain the null-lookup invalid route.
   The exact four-stream operation improved 1.95x on A510, 2.20x on A715, and 3.38x on A710, but
   hardware vertex loading and cache hits bypass it; do not report those ratios as game FPS or watts.
+- Treat the vertex shader's packed attribute-to-input-register map as another draw invariant.
+  Snapshot its two 32-bit words into one `u64` plus the active count, then let every CPU-fallback
+  vertex mask the low nibble and shift that local GPR. The old source rebuilt the `u64` inside
+  `GetRegisterForAttribute()` and final AArch64 reloaded it from `ShaderRegs` for every attribute.
+  The packed loop retains duplicate-register ordering and high-word attributes without a byte-map
+  setup pass. Full-draw Thor medians, including snapshot creation, ranged from 1.05x-1.90x on A510,
+  1.04x-1.25x on A715, and 0.995x-1.29x on A710; the sole 0.994865x edge was a one-attribute,
+  one-vertex A710 measurement and every other A710 cell won. The Cortex load/integer tables explain
+  the removed repeated load/address work, but linked-code inspection, differential semantics, and
+  physical measurements remain the acceptance evidence. A separate output-map byte predecode was
+  rejected after one-output and A510 regressions.
 - Cached PICA vertex-shader output is another draw-invariant memory-traffic opportunity. One
   `AttributeBuffer` is 256 bytes, but `ShaderUnit::WriteOutput()` packs live outputs into a prefix
   of 16-byte attributes. When the produced and consumed counts match, bypass the transient output

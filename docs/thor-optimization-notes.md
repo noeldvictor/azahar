@@ -6792,3 +6792,69 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   to two transient transfers makes lower energy plausible on this route, but whole-game frametime,
   thermal slope, and battery power still require a controlled matched title/scene/cache/renderer/
   driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
+
+## Draw-Cached Packed Shader Input Map (2026-08-19)
+
+- The software vertex path called `ShaderUnit::LoadInput(ShaderRegs, AttributeBuffer)` for every
+  cache miss or non-indexed vertex. For each active attribute, `GetRegisterForAttribute()` rebuilt
+  the same 64-bit map from two 32-bit draw registers and selected a nibble with a variable shift.
+  Final AArch64 showed the more important aliasing cost: it reloaded that 64-bit value from
+  `ShaderRegs` inside every attribute iteration.
+- Two byte-array predecode candidates were measured first. The input form improved its isolated
+  recurring loop, but a separate decode pass made small full draws regress until enough vertices
+  amortized setup. The output form removed `RBIT`/`CLZ` selection work on larger cores but regressed
+  one-output and several A510 shapes, so no output-map change was retained.
+- The accepted design keeps the register map packed. `ShaderInputMap` snapshots the two map words
+  into one `u64` plus the active count once per draw. Each vertex copies that `u64` to a local GPR,
+  masks its low nibble, shifts by four, and copies the corresponding 16-byte attribute. This has no
+  O(attribute-count) setup pass or draw-size threshold and preserves the original ascending-order,
+  duplicate-register last-write semantics.
+- The final prototype benchmark used the real `ShaderRegs`, `ShaderUnit`, `AttributeBuffer`, and
+  release ThinLTO build. Each cell processed 500,000 total vertices, used seven alternating-order
+  median samples, and required identical nonzero checksums. It covered attribute counts 1, 2, 4,
+  6, 8, 12, and 16 crossed with draw sizes 1, 2, 4, 8, 16, 32, and 64. Results include the once-per-
+  draw snapshot cost:
+
+  | Core | All 49 cells | 1 attribute / 1 vertex | 8 attributes / 8 vertices | 16 attributes / 64 vertices |
+  | --- | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.051684x-1.899835x | 1.051684x | 1.728793x | 1.860196x |
+  | A715 CPU 3 | 1.036312x-1.254600x | 1.036312x | 1.223495x | 1.254600x |
+  | A710 CPU 5 | 0.994865x-1.292195x | 0.994865x | 1.154375x | 1.170091x |
+
+  The lone 0.994865x row is a 0.5135% A710 one-attribute/one-vertex measurement-edge tie; every
+  other A710 cell improved by at least 2.0805%, and the packed recurring loop removes the repeated
+  config load in final production code. CPU7/X3 affinity was rejected by Android `core_ctl`, so no
+  X3 result is inferred. The device reported 80%, `Discharging`, and 24.0 C after the run; these are
+  timing results, not battery-watt evidence.
+- Final ThinLTO grows `PicaCore::LoadVertices()` from entry 136's 2,236 bytes (`0x8bc`) to 2,272
+  bytes (`0x8e0`). Both the direct-cache and fallback CPU loops load the packed map once per vertex,
+  then use `AND #0xf`, `LSR #4`, a Q load, and an indexed Q store. Neither recurring inner loop
+  reloads `ShaderRegs`. Immediate-mode and geometry input retain the original config overload.
+- The permanent differential test covers active counts 1-16 across 32 deterministic mappings per
+  count, including identity, reverse, all-to-one, random duplicate, low-word, and high-word cases.
+  It starts both shader units with identical nonzero canaries and byte-compares every register, so
+  ordering, duplicate overwrite, and untouched-register behavior are all covered. The final
+  benchmark-free `[video_core]` suite passed 136,191 assertions in 78 cases independently on A510
+  CPU0, A715 CPU3, and A710 CPU5. X3 affinity remained unavailable.
+- Source/test commit `8a6668d3e` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 1 minute 54 seconds.
+  The ARM64-only, v2-signed APK is 29,009,108 bytes with SHA-256
+  `6369A3E600A7FF6C1451A4917B7DAE2D38E5F71F2AE368BEFF6EC753FCAB75A3`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `8a6668d3e-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it, an immediate force-stop left no app PID, and the
+  original `stay_on_while_plugged_in=0` remained unchanged. Neither app nor game was launched.
+- Exact bounded cleanup removed 2,561,017,772 logical host bytes and recovered 2,116,902,912
+  physical bytes, leaving 53,206,994,944 bytes free on C:. Retained repo build output is only the
+  29,009,108-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,806,594,337
+  bytes. The 449,633,104-byte native test ELF, both roughly 44.1 MB stripped test binaries,
+  Gradle/JNI/R8/symbol/mapping staging, and both device `/data/local/tmp` helpers were removed. No
+  PDF, benchmark, test binary, rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 137 in the overlapping Thor ledger. It accelerates only
+  CPU-fallback vertex input mapping; hardware vertex shaders and indexed cache hits can bypass it,
+  while vertex loading and shader execution still dominate many misses. The exact mapping ratios
+  cannot be added to the prior 136 entries or converted into whole-emulator FPS or battery watts.
+  Removing repeated config loads and variable shifts makes lower energy plausible on this path,
+  but whole-game frametime, thermal slope, and battery power still require a controlled matched
+  title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.

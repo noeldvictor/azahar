@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **136 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **137 accepted optimization/candidate
 entries**. Those entries are not additive percentages: many affect different paths, and whole-game
 FPS or battery watts still require a matched title/scene/device A/B.
 
@@ -420,6 +420,18 @@ hits by **1.01x-3.06x** and misses by **1.11x-2.26x** across the accessible A510
 classes; final `LoadVertices()` also shrank from 2,392 to 2,236 bytes. All 135,679 video-core
 assertions pass on each accessible class. Hardware vertex shaders and shader execution on misses
 limit whole-game impact, so these ratios are not additive FPS or measured battery-watt gains.
+
+Optimization 137 snapshots the vertex shader's packed 64-bit attribute-to-input-register map and
+attribute count once per CPU-fallback draw. The recurring `LoadInput()` loop now masks and shifts
+that register-resident snapshot instead of rebuilding and reloading the same `ShaderRegs` map for
+every attribute. Full-draw Thor medians, including snapshot construction, ranged from **1.05x to
+1.90x on A510**, **1.04x to 1.25x on A715**, and **0.995x to 1.29x on A710** across one through
+sixteen
+attributes and one through 64 vertices. The A710 one-attribute/one-vertex cell was a 0.994865x
+measurement-edge tie; every other A710 cell improved by at least 2.08%. Final ThinLTO keeps the
+packed map in a GPR inside both CPU vertex loops, and 136,191 video-core assertions pass on every
+accessible core class. Hardware vertex shaders and cache hits can bypass this work, so these are
+mapping-path ratios rather than whole-game FPS or measured battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

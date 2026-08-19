@@ -221,6 +221,16 @@
   attribute, and prove that guest writes after construction remain visible. Inspect final ThinLTO
   for direct pointer-plus-stride math and no physical lookup inside `LoadVertex()`. The measured
   1.95x-3.38x address/load loop result is path-local, not whole-game FPS or watts.
+- The vertex shader's packed 64-bit attribute-to-input-register map and active attribute count are
+  also invariant for a CPU-fallback draw. Keep `ShaderInputMap` constructed once in
+  `PicaCore::LoadVertices()` and make each recurring `ShaderUnit::LoadInput()` mask and shift its
+  local GPR copy. Do not restore per-attribute `ShaderRegs::GetRegisterForAttribute()` calls or a
+  byte-array predecode: the packed form removes repeated config loads without a setup threshold.
+  Preserve ascending attribute order, duplicate-register last-write behavior, attributes 8-15 in
+  the high map word, and untouched-register state. Retain deterministic differential coverage for
+  counts 1-16 and duplicate/random maps, final ThinLTO inspection, and A510/A715/A710 full-draw
+  timing. Keep the original config overload for immediate-mode and geometry paths. Do not add the
+  rejected output-register byte-map loop; its one-output and A510 cases regressed.
 - Indexed PICA CPU-fallback vertex-cache entries contain the packed prefix written by
   `ShaderUnit::WriteOutput()`. When its output-mask popcount exactly equals the rasterizer or
   geometry-pipeline consumer count, select one direct-cache loop before the draw: a hit must pass
