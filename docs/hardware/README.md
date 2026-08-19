@@ -266,6 +266,15 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   integer operation, but they do not imply that a store-throughput-limited loop gets faster. Keep
   canonical narrowing for shared/non-store consumers, exclusive writes, mismatched widths, and
   endian-reversal paths, and verify both callback and fastmem stores with dirty upper bits.
+- Fold ordinary A32 signed byte/halfword reads into native `LDRSB`/`LDRSH` only when a matching
+  sign extension is the load's sole immediately following consumer. The checked basic register-
+  offset rows list the same latency/throughput for unsigned and signed narrow loads: 4/3 on X3
+  page 19, 4/3 on A715 page 21, 4/3 on A710 page 29, and 2/2 on A510 page 24. This makes the native
+  signed load the manual-supported way to remove the separate `SBFM` alias `SXTB`/`SXTH`, although
+  the heterogeneous cores can expose very different loop-level gains. Preserve explicit sign
+  extension in callback/fault fallbacks and reject shared, ordered, exclusive, endian-reversed,
+  non-adjacent, or non-A32 shapes. Require actual JIT opcodes, matched checksums, and guest-state
+  coverage rather than inferring a whole-game or battery-watt result from the table.
 - Reuse that canonical `UXTB` result in a following no-carry variable shift instead of masking it
   a second time. The logical-instruction tables list the removed `AND` at latency/throughput 1/6
   on X3 page 15, 1/4 on A715 and A710 page 17, and 1/3 on A510 page 14. The variable-shift rows list

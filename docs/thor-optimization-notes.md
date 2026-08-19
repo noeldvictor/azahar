@@ -5477,3 +5477,70 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   claims still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
   performance-mode/fan/brightness/duration A/B run, which was intentionally not performed because
   the current instruction is not to launch the app.
+
+## ARM64 A32 Signed Narrow-Load Fusion (2026-08-18)
+
+- A32 `LDRSB`/`LDRSH` previously reached the ARM64 backend as an unsigned `A32ReadMemory8`/
+  `A32ReadMemory16` followed by `SignExtendByteToWord`/`SignExtendHalfToWord`. Direct fastmem and
+  page-table hits therefore emitted `LDRB; SXTB` or `LDRH; SXTH`. Dynarmic now emits one native
+  `LDRSB`/`LDRSH` only when the extension is the load's sole immediately following consumer. The
+  extension aliases the load result without code. Shared, non-adjacent, mismatched, ordered/
+  acquire, exclusive, endian-reversed, A64, and unrelated shapes retain the established lowering;
+  callback and fastmem/page-table fault fallbacks still sign-extend their narrow return explicitly.
+- The complete external Cortex optimization-guide tables were inspected directly. Basic register-
+  offset `LDRB`/`LDRSB` and `LDRH`/`LDRSH` share latency/throughput 4/3 on X3 page 19, 4/3 on A715
+  page 21, 4/3 on A710 page 29, and 2/2 on A510 page 24. The same-cost signed load removes a real
+  `SBFM` alias and dependency without enabling an optional ISA extension. No PDF or rendered manual
+  page entered Git.
+- A temporary emitter-boundary trace captured raw JIT words `38f34b34`, `78f34b34`, `38f54b33`,
+  and `78f54b33`. Independent Capstone decoding identified exactly
+  `ldrsb w20,[x25,w19,uxtw]`, `ldrsh w20,[x25,w19,uxtw]`,
+  `ldrsb w19,[x25,w21,uxtw]`, and `ldrsh w19,[x25,w21,uxtw]`. The diagnostic and the unavailable
+  Android disassembly experiment were removed before the final build; no trace marker remains.
+- The standalone helper was disassembly-checked so each split body contained eight
+  `LDRB/LDRH; SXTB/SXTH` pairs and each fused body contained eight `LDRSB/LDRSH` instructions,
+  with the same eight adds, loop control, and nonzero checksums (`ffc2f700` byte, `7ff8f700`
+  halfword). Each of eight alternating-order samples executed 4,000,000 iterations, or 32,000,000
+  affected loads. The table reports median nanoseconds per affected load and old/fused speedup.
+
+  | Thor core and path | Split ns/load | Fused ns/load | Old/fused |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0, byte | 0.686038 | 0.556078 | 1.2337x |
+  | A510 CPU 0, halfword | 1.203090 | 0.556183 | 2.1631x |
+  | A715 CPU 3, byte | 0.370259 | 0.364127 | 1.0168x |
+  | A715 CPU 3, halfword | 0.370347 | 0.363895 | 1.0177x |
+  | A710 CPU 6, byte | 0.357950 | 0.357806 | 1.0004x |
+  | A710 CPU 6, halfword | 0.357780 | 0.357963 | 0.9995x |
+
+- The A510 loop therefore used 18.9% less median affected-path time for bytes and 53.8% less for
+  halfwords; A715 used about 1.7% less, while A710 was neutral within 0.1%. Android intermittently
+  rejected the CPU 5 and CPU 7 affinity masks with `EINVAL` despite listing them online, so no X3
+  number is invented. The manuals still establish no extra signed-load cost on X3. These are
+  load/accumulate-loop results, not an instruction-frequency-weighted emulator estimate.
+- Permanent ARM and Thumb coverage checks byte/halfword loads, distinct and destination-equals-
+  base forms, ten signed boundaries, callback and fastmem paths, every unrelated GPR, NZCV/Q/GE,
+  and FPSCR. The focused case passed 3,040 assertions on CPU 3/A715. The full suite initially
+  exposed and prevented two integration mistakes in unrelated producer handling and fallback
+  register-allocation lifetime; after correction, the clean trace-free `[core][arm][dynarmic]`
+  suite passed 93,092 assertions in 40 cases. Source/test commit `3f76c7440` was pushed directly to
+  `origin/master` with command-line Git SSH.
+- Exact post-commit packaging with JDK 17,
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache`, and ordinary Gradle caching
+  passed in 3 minutes 41 seconds. The ARM64-only APK is 29,006,964 bytes, has SHA-256
+  `44AF95AEB8A26DB45FE48F5C3464191A54DABEB97DD80522FF475C257CE972B8`, and reports package
+  `org.azahar_emu.azahar.debug` version `3f76c7440-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID; neither the app nor a game was launched. Thor
+  reported AC power at 80%, 4.273 V, and 25.0 C, so this is not battery-discharge watt evidence.
+- Cleanup removed 2,575,457,579 logical host bytes: the 104,589,660-byte scratch set, the
+  448,949,152-byte unstripped test ELF, and reproducible Gradle staging. C: recovered
+  2,133,901,312 physical bytes and reported 56,508,461,056 bytes free. The retained active ARM64
+  CMake/Ninja cache is 2,797,119,953 bytes; retained build output is only the 29,006,964-byte APK
+  and 476-byte metadata. Five exact device helpers totaling 104,582,416 bytes were removed from
+  `/data/local/tmp`; no PDF, benchmark, test binary, rendered manual page, or scratch note was
+  committed.
+- This is optimization 118 in the overlapping Thor work tally. The 0.9995x-2.1631x exact-loop
+  results apply only while executing these signed narrow-load shapes and cannot be added to the
+  other 117 items. Removing one generated instruction reduces code-cache, fetch/decode, and
+  integer-issue work, so lower energy is plausible, but whole-game FPS, frametime, thermal, and
+  wattage claims still require a controlled matched title/scene/cache/renderer/driver/resolution/
+  layout/performance-mode/fan/brightness/duration A/B run.

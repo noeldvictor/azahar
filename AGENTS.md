@@ -713,6 +713,18 @@
   The exact store-saturated Thor benchmark was throughput-neutral, so describe this only as one
   removed host instruction and lower code-cache/front-end/integer-issue work until a matched title
   and battery-power A/B exists.
+- ARM64 Dynarmic ordinary A32 signed byte/halfword loads may fold a sole immediately following
+  `SignExtendByteToWord`/`SignExtendHalfToWord` consumer into native `LDRSB`/`LDRSH`. Keep the load
+  and extension predicates symmetrical: shared, non-adjacent, mismatched, ordered/acquire,
+  exclusive, endian-reversed, A64, and unrelated producers must retain their old lowering. Direct
+  fastmem/page-table hits use the signed load; callback and fastmem/page-table fallback paths must
+  still sign-extend the returned narrow value before the extension aliases it. Do not hold a
+  `GetArgumentInfo()` result while falling through to the legacy extension emitter. Preserve ARM
+  and Thumb encodings, destination/base aliases, callback and fastmem reads, boundary values,
+  unrelated GPRs, NZCV/Q/GE, and FPSCR in permanent tests. The exact load/accumulate loop reduced
+  median affected-path time by 18.9%/53.8% for byte/halfword on A510 and 1.7%/1.7% on A715, while
+  A710 was neutral within 0.1%; CPU 5 and X3 affinity were parked during this run. Treat the win as
+  path-local instruction/code-cache/front-end work until a matched title and battery-power A/B.
 - Do not globally fuse A32 `MLA`/`MLS` into ARM64 `MADD`/`MSUB`. Exact four-chain measurements
   showed attractive independent A510 results but regressed the dependent A510 path and both
   measured patterns on A715; independent A710 and X3 patterns also regressed badly. Retain the

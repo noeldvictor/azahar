@@ -879,6 +879,24 @@ the old one-`AND` path. The permanent ARM/Thumb test passed 12,241 assertions on
 class, and the final full suite passed 87,460 assertions in 38 cases. This is optimization 116; it
 reduces work only where guest code executes MOVT and is not a whole-game FPS or wattage claim.
 
+Ordinary A32 byte and halfword stores now let native ARM64 `STRB`/`STRH` perform the final
+truncation instead of first emitting redundant `UXTB`/`UXTH`, but only for an immediately matching
+sole store consumer. Shared, exclusive, endian-reversed, and other narrow values retain canonical
+extension. Actual JIT spans contain one store instruction, and the permanent callback/fastmem test
+passed with dirty upper bits and aliases. Store-saturated Thor loops were throughput-neutral within
+noise, so optimization 117 is a code-size/front-end/integer-issue reduction rather than a claimed
+whole-game FPS or wattage gain.
+
+Ordinary A32 signed byte and halfword loads now fuse an immediately following sole sign extension
+into native ARM64 `LDRSB`/`LDRSH` on fastmem and page-table hits. Callback and fault fallback paths
+still sign-extend explicitly, while shared, ordered, exclusive, endian-reversed, non-adjacent, and
+unrelated forms keep the established lowering. Raw JIT words decoded as exactly `ldrsb` and
+`ldrsh`. An alternating-order, disassembly-checked Thor load/accumulate benchmark reduced median
+affected-path time by **18.9%/53.8% for byte/halfword on A510** and **1.7%/1.7% on A715**; A710
+was neutral within 0.1%, and Android parked the X3 affinity sample. The clean permanent suite
+passed 93,092 assertions in 40 cases. This is optimization 118, not an emulator-wide FPS or
+battery-watt percentage.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
