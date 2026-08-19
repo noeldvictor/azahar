@@ -6721,3 +6721,74 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   make lower energy plausible on this path, but whole-game frametime, thermal slope, and battery
   power still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
   performance-mode/fan/brightness/duration A/B.
+
+## Direct PICA Vertex-Cache Output Submission (2026-08-19)
+
+- Entry 135 still routed an exact matching shader-output prefix through a transient `vs_output`
+  object on a cache hit and through that object plus a bounded/full copy on a miss. Every
+  `GeometryPipeline::SubmitVertex()` consumer is synchronous: the no-GS route calls its output
+  handler immediately, while point, variable-primitive, and fixed-primitive geometry backends copy
+  the required prefix into their own storage before returning. `ShaderUnit::WriteOutput()` likewise
+  packs every live output contiguously from attribute zero.
+- Entry 136 selects a direct specialization once per indexed draw whenever the shader output-mask
+  popcount equals the downstream count (`rasterizer.vs_output_total` without GS or
+  `pipeline.vs_outmap_total_minus_1_a + 1` with GS). A hit submits the selected cache entry by
+  reference. A miss writes shader output directly into the circular replacement entry, advances
+  the established ID/count/position state, and synchronously submits that same entry. Exact matches
+  from zero through sixteen are eligible. Non-indexed draws and every count mismatch retain the old
+  complete 256-byte assignment so no wider consumer can observe a stale suffix.
+- The temporary Android 29 ARM64 benchmark modeled entry 135 and entry 136 separately for cache
+  hits and misses. It used 64 cache entries, one million iterations per sample, 11 alternating-
+  order median samples, identical nonzero checksums, and output counts 1, 2, 4, 6, 7, 12, and 16.
+  Miss timing included the same noinline output producer on both sides; the old side then performed
+  entry 135's prefix/full cache copy, while the direct side produced into the cache entry. The
+  device reported 80%, `Discharging`, and 25.0 C, so this is not battery-watt evidence:
+
+  | Outputs | A510 hit / miss | A715 hit / miss | A710 hit / miss |
+  | ---: | ---: | ---: | ---: |
+  | 1 | 1.259018x / 1.111344x | 1.015095x / 1.720265x | 1.056847x / 1.145992x |
+  | 2 | 1.473457x / 1.162658x | 1.018112x / 1.185771x | 1.070993x / 1.193822x |
+  | 4 | 1.805628x / 1.151155x | 1.052026x / 1.251375x | 1.104641x / 1.266315x |
+  | 6 | 2.271616x / 1.169522x | 1.009034x / 1.299087x | 1.051900x / 1.326456x |
+  | 7 | 3.062659x / 1.258411x | 1.087324x / 1.295447x | 1.883147x / 2.256147x |
+  | 12 | 2.959693x / 1.317051x | 1.148548x / 1.370569x | 1.942198x / 1.661994x |
+  | 16 | 2.988929x / 1.313046x | 1.699750x / 1.444158x | 3.028781x / 1.552859x |
+
+  A510 used CPU0 (`0xd46`), A715 CPU3 (`0xd4d`), and A710 CPU5 (`0xd47`). CPU7/X3 was listed
+  online but Android `core_ctl` rejected the affinity mask before timing; no power or core-control
+  setting was changed to force it, so no X3 result is claimed.
+- Final ThinLTO shrank `PicaCore::LoadVertices()` from entry 135's 2,392 bytes (`0x958`) to 2,236
+  bytes (`0x8bc`). The exact-match hit path computes the cache-entry address and passes it directly
+  to `SubmitVertex()` with no Q-vector transfer. Its miss path makes that replacement address the
+  `WriteOutput()` destination and performs no later copy. The fallback hit and insertion sites
+  retain eight paired Q load/store groups, and the produced/consumed equality branch remains
+  outside both recurring loops.
+- The permanent test covers every produced/consumed pair from 0 through 16, rejects all non-indexed
+  direct cases, byte-compares every observable exact-match prefix with the previous output, and
+  proves the untouched cache suffix remains canary data. The final benchmark-free `[video_core]`
+  suite passed 135,679 assertions in 77 cases independently on A510 CPU0, A715 CPU3, and A710 CPU5.
+  X3 affinity was still parked. Native tests and the ThinLTO Android library rebuilt successfully
+  after removing all temporary benchmark source.
+- Source/test commit `b41e339e7` was pushed directly to `origin/master` with command-line Git over
+  SSH. Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 2 minutes 5 seconds.
+  The ARM64-only, v2-signed APK is 29,007,296 bytes with SHA-256
+  `B0F3E187C12570E30CED57C0796E722F9EE1CFD79730D1AD146535F6FFD58713`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `b41e339e7-vanilla-thor`, minimum SDK
+  29, and target SDK 37. Wi-Fi ADB installed it, an immediate force-stop left no app PID, and the
+  original `stay_on_while_plugged_in=0` remained unchanged. Neither app nor game was launched.
+- Exact bounded cleanup removed 2,472,677,041 logical host bytes and recovered 2,028,490,752
+  physical bytes, leaving 53,457,633,280 bytes free on C:. Retained repo build output is only the
+  29,007,296-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,806,287,942
+  bytes. The 449,610,168-byte native test ELF, both stripped test binaries, Gradle/JNI/R8/symbol/
+  mapping staging, and device `/data/local/tmp` helpers were removed. No PDF, benchmark, test
+  binary, rendered manual page, APK, or scratch note was committed.
+- This is optimization/candidate entry 136 in the overlapping Thor ledger and supersedes entry
+  135's bounded-copy implementation at HEAD. It accelerates only exact-layout cache traffic in
+  indexed draws that reach CPU vertex processing; hardware vertex shaders, non-indexed draws, and
+  shader execution on cache misses limit whole-game impact. The exact hit/miss ratios cannot be
+  added to the prior 135 entries or converted into emulator FPS or battery watts. Eliminating up
+  to two transient transfers makes lower energy plausible on this route, but whole-game frametime,
+  thermal slope, and battery power still require a controlled matched title/scene/cache/renderer/
+  driver/resolution/layout/performance-mode/fan/brightness/duration A/B.
