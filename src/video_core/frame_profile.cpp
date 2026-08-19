@@ -101,7 +101,8 @@ void ReportFrameProfileWindow() {
     LOG_INFO(Render_Vulkan,
              "ThorFrameProfile texture upload_per_swap={:.3f} upload_kib_per_swap={:.3f} "
              "custom_uploads={} custom_kib={:.3f} download_per_swap={:.3f} "
-             "download_kib_per_swap={:.3f} copies={} copy_mpix={:.3f} blits={} blit_mpix={:.3f}",
+             "download_kib_per_swap={:.3f} copies={} copy_mpix={:.3f} blits={} blit_mpix={:.3f} "
+             "scale_blits={} scale_blit_mpix={:.3f}",
              PerSwap(values, FrameProfileEvent::TextureUploads, swaps),
              PerSwap(values, FrameProfileEvent::TextureUploadBytes, swaps) / 1024.0,
              values[Index(FrameProfileEvent::CustomTextureUploads)],
@@ -111,7 +112,9 @@ void ReportFrameProfileWindow() {
              values[Index(FrameProfileEvent::TextureCopies)],
              values[Index(FrameProfileEvent::TextureCopyPixels)] / 1'000'000.0,
              values[Index(FrameProfileEvent::TextureBlits)],
-             values[Index(FrameProfileEvent::TextureBlitPixels)] / 1'000'000.0);
+             values[Index(FrameProfileEvent::TextureBlitPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::TextureScaleBlits)],
+             values[Index(FrameProfileEvent::TextureScaleBlitPixels)] / 1'000'000.0);
     LOG_INFO(Render_Vulkan,
              "ThorFrameProfile present blits={} copies={} mpix={:.3f} "
              "queue_wait_ms_per_swap={:.3f} fence_wait_ms_per_swap={:.3f}",

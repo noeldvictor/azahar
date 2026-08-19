@@ -1346,12 +1346,24 @@ void Surface::BlitScale(const VideoCore::TextureBlit& blit, bool up_scale) {
         return;
     }
 
+    VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::TextureScaleBlits);
+    VideoCore::AddFrameProfileEvent(
+        VideoCore::FrameProfileEvent::TextureScaleBlitPixels,
+        static_cast<u64>(blit.dst_rect.GetWidth()) * blit.dst_rect.GetHeight());
+
     const auto src_type = up_scale ? Type::Base : Type::Scaled;
     const auto dst_type = up_scale ? Type::Scaled : Type::Base;
+    const RecordParams params = {
+        .aspect = Aspect(),
+        .filter = MakeFilter(pixel_format),
+        .pipeline_flags = PipelineStageFlags(),
+        .src_access = AccessFlags(),
+        .dst_access = AccessFlags(),
+        .src_image = Image(src_type),
+        .dst_image = Image(dst_type),
+    };
 
-    scheduler.Record([src_image = Image(src_type), aspect = Aspect(),
-                      filter = MakeFilter(pixel_format), dst_image = Image(dst_type),
-                      blit](vk::CommandBuffer render_cmdbuf) {
+    scheduler.Record([params, blit](vk::CommandBuffer render_cmdbuf) {
         const std::array source_offsets = {
             vk::Offset3D{static_cast<s32>(blit.src_rect.left),
                          static_cast<s32>(blit.src_rect.bottom), 0},
@@ -1368,14 +1380,14 @@ void Surface::BlitScale(const VideoCore::TextureBlit& blit, bool up_scale) {
 
         const vk::ImageBlit blit_area = {
             .srcSubresource{
-                .aspectMask = aspect,
+                .aspectMask = params.aspect,
                 .mipLevel = blit.src_level,
                 .baseArrayLayer = blit.src_layer,
                 .layerCount = 1,
             },
             .srcOffsets = source_offsets,
             .dstSubresource{
-                .aspectMask = aspect,
+                .aspectMask = params.aspect,
                 .mipLevel = blit.dst_level,
                 .baseArrayLayer = blit.dst_layer,
                 .layerCount = 1,
@@ -1385,61 +1397,58 @@ void Surface::BlitScale(const VideoCore::TextureBlit& blit, bool up_scale) {
 
         const std::array read_barriers = {
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+                .srcAccessMask = params.src_access,
                 .dstAccessMask = vk::AccessFlagBits::eTransferRead,
                 .oldLayout = vk::ImageLayout::eGeneral,
                 .newLayout = vk::ImageLayout::eTransferSrcOptimal,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = src_image,
-                .subresourceRange = MakeSubresourceRange(aspect, blit.src_level),
+                .image = params.src_image,
+                .subresourceRange = MakeSubresourceRange(params.aspect, blit.src_level),
             },
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eShaderRead |
-                                 vk::AccessFlagBits::eDepthStencilAttachmentRead |
-                                 vk::AccessFlagBits::eColorAttachmentRead |
-                                 vk::AccessFlagBits::eTransferRead,
+                .srcAccessMask = params.dst_access,
                 .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
                 .oldLayout = vk::ImageLayout::eGeneral,
                 .newLayout = vk::ImageLayout::eTransferDstOptimal,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = dst_image,
-                .subresourceRange = MakeSubresourceRange(aspect, blit.dst_level),
+                .image = params.dst_image,
+                .subresourceRange = MakeSubresourceRange(params.aspect, blit.dst_level),
             },
         };
         const std::array write_barriers = {
             vk::ImageMemoryBarrier{
-                .srcAccessMask = vk::AccessFlagBits::eNone,
-                .dstAccessMask = vk::AccessFlagBits::eMemoryWrite | vk::AccessFlagBits::eMemoryRead,
+                .srcAccessMask = vk::AccessFlagBits::eTransferRead,
+                .dstAccessMask = params.src_access,
                 .oldLayout = vk::ImageLayout::eTransferSrcOptimal,
                 .newLayout = vk::ImageLayout::eGeneral,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = src_image,
-                .subresourceRange = MakeSubresourceRange(aspect, blit.src_level),
+                .image = params.src_image,
+                .subresourceRange = MakeSubresourceRange(params.aspect, blit.src_level),
             },
             vk::ImageMemoryBarrier{
                 .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                .dstAccessMask = vk::AccessFlagBits::eMemoryWrite | vk::AccessFlagBits::eMemoryRead,
+                .dstAccessMask = params.dst_access,
                 .oldLayout = vk::ImageLayout::eTransferDstOptimal,
                 .newLayout = vk::ImageLayout::eGeneral,
                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                .image = dst_image,
-                .subresourceRange = MakeSubresourceRange(aspect, blit.dst_level),
+                .image = params.dst_image,
+                .subresourceRange = MakeSubresourceRange(params.aspect, blit.dst_level),
             },
         };
 
-        render_cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-                                      vk::PipelineStageFlagBits::eTransfer,
+        render_cmdbuf.pipelineBarrier(params.pipeline_flags, vk::PipelineStageFlagBits::eTransfer,
                                       vk::DependencyFlagBits::eByRegion, {}, {}, read_barriers);
 
-        render_cmdbuf.blitImage(src_image, vk::ImageLayout::eTransferSrcOptimal, dst_image,
-                                vk::ImageLayout::eTransferDstOptimal, blit_area, filter);
+        render_cmdbuf.blitImage(params.src_image, vk::ImageLayout::eTransferSrcOptimal,
+                                params.dst_image, vk::ImageLayout::eTransferDstOptimal, blit_area,
+                                params.filter);
 
         render_cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                      vk::PipelineStageFlagBits::eAllCommands,
+                                      params.pipeline_flags,
                                       vk::DependencyFlagBits::eByRegion, {}, {}, write_barriers);
     });
 }

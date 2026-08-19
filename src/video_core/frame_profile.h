@@ -49,6 +49,8 @@ enum class FrameProfileEvent : u32 {
     TextureCopyPixels,
     TextureBlits,
     TextureBlitPixels,
+    TextureScaleBlits,
+    TextureScaleBlitPixels,
     ImmediateVertices,
     DrawBatches,
     AcceleratedDraws,
