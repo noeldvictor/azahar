@@ -31,6 +31,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   LSR/ASR (guest shift 32), carry-producing, shared, variable, and non-adjacent forms stay split.
   This does not relax the LSL 1..4 gate: encoding availability and lower instruction count are not
   substitutes for per-family heterogeneous-core evidence.
+- Treat shifted `SUB` as another independently measured family. The A-profile architecture manual
+  defines 32-bit shifted-register `SUB` with `LSL`, `LSR`, or `ASR` immediates through 31, but that
+  proves semantics and encodability rather than performance. Disassembly-checked Thor runs found
+  no repeatable regression across the 1..31 range, including corrected long X3 confirmations, so
+  Dynarmic may fold a sole adjacent flag-free A32 shift into normal subtraction throughout that
+  range. Preserve normal subtraction carry-in and keep borrow/reverse-subtract, carry-producing,
+  shared, variable, zero/32, and non-adjacent forms split. This result remains separate from ADD's
+  narrower measured LSL gate.
 - Do not globally substitute same-width `SABA/UABA` for `SABD/UABD` plus `ADD`. The checked rows
   list `SABD/UABD` latency/throughput as 2/4 on X3 page 25, 2/2 on A715 pages 27-28 and A710 page
   42, and latency 3 with split `2,1` throughput on A510 page 35. Accumulating `SABA/UABA` is 4(1)/2

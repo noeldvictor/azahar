@@ -5773,3 +5773,75 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   dependency, and integer-issue work makes lower energy plausible, but whole-game frametime,
   temperature, thermal slope, and battery watts still require a controlled matched title/scene/
   cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.
+
+## ARM64 Shifted SUB Folding (2026-08-19)
+
+- Command-line Git fetched authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 223 commits ahead and zero behind before
+  this work, so no merge was needed. Work remained on `master`, and both source and documentation
+  commits used the configured command-line Git SSH remote. RPCS3's current
+  [`Avoid redundant XFloat normalization in SELB`](https://github.com/RPCS3/rpcs3/commit/82164a5),
+  [`Avoid redundant copy when writing to mip level or Z layer`](https://github.com/RPCS3/rpcs3/commit/ad059d0),
+  and earlier [`Shorten FI dependency chain`](https://github.com/RPCS3/rpcs3/commit/27f0e87)
+  changes reinforced the transferable pattern of removing redundant materialization only behind
+  an exact semantic predicate; no RPCS3 code was copied into this 3DS emulator.
+- Dynarmic previously emitted a standalone immediate LSL/LSR/ASR and then `SUB` for ordinary
+  no-flags A32 subtraction. ARM64 now aliases a sole immediately adjacent shift producer to its
+  non-immediate input and emits one shifted-register `SUB` when the immediate is 1..31. The shared
+  gate proves normal `Sub32` carry-in true, no associated arithmetic or shift pseudo-operation,
+  one producer use, immediate adjacency, and a non-immediate shift source. Shared, non-adjacent,
+  immediate-source, variable, zero/32, flag/carry, borrow/reverse-subtract, and unrelated cases
+  retain the established split lowering. ADD keeps its independently measured LSL 1..4 gate.
+- A disassembly-checked helper compared four independent, eight base-dependent, and eight
+  shifted-index-dependent `LSL/LSR/ASR; SUB` bodies with one shifted-register `SUB`. Shifts
+  1/2/3/4/5/8/16/31 used 1,000,000 iterations and nine alternating-order samples in the all-core
+  run, with matching checksums throughout. Old-over-fused median ranges were:
+
+  | Thor core | Independent | Base dependency | Index dependency |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.9168x-2.1679x | 1.4962x-1.7710x | 1.4865x-1.7664x |
+  | A715 CPU 3 | 1.0837x-1.4598x | 1.1102x-1.7645x | 1.1414x-1.7961x |
+  | A710 CPU 6 | 1.1343x-1.7994x | 1.0582x-1.6535x | 1.1678x-1.8219x |
+  | X3 CPU 7, LSL #1..#4 | 1.934x-2.000x | 2.196x-2.238x | 2.178x-2.222x |
+  | X3 CPU 7, other forms | approximately neutral | 1.016x-1.125x | 1.067x-1.117x |
+
+  Thor began the run on AC power at 80%, 4.271 V, and 25.0 C. These are wall-powered
+  instruction-kernel timings, not battery-discharge watt measurements.
+- The first long X3 confirmation was discarded because its temporary core-wake workers had not
+  yet been reaped. Corrected 20,000,000-iteration, 21-sample independent runs killed and reaped the
+  helpers before timing: LSL #1..#4 measured 1.9566x-1.9814x, while wider LSL and every LSR/ASR
+  form were approximately neutral at 0.9996x-1.0024x. A doubled-work 40,000,000-iteration,
+  21-sample ASR check measured 0.9997x-1.0024x, rejecting one isolated ASR #2 loss as
+  non-repeatable. No contaminated result controls the shipped gate.
+- Temporary actual-emitter tracing captured final Dynarmic words for LSL, LSR, and ASR shifts
+  1/2/3/4/5/16/31. `llvm-objdump` decoded the `4b13....`, `4b53....`, and `4b93....` families as
+  exactly one `sub w20,w19,w19,lsl/lsr/asr #shift`. The trace hook was removed before the final
+  build. The clean unstripped test ELF was 449,051,840 bytes; its temporary stripped copy was
+  26,156,296 bytes with SHA-256
+  `D11DF48D8C9621CF8F26288AFF5338A57254F9569740AB38767F896A3C6D7482`.
+- Permanent ARM and Thumb-2 coverage exercises both ADD and SUB, LSL/LSR/ASR, encoded shifts
+  0/1/2/3/4/5/16/31, distinct operands, destination/base/index and all-way aliases, dirty and
+  signed-boundary inputs, modular 32-bit wrap, every unrelated GPR, NZCV/Q/GE, and FPSCR. The clean
+  focused case passed 65,280 assertions separately on A510 CPU 0, A715 CPU 3, A710 CPU 6, and X3
+  CPU 7 during the verification sequence; the final trace-free build passed it again on A715. The
+  final full `[core][arm][dynarmic]` suite passed 162,452 assertions in 42 cases on A715. Source and
+  test commit `88b4da62d` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 2 minutes 11 seconds.
+  The ARM64-only APK is 29,008,048 bytes, has SHA-256
+  `E1B145275CA80454EB2DAB5A9A9C405BF640498D70E2059430DEF89F4AF6B246`, and reports package
+  `org.azahar_emu.azahar.debug` version `88b4da62d-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no PID. Neither app nor game was launched.
+- Exact cleanup removed 2,497,380,018 logical host bytes: 26,222,307 bytes of bounded scratch, the
+  449,051,840-byte unstripped test ELF, and reproducible Gradle/JNI/R8/native-symbol/mapping
+  staging. C: recovered 2,055,483,392 physical bytes and reports 56,370,929,664 bytes free. The
+  retained active ARM64 CMake/Ninja cache is 2,791,814,967 bytes; retained build output is only the
+  29,008,048-byte APK and 476-byte metadata. Both exact device helpers totaling 26,210,120 bytes
+  were removed from `/data/local/tmp`. No PDF, benchmark, test binary, rendered manual page, or
+  scratch note was committed.
+- This is optimization/candidate entry 122 in the overlapping Thor ledger. It removes one host
+  instruction only when matching guest shifted-subtract paths execute; its exact-loop ratios
+  cannot be added to the other 121 entries or converted into whole-emulator FPS or watts. Lower
+  code-cache, fetch/decode, dependency, and integer-issue work makes lower energy plausible, but
+  whole-game frametime, thermal slope, and battery watts still require a controlled matched
+  title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B.

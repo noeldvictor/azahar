@@ -748,13 +748,26 @@
 - ARM64 Dynarmic may apply that same symmetrical sole-use/immediately-adjacent/non-immediate gate
   to A32 `LogicalShiftRight32` and `ArithmeticShiftRight32` feeding flag-free/carry-free `Add32`
   for immediates 1 through 31. Emit one `ADD Wd,Wbase,Windex,LSR/ASR #shift`. Keep carry or flag
-  pseudos, shared/non-adjacent producers, immediate sources, variable/zero/32 shifts, subtraction,
-  and unrelated consumers on the established lowering; do not widen the separately measured LSL
-  gate beyond 1..4. Preserve ARM and Thumb-2 encodings, destination/base/index aliases, signed ASR
-  behavior, modular 32-bit wrap, unrelated GPRs, NZCV/Q/GE, and FPSCR. Actual-JIT trace words and
+  pseudos, shared/non-adjacent producers, immediate sources, variable/zero/32 shifts, and unrelated
+  consumers on the established ADD lowering; shifted subtraction is governed by the separate rule
+  below, and the ADD LSL gate must not widen beyond 1..4. Preserve ARM and Thumb-2 encodings,
+  destination/base/index aliases, signed ASR behavior, modular 32-bit wrap, unrelated GPRs,
+  NZCV/Q/GE, and FPSCR. Actual-JIT trace words and
   representative shifts 1/2/3/4/8/16/31 must remain the performance gate: affected-path medians
   improved on A510/A715/A710, while X3 independent work was neutral and dependency chains won.
   Keep all claims path-local until a matched title and battery-power A/B exists.
+- ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32 LSL/LSR/ASR producer
+  into an ordinary flag-free/carry-free `Sub32` only when its immediate is 1 through 31 and the
+  subtraction carry-in is the normal true value. Emit one
+  `SUB Wd,Wbase,Windex,LSL/LSR/ASR #shift`. The shift producer and subtraction consumer must use
+  the same eligibility helper so fallback cannot observe an unshifted alias. Keep shared,
+  non-adjacent, immediate-source, variable, zero/32, flag/carry, reverse-subtract/borrow, and
+  unrelated forms on the established lowering. Preserve ARM and Thumb-2 encodings, every
+  destination/base/index alias, signed ASR behavior, modular 32-bit wrap, unrelated GPRs,
+  NZCV/Q/GE, and FPSCR. Actual-JIT words for all three shift families and representative immediate
+  boundaries plus per-core Thor measurements must remain the gate. Do not apply the SUB 1..31
+  result to ADD's independently measured LSL 1..4 limit, and keep the gains path-local until a
+  matched title and battery-power A/B exists.
 - Do not globally replace A32/A64 same-width `SABD/UABD` plus `ADD` for `VABA` with native
   `SABA/UABA`. Although independent and big-core dependency patterns can win, exact accumulator-
   chain measurements regressed to 0.6595x-0.6890x on A510 for signed/unsigned 8/16/32-bit forms.

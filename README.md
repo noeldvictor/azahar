@@ -928,9 +928,10 @@ whole-emulator FPS, thermal, or battery-watt claim.
 
 The same strict producer/consumer gate now folds sole-use adjacent A32 `LSR` or `ASR #1..#31`
 feeding a flag-free `ADD` into one ARM64 shifted-register `ADD`. Carry/flag users, shared or
-non-adjacent shifts, immediate sources, variable/zero/32 shifts, subtraction, and unrelated
-consumers retain the established lowering; the separately measured `LSL` gate remains limited to
-1..4. Actual JIT words decoded as `add Wd,Wbase,Windex,lsr/asr #shift`, while LSL 5/16/31 and
+non-adjacent shifts, immediate sources, variable/zero/32 shifts, and unrelated consumers retain
+the established ADD lowering; shifted subtraction is measured separately below, and the ADD
+`LSL` gate remains limited to 1..4. Actual JIT words decoded as
+`add Wd,Wbase,Windex,lsr/asr #shift`, while LSL 5/16/31 and
 encoded-zero LSR/ASR decoded on their split fallback paths. Exact affected-kernel medians improved
 **1.38x-1.87x on A510, 1.073x-1.101x on A715, and 1.059x-1.170x on A710**. Corrected X3 runs were
 neutral for independent work (0.999x-1.002x) and positive for dependency chains; a long isolated
@@ -938,6 +939,19 @@ LSR#1 confirmation measured 1.025x base-dependent and 1.337x index-dependent. Th
 32,640 assertions on every Thor CPU class and the complete suite passed 129,812 assertions in 42
 cases. This is optimization 121 in the overlapping ledger, not a whole-game FPS or measured-watt
 claim.
+
+Ordinary no-flags A32 `SUB` now folds a sole immediately adjacent `LSL`, `LSR`, or `ASR`
+immediate from 1 through 31 into one ARM64 shifted-register `SUB`. The gate also proves
+normal subtraction carry-in, no shift carry consumer, a non-immediate source, and one producer
+use; flags/carry, shared,
+non-adjacent, immediate-source, variable, zero/32, and unrelated forms stay split. Actual Dynarmic
+JIT words decoded as one `sub Wd,Wbase,Windex,lsl/lsr/asr #shift`. Exact affected-loop medians
+ranged from **1.49x-2.17x on A510**, **1.08x-1.80x on A715**, and **1.06x-1.82x on A710** across
+independent and dependency shapes. X3 was **1.93x-2.24x** for LSL #1..#4, approximately neutral
+for other independent forms, and positive for the measured dependency chains. The final focused
+test passed 65,280 assertions and the complete ARM Dynarmic suite passed 162,452 assertions in 42
+cases. This is optimization 122; it removes one affected host instruction and does not mean the
+whole emulator is 1.5x-2x faster or establish a battery-watt reduction.
 
 ## Vulkan Worker-Power Updates
 
