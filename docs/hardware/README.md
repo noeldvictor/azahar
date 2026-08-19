@@ -432,9 +432,8 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   every geometry backend and the no-GS handler consuming or copying the reference synchronously.
   Retain the old full-buffer state route for non-indexed draws and every count mismatch, where a
   stale suffix may still be observable. The manuals' X3/A715/A710/A510 load/store tables identify
-  the removed work,
-  but final linked-code inspection and physical timing—not table arithmetic—remain the acceptance
-  evidence; X3 was parked and therefore has no inferred result.
+  the removed work, but final linked-code inspection and physical timing—not table arithmetic—
+  remain the acceptance evidence; X3 was parked and therefore has no inferred result.
 - When four float routes may all be silent, compare one loaded Q vector against zero with `FCMEQ`
   and reduce the equality mask with 4S `UMINV`. This treats both signs of zero as silent while any
   nonzero value or NaN remains audible. Use the shortcut only when state transitions remain exact,
