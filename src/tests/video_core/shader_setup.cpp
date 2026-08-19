@@ -102,3 +102,27 @@ TEST_CASE("PICA program-code range updates match scalar writes", "[video_core][s
 TEST_CASE("PICA swizzle range updates match scalar writes", "[video_core][shader_setup]") {
     CheckRangePatterns(CheckSwizzleRange);
 }
+
+TEST_CASE("PICA bool-uniform writes match the scalar bit mapping",
+          "[video_core][shader_setup]") {
+    Pica::ShaderSetup setup;
+    std::array<bool, 16> expected{};
+
+    for (u32 value = 0; value <= 0xFFFF; ++value) {
+        CAPTURE(value);
+        for (u32 bit = 0; bit < expected.size(); ++bit) {
+            expected[bit] = (value & (u32{1} << bit)) != 0;
+            setup.uniforms.b[bit] = !expected[bit];
+        }
+
+        setup.uniforms_dirty = false;
+        setup.WriteUniformBoolReg(value);
+        REQUIRE(setup.uniforms.b == expected);
+        REQUIRE(setup.uniforms_dirty);
+
+        setup.uniforms_dirty = false;
+        setup.WriteUniformBoolReg(value);
+        REQUIRE(setup.uniforms.b == expected);
+        REQUIRE_FALSE(setup.uniforms_dirty);
+    }
+}

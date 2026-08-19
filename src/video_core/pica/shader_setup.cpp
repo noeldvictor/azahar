@@ -37,11 +37,29 @@ ShaderSetup::ShaderSetup() = default;
 ShaderSetup::~ShaderSetup() = default;
 
 void ShaderSetup::WriteUniformBoolReg(u32 value) {
+#if defined(__aarch64__)
+    static_assert(sizeof(bool) == sizeof(u8));
+    static_assert(sizeof(uniforms.b) == sizeof(uint8x16_t));
+    alignas(16) static constexpr std::array<u8, 16> bit_masks{
+        1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128,
+    };
+
+    const uint8x16_t replicated =
+        vcombine_u8(vdup_n_u8(static_cast<u8>(value)),
+                    vdup_n_u8(static_cast<u8>(value >> 8)));
+    const uint8x16_t next =
+        vshrq_n_u8(vtstq_u8(replicated, vld1q_u8(bit_masks.data())), 7);
+    const uint8x16_t previous =
+        vld1q_u8(reinterpret_cast<const u8*>(uniforms.b.data()));
+    uniforms_dirty |= vmaxvq_u8(veorq_u8(previous, next)) != 0;
+    vst1q_u8(reinterpret_cast<u8*>(uniforms.b.data()), next);
+#else
     const auto bits = BitSet32(value);
     for (u32 i = 0; i < uniforms.b.size(); ++i) {
         const bool prev = std::exchange(uniforms.b[i], bits[i]);
         uniforms_dirty |= prev != bits[i];
     }
+#endif
 }
 
 void ShaderSetup::WriteUniformIntReg(u32 index, const Common::Vec4<u8> values) {
