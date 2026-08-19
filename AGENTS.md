@@ -409,6 +409,14 @@
   advance the destination pointer directly and check only the 4 KiB deque-block boundary, without
   reconstructing the destination from the deque start/map on every sample. Keep the 1023/1024/1025
   and multi-block regression cases.
+- HLE partial embedded PCM16 updates must call the separate suffix decoder with the latched physical
+  address and `current_sample_number`; do not restore full-buffer decode followed by deque prefix
+  erase/move. The suffix decoder must re-read every retained frame from guest memory, not merely
+  append newly extended data, so updates to unconsumed samples remain visible. Keep ordinary
+  `DecodePCM16()` unchanged, preserve mono/stereo byte layout, zero/equal/end positions, and reset
+  `current_sample_number` to zero before a declared-length shrink exactly as the established path
+  did. PCM8 and ADPCM partial updates remain separately unimplemented and must not be enabled by
+  analogy without title evidence and exact state/feedback coverage.
 - AArch64 HLE linear interpolation deliberately evaluates the independent stereo lanes with one
   AdvSIMD `SQDMULH`. Preserve the DSP's signed-16 saturated delta, the unsigned 24-bit phase, the
   exact Q24-to-Q31 `phase << 7` mapping, truncation rather than rounding, and the scalar

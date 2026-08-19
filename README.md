@@ -477,6 +477,15 @@ mono duplication, stereo ordering, byte expansion, little-endian PCM16 values, z
 and 1023/1024/1025-sample deque boundaries have permanent coverage. This is a sustained source-
 decode reduction when games use PCM buffers, not measured whole-game FPS or battery watts.
 
+Partial embedded PCM16 updates no longer decode the complete declared buffer, allocate that full
+result, and then erase/move every already-consumed frame. A separate suffix entry point advances
+the guest-memory input by `current_sample_number` and allocates only the retained output, while the
+ordinary PCM16 decoder remains unchanged. Length shrink keeps the established reset-to-zero
+behavior, and zero/current/end positions plus mono/stereo data are covered end to end. Exact
+4096-frame Thor tests at 25%, 50%, and 75% consumed measured **1.45x-4.46x** old-over-new across
+A510/A715/A710/X3. This is optimization 129: the gain applies only when a title issues partial
+embedded PCM16 updates, not to every audio frame or whole-game battery watts.
+
 Active HLE sources no longer clear their complete 640-byte output frame immediately before the
 resampler overwrites it. A full source frame now reaches filtering without any silence clear;
 an underrun clears only its unwritten tail, while empty/dequeue frames retain the complete clear

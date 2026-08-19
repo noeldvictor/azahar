@@ -6235,3 +6235,64 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   makes lower energy plausible on the affected path, but whole-game frametime, thermal slope, and
   battery watts still require a controlled matched title/scene/cache/renderer/driver/resolution/
   layout/performance-mode/fan/brightness/duration A/B run.
+
+## HLE Partial PCM16 Suffix Decode (2026-08-19)
+
+- `Source::ParseConfig()` handled a partial embedded PCM16 update by decoding all `config.length`
+  frames from sample zero into a full `StereoBuffer16`, then erasing the first
+  `current_sample_number` frames. That repeated decoding and allocation for already-consumed guest
+  audio and moved every surviving deque element. The cost grows with historical buffer length and
+  can recur as a title extends its embedded buffer.
+- `DecodePCM16FromSample()` now advances the read-only PCM input by
+  `first_sample * channels * sizeof(s16)` and delegates only the suffix length to the unchanged
+  ordinary PCM16 decoder. The partial-update caller passes its established current sample. This
+  still re-reads all unconsumed bytes, so a game may modify retained audio; it is not an append-only
+  assumption. If declared length shrinks behind the position, the caller resets position to zero
+  before decoding exactly as before. Equal position/length produces an empty buffer, and normal
+  PCM16 dequeue callers retain the original API/body with no added branch.
+- Permanent codec coverage compares suffix results with the corresponding full decode across mono
+  and stereo, zero length, 0/mid/end offsets, 1023/1024/1025 deque block boundaries, and multi-block
+  data. It passed 44,736 assertions in two cases independently on A510 CPU 0, A715 CPU 3, A710 CPU
+  6, and X3 CPU 7. An end-to-end `Source` regression uses emulated FCRAM and covers zero, beginning,
+  middle, end, and shrink positions for both channel counts; it passed 30 assertions on every core
+  class. The broader `[audio_core]~*LLE*` selection passed 49,267 assertions in 20 cases on A715;
+  three firmware-dependent cases skipped. The two LLE-named Android harness cases were excluded
+  because that standalone test process lacks the existing JNI `get_build_flavor` function.
+- A static Android 26 AArch64 benchmark used a 4096-frame buffer, 2,000 calls per sample, 15
+  alternating-order samples, and identical old/new checksums. It measured full decode plus prefix
+  erase against direct suffix allocation/decode at 25%, 50%, and 75% consumed:
+
+  | Thor core | Mono 25% | Mono 50% | Mono 75% | Stereo 25% | Stereo 50% | Stereo 75% |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.447320x | 2.032726x | 3.644807x | 2.016496x | 2.410324x | 3.674203x |
+  | A715 CPU 3 | 1.895424x | 2.348434x | 3.712791x | 2.464604x | 2.900488x | 4.462811x |
+  | A710 CPU 6 | 1.848034x | 2.363830x | 3.115541x | 1.884939x | 2.412377x | 3.314921x |
+  | X3 CPU 7 | 2.169913x | 2.283686x | 3.397582x | 1.905733x | 2.418110x | 3.502966x |
+
+  The temporary 626,928-byte benchmark had SHA-256
+  `958A474E74FAB711BEF614EF81C64CDE12498A1E546B70395C697212CBF0E7B5`. CPU6/CPU7 used the
+  established unpark-and-pin helper; every staging worker was killed and reaped before timing.
+  These were wall-powered path timings, not battery-discharge watts.
+- The final stripped ARM64 test was 26,187,896 bytes with SHA-256
+  `D50F2DD9783829A9EAA2D7FEB015BE0827030CB1C44449D20C96289E5884B32F`. Source/test commit
+  `539b32b3f` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 5 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,560 bytes, has SHA-256
+  `7ED7AA572E0E04A848ED8CC98F05C1747632FB6A2B7F34C8E62D58F7C32C9D11`, and reports package
+  `org.azahar_emu.azahar.debug` version `539b32b3f-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no device PID. Neither app nor game was launched; the
+  Thor remained wall-powered.
+- Exact bounded cleanup removed 2,498,659,759 logical host bytes: 26,821,860 bytes of scratch, the
+  449,318,952-byte unstripped test ELF, and 2,022,518,947 bytes of reproducible Gradle/JNI/R8/
+  symbol/mapping staging. C: recovered 2,056,220,672 physical bytes and reports 55,862,116,352 bytes
+  free. The retained active ARM64 CMake/Ninja cache is 2,794,006,691 bytes; retained build output is
+  only the 29,010,560-byte APK and 476-byte metadata. Three exact device helpers totaling
+  26,815,981 bytes were removed from `/data/local/tmp`, and no affinity marker, helper, or app PID
+  remained. No PDF, benchmark, test binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 129 in the overlapping Thor ledger. The 1.45x-4.46x ratios
+  apply only to the measured partial-update mechanism and scale with the consumed fraction; they
+  are not additive whole-emulator FPS or watt percentages. Lower decode, allocator, memory-copy,
+  cache, and deque-movement work makes lower energy plausible only for titles using this command.
+  Whole-game frametime, thermal slope, and battery watts still require a controlled matched title/
+  scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.

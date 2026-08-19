@@ -212,6 +212,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   removes that dependent load/address chain until the rare deque-block transition without assuming
   any optional ISA extension. Preserve the portable deque abstraction and verify the final linked
   loop because source-level iterators alone do not prove the compiler retained the pointer.
+- Eliminate dead input prefixes before decoding variable-length audio. A partial PCM16 update needs
+  the guest bytes from the established current sample through the declared end, not a full decoded
+  deque followed by an `erase` that moves the surviving frames. Offset the read-only input and size
+  the output to that suffix while still re-reading all unconsumed samples. This removes allocation,
+  loads, stores, and deque movement on every Thor core without an optional ISA feature. Preserve the
+  ordinary decoder, mono/stereo layout, zero/equal/end boundaries, and the existing reset when a
+  title shrinks length behind the current position.
 - Eliminate provable write-before-write traffic before reaching for a wider instruction. HLE source
   resampling defines and overwrites its complete produced prefix, so a full-frame silence store is
   needed only when no output will be produced; an underrun needs silence only after the produced
