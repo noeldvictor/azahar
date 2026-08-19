@@ -3,50 +3,72 @@
 // Refer to the license.txt file included.
 
 package org.citra.citra_emu.utils
+
 import android.app.Activity
 import android.os.Build
+import android.view.Display
+import android.view.Surface
+import kotlin.math.abs
+
+private const val TARGET_GAME_REFRESH_RATE = 60.0f
+private const val REFRESH_RATE_TOLERANCE = 1.0f
 
 object RefreshRateUtil {
-    // Since Android 15, the OS automatically runs apps categorized as games with a
-    // 60hz refresh rate by default, regardless of the refresh rate set by the user.
-    //
-    // This function sets the refresh rate to either the maximum allowed refresh rate or
-    // 60hz depending on the value of the `sixtyHz` parameter.
-    //
-    // Note: This isn't always the maximum refresh rate that the display is *capable of*,
-    // but is instead the refresh rate chosen by the user in the Android system settings.
-    // For example, if the user selected 120hz in the settings, but the display is capable
-    // of 144hz, 120hz will be treated as the maximum within this function.
+    /**
+     * Requests a refresh rate without also requesting a display resolution.
+     *
+     * Emulation prefers the closest current-resolution mode to 60 Hz. Frontend activities retain
+     * their existing preference for the highest current-resolution refresh rate.
+     */
     fun enforceRefreshRate(activity: Activity, sixtyHz: Boolean = false) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return
         }
 
-        val display = activity.display
-        val window = activity.window
+        val display = activity.display ?: return
+        val refreshRate = selectDisplayRefreshRate(display, sixtyHz) ?: return
+        val attributes = activity.window.attributes
+        attributes.preferredDisplayModeId = 0
+        attributes.preferredRefreshRate = refreshRate
+        activity.window.attributes = attributes
+    }
 
-        display?.let {
-            // Get all supported modes and find the one with the highest refresh rate
-            val supportedModes = it.supportedModes
-            val maxRefreshRate = supportedModes.maxByOrNull { mode -> mode.refreshRate }
-
-            if (maxRefreshRate == null) {
-                return
-            }
-
-            var newModeId: Int?
-            if (sixtyHz) {
-                newModeId = supportedModes.firstOrNull { mode -> mode.refreshRate == 60f }?.modeId
-            } else {
-                // Set the preferred display mode to the one with the highest refresh rate
-                newModeId = maxRefreshRate.modeId
-            }
-
-            if (newModeId == null) {
-                return
-            }
-
-            window.attributes.preferredDisplayModeId = newModeId
+    /** Gives Android's compositor the 60 Hz game-content hint on the actual render surface. */
+    fun enforceGameSurfaceRefreshRate(surface: Surface) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || !surface.isValid) {
+            return
         }
+
+        surface.setFrameRate(
+            TARGET_GAME_REFRESH_RATE,
+            Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+        )
+    }
+
+    private fun selectDisplayRefreshRate(display: Display, sixtyHz: Boolean): Float? {
+        val currentMode = display.mode
+        val currentResolutionRefreshRates =
+            display.supportedModes
+                .asSequence()
+                .filter {
+                    it.physicalWidth == currentMode.physicalWidth &&
+                        it.physicalHeight == currentMode.physicalHeight
+                }
+                .map { it.refreshRate }
+                .toList()
+
+        return selectRefreshRate(currentResolutionRefreshRates, sixtyHz)
+    }
+}
+
+internal fun selectRefreshRate(refreshRates: List<Float>, sixtyHz: Boolean): Float? {
+    val validRates = refreshRates.filter { it.isFinite() && it > 0.0f }
+    if (!sixtyHz) {
+        return validRates.maxOrNull()
+    }
+
+    val closestRate = validRates.minByOrNull { abs(it - TARGET_GAME_REFRESH_RATE) } ?: return null
+    return closestRate.takeIf {
+        abs(it - TARGET_GAME_REFRESH_RATE) <= REFRESH_RATE_TOLERANCE
     }
 }
