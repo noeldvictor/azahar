@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **143 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **144 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -67,6 +67,9 @@ This fork has moved away from stock Azahar in visible ways:
 - Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS above 100% speed
   while emulation continues at the selected turbo limit. It can be disabled under General for
   smoother fast-forward on the Thor's 120 Hz panel.
+- During emulation, Android receives both a refresh-only window preference near 60 Hz and a 60 Hz
+  game-surface frame-rate hint. This avoids tying ordinary 3DS presentation to the Thor primary
+  panel's 120 Hz maximum; frontend menus retain their high-refresh preference.
 - Android Graphics has a separate Screen Filter selector. Its opt-in Anime4K v4 Mobile mode applies
   a single-pass, screen-space DoG filter while each 3DS screen is scaled into the layout; the older
   Texture Filter choices still operate on game textures and remain separate.
@@ -497,6 +500,12 @@ path. The intermediate image already uses the swapchain format, so matching exte
 exact `vkCmdCopyImage`; real scaling still uses linear blitting, and unsupported scaling retains
 the old overlapping-copy fallback. This targets one complete transfer operation on every matching
 presented image, but its FPS and battery effect remains pending a matched Thor A/B.
+
+Optimization 144 repairs Android's 60 Hz emulation request at both the window and render-surface
+levels. It accepts fractional modes such as 59.94 Hz, selects only rates available at the current
+resolution, clears the resolution-carrying display-mode preference, and requests 60 Hz game content
+on the actual `Surface`. Menus still request their highest same-resolution rate. Android may
+override these preferences, so the panel/compositor power effect remains pending a matched Thor A/B.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

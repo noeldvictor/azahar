@@ -636,6 +636,14 @@
   gap/output-condition predicate tests plus null-staging transfer/state coverage, and keep the
   hidden test hook absent from the production library.
 - Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
+- Android emulation must request the closest current-resolution display rate within 1 Hz of 60 and
+  call `Surface.setFrameRate(60, FRAME_RATE_COMPATIBILITY_DEFAULT)` on each valid game surface on
+  API 30 or newer. Frontend activities keep the highest current-resolution refresh preference.
+  Use refresh-only window attributes: do not reintroduce exact `60f` equality or a nonzero
+  `preferredDisplayModeId`, which also expresses resolution. Do not use video-only
+  `FRAME_RATE_COMPATIBILITY_FIXED_SOURCE` or force non-seamless switches for gameplay. Treat these
+  calls as requests that Android may override, and do not claim panel or compositor watt savings
+  before a matched on-device A/B.
 - OpenGL and Vulkan presentation deliberately resolve the top-screen right eye only when an active
   main, secondary, screenshot, or frame-dump layout can sample it. Mono-left and bottom-only
   layouts must skip the per-frame right surface lookup/upload; stereo modes and explicit mono-right

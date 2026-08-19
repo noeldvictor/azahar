@@ -100,6 +100,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   intermediate presentation image, the render-ready submission, swapchain acquisition, the final
   transfer command, or queue presentation.
 
+## 2026-08-19 Android 60 Hz Game-Surface Request
+
+- Optimization/candidate 144 addresses the panel/compositor side of the whole-frame power budget.
+  The Thor primary panel can run at 120 Hz while normal 3DS presentation targets roughly 60 FPS.
+  Eco Turbo limits excess host presents during fast-forward, but it does not by itself tell Android
+  that the game surface has 60 Hz content.
+- Azahar already attempted to select 60 Hz for `EmulationActivity`, but it required exact floating-
+  point equality with `60f` and then set `preferredDisplayModeId`. The exact comparison can miss a
+  59.94 Hz mode, while a mode ID expresses both refresh rate and physical resolution. The updated
+  window path filters modes to the current physical resolution, accepts the closest rate within
+  1 Hz of 60 for emulation, clears the mode ID, and uses the refresh-only
+  `preferredRefreshRate`. Main and settings activities retain the highest same-resolution refresh
+  preference rather than being globally capped to 60 Hz.
+- `EmulationFragment.surfaceChanged()` now also calls
+  `Surface.setFrameRate(60, FRAME_RATE_COMPATIBILITY_DEFAULT)` on the valid render surface before
+  handing it to native emulation. Android's guidance explicitly uses this game-capped-at-60 case
+  as a way to avoid needless high-refresh power, and the `Surface` reference specifies `DEFAULT`
+  for games and other non-video content. `FIXED_SOURCE` remains intentionally unused because it is
+  intended for video. These are compositor/window preferences, not a forced display switch, and
+  the platform or OEM may override them.
+- Official references: Android's
+  [`WindowManager.LayoutParams`](https://developer.android.com/reference/android/view/WindowManager.LayoutParams),
+  [`Surface.setFrameRate`](https://developer.android.com/reference/android/view/Surface),
+  [frame-rate and power guide](https://developer.android.com/media/optimize/performance/frame-rate),
+  and [game refresh-rate guide](https://developer.android.com/games/optimize/display-refresh-rate-change).
+- Five JVM unit tests passed in 1 minute 30 seconds. They cover 59.94 Hz acceptance, closest-to-60
+  selection, refusal to force unrelated 90/120 Hz modes, highest-valid frontend selection, and an
+  empty mode list. The complete JDK 17 `arm64-v8a` APK build passed before commit in 2 minutes 6
+  seconds and the post-commit build passed in 1 minute 46 seconds. Bytecode inspection found
+  `preferredDisplayModeId = 0`, `preferredRefreshRate`, and the two-argument `Surface.setFrameRate`
+  call; the final minified DEX retains both refresh APIs.
+- Source commit `477243df7` was pushed directly to `origin/master` using command-line Git over SSH.
+  The retained APK contains only `arm64-v8a`, reports version `477243df7-vanilla-thor`, is
+  29,013,940 bytes, and has SHA-256
+  `FF81DFBCDCE9D5B90A12A4120936ACEA70E8E331A871EE3B6EE388ADF15CACFA`.
+- Exact bounded cleanup removed 2,033,110,980 logical bytes of reproducible Gradle, JNI, unit-test,
+  R8, native-symbol, and mapping staging. Reported C: free space increased by 1,589,264,384 physical
+  bytes to 51,726,405,632. The retained build output is only the APK plus its 476-byte metadata and
+  the 3,247,767,013-byte active ARM64 CMake/Ninja cache. No ADB command, install, app/game launch,
+  or runtime capture was used.
+- This is a plausible system-level power improvement, not a measured watt or FPS result. A future
+  allowed A/B must verify the active display mode and compare compositor/panel power, FPS,
+  frametimes, temperature, and thermal slope with title, scene, caches, renderer, resolution,
+  driver, layout, brightness, performance/fan mode, power source, and duration fixed.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
