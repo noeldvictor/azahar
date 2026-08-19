@@ -43,6 +43,11 @@ public:
         return CommitResource();
     }
 
+    void SetResources(std::vector<u64> resource_ticks, std::size_t hint) {
+        ticks = std::move(resource_ticks);
+        hint_iterator = hint;
+    }
+
     void Allocate(std::size_t begin, std::size_t end) override {
         allocations.emplace_back(begin, end);
     }
@@ -82,8 +87,7 @@ TEST_CASE("Vulkan resource pools refresh stale progress on demand", "[video_core
     // The first commit grows an empty pool; the existing fallback refresh occurs before growth.
     REQUIRE(pool.Commit() == 0);
     REQUIRE(semaphore.refresh_count == 1);
-    REQUIRE(pool.allocations ==
-            std::vector<std::pair<std::size_t, std::size_t>>{{0, 4}});
+    REQUIRE(pool.allocations == std::vector<std::pair<std::size_t, std::size_t>>{{0, 4}});
 
     // Fill the remaining resources while the cached completed tick deliberately remains stale.
     for (std::size_t expected_index = 1; expected_index < 4; ++expected_index) {
@@ -98,4 +102,19 @@ TEST_CASE("Vulkan resource pools refresh stale progress on demand", "[video_core
     REQUIRE(semaphore.refresh_count == 2);
     REQUIRE(semaphore.KnownGpuTick() == 2);
     REQUIRE(pool.allocations.size() == 1);
+}
+
+TEST_CASE("Vulkan resource pools use refreshed progress across the hint wrap",
+          "[video_core][vulkan]") {
+    CountingMasterSemaphore semaphore;
+    TestResourcePool pool{&semaphore, Vulkan::MasterSemaphore::SUBMISSION_REFRESH_INTERVAL};
+
+    // Nothing at or after the hint is complete. A refresh makes only the wrapped prefix reusable.
+    pool.SetResources({1, 5, 5, 5}, 2);
+    semaphore.SetRefreshTarget(1);
+
+    REQUIRE(pool.Commit() == 0);
+    REQUIRE(semaphore.refresh_count == 1);
+    REQUIRE(semaphore.KnownGpuTick() == 1);
+    REQUIRE(pool.allocations.empty());
 }
