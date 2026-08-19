@@ -19,6 +19,14 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 
 ## Guidance already applied
 
+- Classify PICA `LG2` edge inputs with one scalar `FCMP input,#0.0`: unordered/V selects NaN first,
+  then LE selects signed zero, negative finite values, and negative infinity. This keeps the result
+  branches exact while avoiding a SIMD equality mask and lane-to-GPR move. The floating-point
+  compare/conversion tables reviewed for this pass are on X3 pages 29-30, A715 pages 31-32, A710
+  pages 47-48, and A510 page 40, but the manuals only prioritized candidates. Exact physical Thor
+  measurements accepted the one-compare classifier on every core class, rejected a two-compare
+  variant after A715/X3 regressions, and rejected two shorter `EX2` range-reduction variants after
+  repeatable A710 regressions. Heterogeneous all-core measurements remain the performance gate.
 - Fold only measured small immediate left shifts into AArch64's shifted-register `ADD`. The
   accepted Dynarmic gate is a sole immediately adjacent flag-free A32 `LSL #1..#4` feeding ADD;
   shared, carry-producing, variable, immediate-source, and wider forms remain split. Exact all-core

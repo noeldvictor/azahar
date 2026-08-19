@@ -186,12 +186,21 @@
   existing circular replacement order after 64 misses. Keep exhaustive count/value differential
   coverage and inspect final ThinLTO before treating the source shape as a performance result.
 - The AArch64 PICA command-list fast path may consume four pairs only after vector preflight proves every header has an in-range ordinary register ID, zero extra-data length, and no special handler. Preserve ordered scalar writes for duplicate/nonconsecutive IDs, the compact partial/special fallback, exact byte masks, command-delay counts, and dirty-bit behavior.
-- The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its paired-load lowering.
+- The AArch64 PICA `EX2` helper keeps its eight exact float words in one aligned two-Q-register
+  block. Preserve their lane mapping, keep `EX2` in the `needs_one` analysis set, and retain the
+  polynomial's multiplication/addition order, NaN behavior, and input clamps when changing its
+  paired-load lowering. Keep range reduction as scalar `FCVTNS`, lane-to-GPR `MOV`, then scalar
+  `SCVTF`. `FRINTN` plus `FCVTZS` and direct GPR-destination `FCVTNS` were correct in focused tests
+  but repeatably regressed A710 by about 2.9% and 20%, respectively.
 - The AArch64 PICA `LG2` positive-input helper similarly keeps its five exact coefficient words in
   one aligned two-Q-register block. Its unbiased exponent is signed: convert the 32-bit GPR directly
   with scalar `SCVTF`, never unsigned `UCVTF` or a GPR-to-vector move first. Preserve its
-  `SRC2`/`VSCRATCH2` lane map, Horner order, and separate unchanged NaN/zero/negative special-value
-  vectors and branches. Keep power-of-two coverage across negative and positive exponents on ARM64.
+  `SRC2`/`VSCRATCH2` lane map, Horner order, and special-value result vectors. Classify the scalar
+  input with `FCMP input,#0.0`, then `B.VS` for NaN before `B.LE` for signed zero, negative finite
+  values, and negative infinity. Do not restore the old SIMD-mask/GPR sequence or add a separate
+  self-compare: the three-instruction classifier was faster on every Thor core class, while the
+  two-compare alternative regressed A715 and X3. Keep NaN, both signed zeros, both infinities,
+  negative inputs, and powers of two across negative and positive exponents covered on ARM64.
 - Keep AArch64 PICA `RCP` on exact scalar `FDIV`: a hardware estimate plus one or two Newton steps
   measured slower on every Thor core class. `RSQ` deliberately uses one scalar `FRSQRTE`, squares
   that estimate, applies `FRSQRTS` with the original input, then performs the final `FMUL`. Do not

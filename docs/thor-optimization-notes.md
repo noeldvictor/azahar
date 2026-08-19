@@ -6296,3 +6296,60 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   cache, and deque-movement work makes lower energy plausible only for titles using this command.
   Whole-game frametime, thermal slope, and battery watts still require a controlled matched title/
   scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.
+
+## PICA LG2 NZCV Edge Classification (2026-08-19)
+
+- Before entering the positive-input polynomial, the AArch64 PICA `LG2` helper classified edge
+  values by producing a four-lane floating equality mask, transferring its low lane to a GPR,
+  comparing that integer with zero, and branching around separate zero/sign handling. The helper
+  now issues `FCMP input,#0.0`, branches on VS for unordered/NaN, then branches on LE for zero,
+  negative finite values, and negative infinity. This shrinks the recurring classifier from seven
+  generated instructions to three while keeping the existing NaN and negative-infinity result
+  vectors and the positive polynomial unchanged.
+- Actual-emitter tracing captured words `1e202028`, `54000306`, and `54fffeed`, corresponding to
+  scalar `FCMP S1,#0.0`, `B.VS`, and `B.LE`. Ordered positive values and positive infinity continue
+  into the polynomial. NaN reaches the existing broadcast return; negative finite values and
+  negative infinity return the default NaN vector; both positive and negative zero select the
+  signed negative-infinity vector exactly as before. Permanent shader cases now cover negative
+  infinity, both signed zeros and their result signs, plus existing NaN, finite, infinity, and
+  power-of-two behavior.
+- A static Android 26 AArch64 helper measured the exact old and new classifier loops for 10,000,000
+  iterations across 21 alternating-order samples. Checksums and all tested edge classifications
+  matched. Median old-over-new ratios were:
+
+  | Thor core | Old ns/iteration | New ns/iteration | Old/new |
+  | --- | ---: | ---: | ---: |
+  | A510 CPU 0 | 7.538797 | 1.510547 | 4.990773x |
+  | A715 CPU 3 | 0.577713 | 0.565037 | 1.022436x |
+  | A710 CPU 6 | 0.814411 | 0.536854 | 1.517007x |
+  | X3 CPU 7 | 0.648901 | 0.472203 | 1.374199x |
+
+- Two attractive alternatives were measured and rejected. A self-compare for NaN followed by a
+  zero compare won on A510/A710 but regressed A715/X3 by roughly 7-10%. In `EX2`, `FRINTN` plus
+  `FCVTZS` preserved tested tie behavior but regressed A710 about 2.9%; direct GPR-destination
+  `FCVTNS` regressed it about 20%. The original three-instruction `EX2` range-reduction sequence
+  remains. Cortex timing tables directed these experiments, but exact heterogeneous-core results
+  controlled acceptance.
+- The final trace-free ARM64 shader selection passed 18,332 assertions in 52 cases independently
+  on A510 CPU 0, A715 CPU 3, A710 CPU 6, and X3 CPU 7. Full `[video_core]` passed 135,046 assertions
+  in 72 cases on A715. The stripped test was 26,191,288 bytes with SHA-256
+  `40A879685FFCF1F21FE85E1DA5D9C5FE072DFD5A2F7F7E0445E23902851AEF49`. Source/test commit
+  `55683b8ea` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 12 minutes 25 seconds
+  after a full native rebuild. The ARM64-only, v2-signed APK is 29,010,488 bytes, has SHA-256
+  `22A39576D5F2443006EFD1DD03E03042E5228C6BD88EFE18B32018ED056E438B`, and reports package
+  `org.azahar_emu.azahar.debug` version `55683b8ea-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop left no app PID. Neither app nor game was launched; Thor remained AC-powered at 80%
+  and 21.0 C.
+- Bounded cleanup removed 2,170,863,616 physical host bytes and left 55,606,501,376 bytes (51.79
+  GiB) free on C:. The retained active ARM64 CMake/Ninja cache is 2,812,947,309 bytes; build output
+  contains only the 29,010,488-byte APK and 476-byte metadata. Temporary test/benchmark/trace
+  helpers were removed from the host and device. No PDF, test binary, rendered manual page,
+  benchmark helper, or scratch note was committed.
+- This is optimization/candidate entry 130 in the overlapping Thor ledger. The 1.02x-4.99x figures
+  apply only to the recurring `LG2` edge classifier; they cannot be added to the other 129 entries
+  or treated as whole-emulator FPS or battery-watt gains. Lower instruction, mask, transfer, and
+  branch-dependency work makes lower energy plausible only when guest shaders execute `LG2`.
+  Whole-game frametime, thermal slope, and battery watts still require a controlled matched title/
+  scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.

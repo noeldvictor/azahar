@@ -345,6 +345,14 @@ could become `4294967296.0` instead of `-1.0`. It now uses one direct scalar `SC
 matching x64 signed conversion while removing the old GPR-to-vector move. The complete ARM64 shader
 suite passes all 2,276 assertions on the Thor.
 
+The same `LG2` helper now classifies all scalar edge cases directly in NZCV with `FCMP input,#0.0`,
+`B.VS` for unordered/NaN, and `B.LE` for zero or negative input. This replaces seven generated
+instructions for SIMD equality-mask materialization, a lane-to-GPR transfer, and an integer compare
+with three. Ten-million-iteration exact-loop medians measured **4.99x on A510, 1.02x on A715,
+1.52x on A710, and 1.37x on X3** for this classifier. NaN, both signed zeros, both infinities, and
+finite signs retain their previous results; all 18,332 shader assertions pass on every Thor core
+class. This is optimization 130 in the overlapping ledger, not a whole-game FPS or watt result.
+
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
 `FDIV`. A pinned Thor microbenchmark measured the isolated operation 16.2% to 43.2% faster across
