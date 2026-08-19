@@ -6079,3 +6079,69 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   makes lower energy plausible only when this guest path executes; whole-game frametime, thermal
   slope, and battery watts still require a controlled matched title/scene/cache/renderer/driver/
   resolution/layout/performance-mode/fan/brightness/duration A/B run.
+
+## AArch64 PICA DP4/DPH Pairwise Reduction (2026-08-19)
+
+- Command-line Git refreshed authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 231 commits ahead and zero behind before
+  this source change, so no merge was needed. RPCS3 master remained
+  `ddd82ecada385db436f77bed21ffca46da5d008b`. Its recent x86-only intrinsic folding was not copied;
+  the transferable lesson was to remove redundant materialization behind exact semantic and
+  target-performance gates.
+- The x64 PICA shader JIT reduces DP4 with two `HADDPS` operations, but the AArch64 port used vector
+  `FADDP`, scalar `FADDP`, then `DUP`. After the first same-source vector operation, the lanes are
+  `[X+Y, Z+W, X+Y, Z+W]`. Repeating that vector operation computes the identical ordered
+  `(X+Y)+(Z+W)` result in all four lanes. DP4, DPH, and DPHI therefore keep sanitized multiplication,
+  x64's grouping, and result replication while dropping one recurring host instruction. DPH/DPHI
+  still replace source one's W component with one before multiplication.
+- A static Android 35 AArch64 helper disassembled to the intended old three-instruction and new
+  two-instruction bodies. Eight raw-bit edge rows covered finite asymmetry, cancellation, both zero
+  signs, infinities, quiet/signaling NaNs, maximum finite values, normals, and subnormals; all four
+  output words and FPSR matched exactly. Each timing used 500,000 iterations, eight reductions per
+  iteration, and 31 alternating-order samples. Independent work used V0-V7; the dependency case
+  repeatedly reduced V0. Wall-powered Thor medians were:
+
+  | Thor core | Independent old -> new | Speedup | Dependent old -> new | Speedup |
+  | --- | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 3.776562 -> 2.528034 ns/reduction | 1.493873x | 5.534492 -> 4.029700 | 1.373425x |
+  | A715 CPU 3 | 0.537057 -> 0.375000 ns/reduction | 1.432153x | 3.232266 -> 2.153347 | 1.501043x |
+  | A710 CPU 6 | 0.539961 -> 0.356758 ns/reduction | 1.513523x | 3.227213 -> 2.148958 | 1.501757x |
+  | X3 CPU 7 | 0.399349 -> 0.253724 ns/reduction | 1.573950x | 2.831549 -> 1.887903 | 1.499838x |
+
+  No accepted row approached the conservative 0.995 regression floor. CPU7 required the established
+  staging method because Android had parked it: temporary workers made the X3 schedulable, a waiting
+  shell was pinned, and every worker was killed before the benchmark began. The Thor was on AC power,
+  with USB/wireless charging false, at 80% and 22.0 C before measurements. These are instruction-
+  kernel results, not battery-discharge watts.
+- Temporary actual-emitter tracing captured `6e21d421 6e21d421` for both DP4 and DPH;
+  `llvm-objdump` decoded each word as `faddp v1.4s,v1.4s,v1.4s`. The trace was removed, and the clean
+  stripped test contained no marker. Permanent finite/asymmetric DP4 and DPH coverage now checks
+  every broadcast result lane and proves DPH ignores source one's original W. The clean
+  `[video_core][shader]` suite passed 18,320 assertions in 52 cases independently on A510 CPU 0,
+  A715 CPU 3, A710 CPU 6, and X3 CPU 7. Source/test commit `163471c4c` was pushed directly to
+  `origin/master` over command-line Git SSH.
+- A broader `[video_core]` audit exposed one separate existing failure: after a resource-pool
+  refresh, `CommitResource()` updates its local `gpu_tick` but its search lambda still holds the
+  pre-refresh value captured by copy, so the exact Vulkan test grows from four to eight resources
+  instead of reusing index zero. This did not affect the shader acceptance result and remains a
+  follow-up memory/allocation/power candidate rather than being mixed into this source commit.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 1 minute 39 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,440 bytes, has SHA-256
+  `6EDC9A0A5A98D8BDA6F4791F2CF50334A9A5DD465545B9CAF3D4A3000D3736D0`, and reports package
+  `org.azahar_emu.azahar.debug` version `163471c4c-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no device PID. Neither app nor game was launched.
+- Exact bounded cleanup removed 2,526,315,856 logical host bytes: 54,600,271 bytes of scratch, the
+  449,237,936-byte unstripped test ELF, and 2,022,477,649 bytes of reproducible Gradle/JNI/R8/
+  symbol/mapping staging. C: recovered 2,082,492,416 physical bytes and reports 55,870,803,968 bytes
+  free. The retained active ARM64 CMake/Ninja cache is 2,793,371,765 bytes; retained build output is
+  only the 29,010,440-byte APK and 476-byte metadata. Four exact device helpers totaling 54,592,218
+  bytes were removed from `/data/local/tmp`. No PDF, benchmark, test binary, rendered manual page,
+  or scratch note was committed.
+- This is optimization/candidate entry 126 in the overlapping Thor ledger. It ships one bounded
+  PICA reduction improvement and identifies, but does not yet count, the Vulkan stale-capture
+  follow-up. The exact-loop ratios cannot be added to the other 125 entries or converted into
+  whole-emulator FPS or watts. Lower code-cache, SIMD-issue, and dependency work makes lower energy
+  plausible only when these guest shader operations execute; whole-game frametime, thermal slope,
+  and battery watts still require a controlled matched title/scene/cache/renderer/driver/
+  resolution/layout/performance-mode/fan/brightness/duration A/B run.

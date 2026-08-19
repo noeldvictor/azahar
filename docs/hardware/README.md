@@ -127,6 +127,13 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   broadcasting Z, then perform the required scalar add. This keeps `(X + Y) + Z`, ignores W, and
   measured 16.7-26.0% faster. X3/A710 list `FADD` and `FADDP` at two-cycle latency, A510 lists both
   at four, and A715 lists normal `FADD` at two versus pairwise `FADDP` at three.
+- Use pairwise vector structure to avoid scalarization even when every destination lane needs the
+  reduction. After one same-source Q-form `FADDP`, a DP4/DPH product is
+  `[X+Y, Z+W, X+Y, Z+W]`; one more identical `FADDP` produces `(X+Y)+(Z+W)` in all four lanes.
+  This preserves operand order while replacing scalar `FADDP` plus `DUP` with one instruction.
+  Exact Thor kernels measured 1.37x-1.57x old-over-new across independent and dependent shapes on
+  A510/A715/A710/X3. The `FADD`/`FADDP` manual rows cited above guided the candidate, while the
+  heterogeneous-core measurements controlled acceptance.
 - For converted linear RGB8, deinterleave each 48-byte BGR block with one Q-form `LD3` and assemble
   opaque RGBA with ZIPs. In the reverse direction, split each 48-byte BGR output into three exact
   adjacent-input `TBL2` maps rather than exposing all four RGBA input vectors to `TBL4`. X3,

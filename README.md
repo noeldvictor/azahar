@@ -989,6 +989,15 @@ the full ARM Dynarmic suite passed 436,628 assertions in 45 cases. This is optim
 removes one host instruction only on matching paths and is not an additive whole-emulator FPS or
 measured-watt percentage.
 
+AArch64 PICA `DP4`, `DPH`, and `DPHI` now finish their sanitized four-lane dot product with two
+same-source vector `FADDP` instructions. The first creates `[X+Y, Z+W, X+Y, Z+W]`; the second
+therefore reproduces x64's ordered `(X+Y)+(Z+W)` result in every lane. This replaces the previous
+scalar second reduction plus `DUP`, removing one recurring host instruction. Actual JIT words
+decoded as the exact two vector operations, bitwise/FPSR edge checks matched, and the clean shader
+suite passed 18,320 assertions on every Thor core class. Exact isolated independent/dependent
+medians improved **1.37x-1.57x** across A510/A715/A710/X3. This is optimization 126: a PICA CPU
+shader-JIT path win, not an additive whole-emulator FPS or measured-watt percentage.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage

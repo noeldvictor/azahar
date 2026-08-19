@@ -205,6 +205,13 @@
   and do not reassociate or fuse the operations. Do not restore the W-zero insertion followed by
   two dependent pairwise reductions; the shorter dependency graph measured 16.7-26.0% faster on
   Thor core classes. Keep interpreter/JIT W-NaN and broadcast-result coverage.
+- AArch64 PICA `DP4`, `DPH`, and `DPHI` must reduce their sanitized four-lane product with two
+  same-source Q-form `FADDP` instructions. The first produces `[X+Y, Z+W, X+Y, Z+W]`; the second
+  computes the same ordered `(X+Y)+(Z+W)` result in every lane. Do not restore the scalar second
+  `FADDP` plus `DUP`: it adds one recurring host instruction and measured 1.37x-1.57x slower in
+  exact independent/dependent Thor kernels. Preserve DPH/DPHI's forced source-one W value, x64's
+  arithmetic grouping, sanitized zero/infinity multiplication, swizzles, destination masks, and
+  full-lane output coverage. Treat the measured gain as path-local until a matched game/power A/B.
 - AArch64 PICA `MOVA` consumes only X/Y. Keep its truncating conversion on D-form `.2S` `FCVTZS`,
   then choose extraction by the destination mask. X-only and Y-only must use one signed element
   transfer (`SMOV Xd, Vn.S[lane]`), which combines the SIMD-to-GPR move and sign extension. XY must
