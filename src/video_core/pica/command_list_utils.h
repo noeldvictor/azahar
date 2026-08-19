@@ -5,8 +5,12 @@
 #pragma once
 
 #include "common/arch.h"
+#include "common/common_types.h"
 
 #if CITRA_ARCH(arm64)
+#include <algorithm>
+#include <cstring>
+#include <type_traits>
 #include <arm_neon.h>
 
 namespace Pica::CommandListUtils {
@@ -29,6 +33,37 @@ namespace Pica::CommandListUtils {
 [[nodiscard]] inline uint32x4_t ApplyWriteMasks(uint32x4_t old_values, uint32x4_t new_values,
                                                 uint32x4_t write_masks) {
     return vbslq_u32(write_masks, new_values, old_values);
+}
+
+// PICA LUT uploads are circular. Once a table is already dirty, comparisons cannot change its
+// state, so split batches into contiguous copies and skip every old-value load. Clean uploads keep
+// the original loop so Clang can still auto-vectorize a non-wrapping power-of-two table. Seven
+// words is the measured all-cluster copy crossover; smaller batches retain the scalar route.
+template <typename Entry>
+[[nodiscard]] inline bool UpdateCircularLut(Entry* destination, u32 size, u32 index,
+                                            const u32* values, u32 count, bool dirty) {
+    static_assert(sizeof(Entry) == sizeof(u32));
+    static_assert(std::is_trivially_copyable_v<Entry>);
+
+    if (!dirty || count < 7) {
+        for (u32 i = 0; i < count; ++i) {
+            Entry& entry = destination[(index + i) % size];
+            const u32 previous = entry.raw;
+            entry.raw = values[i];
+            dirty |= previous != values[i];
+        }
+        return dirty;
+    }
+
+    index %= size;
+    while (count != 0) {
+        const u32 span = std::min(count, size - index);
+        std::memcpy(destination + index, values, span * sizeof(u32));
+        values += span;
+        count -= span;
+        index = 0;
+    }
+    return true;
 }
 
 } // namespace Pica::CommandListUtils

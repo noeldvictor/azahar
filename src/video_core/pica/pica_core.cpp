@@ -654,6 +654,14 @@ void PicaCore::HandleSpecialRegBatch(u32 id, const u32* values, u32 count) {
     case PICA_REG_INDEX(lighting.lut_data[7]): {
         auto& lut_config = regs.internal.lighting.lut_config;
 
+#if CITRA_ARCH(arm64)
+        const u32 lut_type = lut_config.type;
+        const u32 dirty_bit = 1u << lut_type;
+        const bool dirty = CommandListUtils::UpdateCircularLut(
+            lighting.luts[lut_type].data(), lighting.luts[lut_type].size(), lut_config.index,
+            values, count, (lighting.lut_dirty & dirty_bit) != 0);
+        lighting.lut_dirty |= static_cast<u32>(dirty) << lut_type;
+#else
         for (u32 i = 0; i < count; i++) {
             const u32 prev =
                 std::exchange(lighting
@@ -663,6 +671,7 @@ void PicaCore::HandleSpecialRegBatch(u32 id, const u32* values, u32 count) {
                               values[i]);
             lighting.lut_dirty |= (prev != values[i]) << lut_config.type;
         }
+#endif
         lut_config.index.Assign(lut_config.index + count);
         break;
     }
@@ -674,11 +683,17 @@ void PicaCore::HandleSpecialRegBatch(u32 id, const u32* values, u32 count) {
     case PICA_REG_INDEX(texturing.fog_lut_data[5]):
     case PICA_REG_INDEX(texturing.fog_lut_data[6]):
     case PICA_REG_INDEX(texturing.fog_lut_data[7]): {
+#if CITRA_ARCH(arm64)
+        fog.lut_dirty = CommandListUtils::UpdateCircularLut(fog.lut.data(), fog.lut.size(),
+                                                            regs.internal.texturing.fog_lut_offset,
+                                                            values, count, fog.lut_dirty);
+#else
         for (u32 i = 0; i < count; i++) {
             const u32 prev = std::exchange(
                 fog.lut[(regs.internal.texturing.fog_lut_offset + i) % 128].raw, values[i]);
             fog.lut_dirty |= prev != values[i];
         }
+#endif
         regs.internal.texturing.fog_lut_offset.Assign(regs.internal.texturing.fog_lut_offset +
                                                       count);
         break;
@@ -694,6 +709,33 @@ void PicaCore::HandleSpecialRegBatch(u32 id, const u32* values, u32 count) {
         auto& index = regs.internal.texturing.proctex_lut_config.index;
         const auto lut_table = regs.internal.texturing.proctex_lut_config.ref_table.Value();
 
+#if CITRA_ARCH(arm64)
+        const u8 dirty_bit = static_cast<u8>(1u << u32(lut_table));
+        const auto sync_lut = [&](auto& proctex_table) {
+            const bool dirty = CommandListUtils::UpdateCircularLut(
+                proctex_table.data(), proctex_table.size(), index, values, count,
+                (proctex.table_dirty & dirty_bit) != 0);
+            proctex.table_dirty |= static_cast<u8>(dirty) << u32(lut_table);
+        };
+
+        switch (lut_table) {
+        case TexturingRegs::ProcTexLutTable::Noise:
+            sync_lut(proctex.noise_table);
+            break;
+        case TexturingRegs::ProcTexLutTable::ColorMap:
+            sync_lut(proctex.color_map_table);
+            break;
+        case TexturingRegs::ProcTexLutTable::AlphaMap:
+            sync_lut(proctex.alpha_map_table);
+            break;
+        case TexturingRegs::ProcTexLutTable::Color:
+            sync_lut(proctex.color_table);
+            break;
+        case TexturingRegs::ProcTexLutTable::ColorDiff:
+            sync_lut(proctex.color_diff_table);
+            break;
+        }
+#else
         for (u32 i = 0; i < count; i++) {
 
             const auto sync_lut = [&](auto& proctex_table) {
@@ -720,6 +762,7 @@ void PicaCore::HandleSpecialRegBatch(u32 id, const u32* values, u32 count) {
                 break;
             }
         }
+#endif
         index.Assign(index + count);
         break;
     }

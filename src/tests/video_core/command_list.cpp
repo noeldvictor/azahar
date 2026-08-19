@@ -3,6 +3,8 @@
 // Refer to the license.txt file included.
 
 #include <array>
+#include <random>
+#include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "common/arch.h"
 #include "common/common_types.h"
@@ -12,6 +14,10 @@
 #if CITRA_ARCH(arm64)
 namespace {
 
+union LutEntry {
+    u32 raw;
+};
+
 constexpr u32 ExpandWriteMask(u32 parameter_mask) {
     u32 result = 0;
     for (u32 byte = 0; byte < 4; ++byte) {
@@ -20,6 +26,50 @@ constexpr u32 ExpandWriteMask(u32 parameter_mask) {
         }
     }
     return result;
+}
+
+template <std::size_t Size>
+bool UpdateCircularLutScalar(std::array<LutEntry, Size>& destination, u32 index, const u32* values,
+                             u32 count, bool dirty) {
+    for (u32 i = 0; i < count; ++i) {
+        LutEntry& entry = destination[(index + i) % Size];
+        const u32 previous = entry.raw;
+        entry.raw = values[i];
+        dirty |= previous != values[i];
+    }
+    return dirty;
+}
+
+template <std::size_t Size>
+void CheckCircularLutCase(u32 index, const std::vector<u32>& values, bool initial_dirty, u32 seed) {
+    std::array<LutEntry, Size> expected{};
+    std::array<LutEntry, Size> actual{};
+    for (u32 i = 0; i < Size; ++i) {
+        expected[i].raw = seed + i * 0x9E3779B9u;
+        actual[i].raw = expected[i].raw;
+    }
+
+    const bool expected_dirty = UpdateCircularLutScalar(
+        expected, index, values.data(), static_cast<u32>(values.size()), initial_dirty);
+    const bool actual_dirty = Pica::CommandListUtils::UpdateCircularLut(
+        actual.data(), static_cast<u32>(actual.size()), index, values.data(),
+        static_cast<u32>(values.size()), initial_dirty);
+
+    bool equal = expected_dirty == actual_dirty;
+    for (u32 i = 0; i < Size; ++i) {
+        equal &= expected[i].raw == actual[i].raw;
+    }
+    CAPTURE(Size, index, values.size(), initial_dirty, expected_dirty, actual_dirty, seed);
+    REQUIRE(equal);
+}
+
+template <std::size_t Size>
+void CheckUnchangedCircularLutCase(u32 index, u32 count, u32 seed) {
+    std::vector<u32> values(count);
+    for (u32 i = 0; i < count; ++i) {
+        values[i] = seed + ((index + i) % Size) * 0x9E3779B9u;
+    }
+    CheckCircularLutCase<Size>(index, values, false, seed);
 }
 
 } // Anonymous namespace
@@ -85,6 +135,41 @@ TEST_CASE("PICA AArch64 command preflight matches scalar headers", "[video_core]
                 }
             }
         }
+    }
+}
+
+TEST_CASE("PICA AArch64 circular LUT batches match scalar writes", "[video_core][aarch64]") {
+    constexpr std::array<u32, 24> counts = {
+        0,  1,  2,  3,  4,   5,   6,   7,   8,   15,  16,  17,
+        31, 32, 63, 64, 127, 128, 129, 255, 256, 257, 383, 511,
+    };
+    constexpr std::array<u32, 7> indices = {0, 1, 125, 127, 128, 129, 0xFFFF};
+
+    for (const u32 count : counts) {
+        for (const u32 index : indices) {
+            for (const bool initial_dirty : {false, true}) {
+                std::vector<u32> values(count);
+                for (u32 i = 0; i < count; ++i) {
+                    values[i] = 0xA5A5A5A5u ^ (i * 0x1020304u) ^ index;
+                }
+                CheckCircularLutCase<128>(index, values, initial_dirty, 0x10293847u);
+                CheckCircularLutCase<256>(index, values, initial_dirty, 0x56473829u);
+            }
+            CheckUnchangedCircularLutCase<128>(index, count, 0x10293847u);
+            CheckUnchangedCircularLutCase<256>(index, count, 0x56473829u);
+        }
+    }
+
+    std::mt19937 random{0x141A64u};
+    for (u32 trial = 0; trial < 10000; ++trial) {
+        const u32 count = random() % 512;
+        const u32 index = random() & 0xFFFF;
+        std::vector<u32> values(count);
+        for (u32& value : values) {
+            value = random();
+        }
+        CheckCircularLutCase<128>(index, values, (random() & 1) != 0, random());
+        CheckCircularLutCase<256>(index, values, (random() & 1) != 0, random());
     }
 }
 #endif
