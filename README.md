@@ -272,7 +272,13 @@ include:
   ARM64 path now uses `SXTH` or `ASR`, one `SMULL`, and `LSR` instead of separately extending both
   operands around X-form `MUL`. Checksum-locked exact-sequence measurements were
   **1.458x-2.237x** across every Snapdragon 8 Gen 2 core class. The similar `SMLAWB`/`SMLAWT`
-  candidate was rejected because its complete sticky-Q path regressed A715 and X3 slightly; and
+  multiply-lowering candidate was rejected because its complete sticky-Q path regressed A715 and
+  X3 slightly;
+- direct narrow-to-long sign extension for exact sole-use adjacent Dynarmic chains. ARM64 now turns
+  `SXTB/SXTH W; SXTW X` into one `SXTB/SXTH X`; the currently reachable A32 halfword chain occurs
+  in `SMLAWB`/`SMLAWT` without changing their previously retained multiply/accumulate lowering.
+  Disassembly-checked exact-path measurements were **1.82x-4.34x** across independent and dependent
+  byte/halfword chains on every Snapdragon 8 Gen 2 CPU class; and
 - direct packed-flag condition tests plus cycle-count flag reuse, removing the redundant compare at
   normal linked-block exits. A common simple conditional linked-block path falls from five ARM64
   control/cycle instructions to three.
@@ -896,6 +902,17 @@ affected-path time by **18.9%/53.8% for byte/halfword on A510** and **1.7%/1.7% 
 was neutral within 0.1%, and Android parked the X3 affinity sample. The clean permanent suite
 passed 93,092 assertions in 40 cases. This is optimization 118, not an emulator-wide FPS or
 battery-watt percentage.
+
+Exact sole-use adjacent `SignExtendByteToWord`/`SignExtendHalfToWord` followed by
+`SignExtendWordToLong` now collapses from `SXTB/SXTH W; SXTW X` to one direct
+`SXTB/SXTH X`. Immediate, shared, non-adjacent, mismatched, and ordinary word-only extensions keep
+their established lowering. This shortens the existing ARM/Thumb-2 `SMLAWB`/`SMLAWT` halfword
+path without applying the previously rejected multiply/accumulate rewrite. Raw JIT words decoded
+as direct `sxth Xd,Wn`. Alternating-order Thor medians improved **1.99x-4.34x on A510**,
+**1.82x-2.00x on A715**, **1.89x-2.00x on A710**, and **2.00x on X3** across byte/halfword
+independent and dependent patterns. The clean permanent suite passed 97,172 assertions in 41
+cases. This is optimization 119; it removes one affected host instruction and is not an
+emulator-wide FPS, thermal, or battery-watt claim.
 
 ## Vulkan Worker-Power Updates
 

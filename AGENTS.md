@@ -532,6 +532,18 @@
   NZCV/Q/GE for `SMULW`, top/bottom selection, Thumb behavior, signed extremes, and source/
   destination aliases in permanent tests. Keep the speed claim path-local until a matched game/
   power A/B exists.
+- ARM64 Dynarmic may collapse `SignExtendByteToWord` or `SignExtendHalfToWord` followed by
+  `SignExtendWordToLong` only when the narrow extension has a non-immediate source, exactly one
+  use, and the long extension is its immediately following argument-zero consumer. The word
+  extension must alias its input and the long extension must emit one direct `SXTB Xd,Wn` or
+  `SXTH Xd,Wn`. Keep shared, immediate, non-adjacent, mismatched, ordinary word-only, and unrelated
+  chains on the established `SXTB`/`SXTH` plus `SXTW` lowering; keep the producer and consumer
+  predicates symmetrical. This removes one instruction from the current ARM/Thumb-2
+  `SMLAWB`/`SMLAWT` halfword path but does not authorize the separately rejected fused multiply/
+  accumulate rewrite. Preserve bottom/top forms, destination aliases with each source role,
+  signed overflow, sticky CPSR.Q, NZCV/GE, unrelated GPRs, and FPSCR in permanent tests. Exact
+  independent/dependent byte/halfword sequences measured 1.82x-4.34x across Thor A510/A715/A710/
+  X3; keep the claim path-local until a matched title and battery-power A/B exists.
 - ARM64 Dynarmic may fuse `VectorSignExtend8/16/32` or `VectorZeroExtend8/16/32` with the
   immediately following matching `VectorLogicalShiftLeft16/32/64` only when the extension has one
   use and the shift consumes it as argument zero. An immediate smaller than the original narrow

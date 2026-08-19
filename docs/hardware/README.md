@@ -19,6 +19,9 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 
 ## Guidance already applied
 
+- Collapse exact sole-use `SXTB`/`SXTH`-to-word plus `SXTW` chains to direct AArch64
+  `SXTB`/`SXTH`-to-X forms. The baseline `SBFM` timing tables used for this gate are on Cortex-X3
+  page 18, Cortex-A715 page 20, Cortex-A710 page 27, and Cortex-A510 page 22.
 - Keep compatible render work inside render passes/GMEM and avoid unnecessary resolves or mid-pass dependencies.
 - Treat skipped presentation as an asynchronous queue boundary, not a GPU-idle boundary. Submit
   pending Vulkan work so emulated rendering continues in order, but rely on timeline-tagged pools,

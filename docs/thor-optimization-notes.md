@@ -5544,3 +5544,73 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   integer-issue work, so lower energy is plausible, but whole-game FPS, frametime, thermal, and
   wattage claims still require a controlled matched title/scene/cache/renderer/driver/resolution/
   layout/performance-mode/fan/brightness/duration A/B run.
+
+## ARM64 Chained Narrow-to-Long Sign Extension (2026-08-18)
+
+- Dynarmic can form `SignExtendByteToWord -> SignExtendWordToLong` or
+  `SignExtendHalfToWord -> SignExtendWordToLong`. ARM64 previously emitted two dependent baseline
+  bitfield aliases: `SXTB/SXTH Wd,Wn`, then `SXTW Xd,Wd`. AArch64 defines direct
+  `SXTB/SXTH Xd,Wn` forms with the same result: sign-extending bits 7 or 15 directly to 64 bits is
+  identical to first sign-extending them to 32 bits and then sign-extending bit 31 to 64 bits.
+- The accepted emitter gate requires a non-immediate narrow source, exactly one use, and an
+  immediately following `SignExtendWordToLong` consumer using the narrow extension as argument
+  zero. The word extension aliases its input without code, and the long extension emits direct
+  `SXTB X` or `SXTH X`. Immediate, shared, non-adjacent, mismatched, word-only, and unrelated forms
+  retain the original lowering. Producer and consumer predicates are derived from the same helper
+  so a fallback cannot consume an unextended value.
+- ARM/Thumb-2 `SMLAWB`/`SMLAWT` currently produce the halfword chain while preserving their exact
+  multiply, shift, modular add, overflow extraction, and sticky-Q graph. This optimization removes
+  only the redundant intermediate sign extension; it does not apply the previously rejected
+  fused/reassociated SMLAW multiply-accumulate candidate that regressed A715 and X3.
+- Complete Cortex software-optimization tables were inspected directly. Baseline `SBFM` aliases
+  are latency/throughput 1/6 on X3 page 18, 1/4 on A715 page 20, and 1/4 on A710 page 27. A510 page
+  22 lists the basic family at 2/3, with latency 1 for the `SXTB` alias. The manuals therefore
+  predict a dependency and issue reduction from deleting the second operation without requiring
+  an optional extension or a core-specific build. No PDF or rendered manual page entered Git.
+- A temporary emitter-boundary trace captured raw JIT words `93403e75`, `93403eb3`, and
+  `93403eb6`. LLVM decoded them as `sxth x21,w19`, `sxth x19,w21`, and `sxth x22,w21` respectively.
+  There was no preceding word-form `SXTH` or trailing `SXTW`. The diagnostic and temporary opcode
+  object were removed before the final build.
+- The standalone helper was disassembly-checked so its split independent bodies contained eight
+  `SXTB/SXTH W` plus eight `SXTW X` instructions and its direct bodies contained eight
+  `SXTB/SXTH X` instructions. Dependent bodies repeated the same shapes on one register. Each of
+  eight alternating-order samples executed 4,000,000 iterations, or 32,000,000 affected
+  operations, with matching nonzero split/direct checksums. The table reports old/direct median
+  speedup.
+
+  | Thor core | Byte independent | Half independent | Byte dependent | Half dependent |
+  | --- | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 4.343224x | 4.259255x | 3.053356x | 1.986687x |
+  | A715 CPU 3 | 1.815167x | 1.839695x | 1.999006x | 1.998513x |
+  | A710 CPU 5 | 1.891211x | 1.891639x | 2.001035x | 1.999644x |
+  | X3 CPU 7 | 2.001748x | 2.002068x | 2.000773x | 1.999879x |
+
+- Android initially rejected CPU 7 affinity with `EINVAL` despite reporting CPUs 0-7 online and
+  permitted. Brief load on the accessible big-core cluster let `core_ctl` accept the X3 run; all
+  helpers were stopped afterward. Thor reported AC power, 80%, 4.271 V, and 25.0 C. These are
+  instruction-sequence timings under wall power, not battery-discharge watt measurements.
+- Permanent ARM and Thumb coverage exercises SMLAW bottom/top forms, distinct operands,
+  destination aliases with each source role and the all-alias form, positive/negative overflow,
+  initial sticky Q, unchanged NZCV/GE, every unrelated GPR, and unchanged FPSCR. The focused case
+  passed 4,080 assertions. The clean final `[core][arm][dynarmic]` suite passed 97,172 assertions
+  in 41 cases on Thor. Source/test commit `a8611bf76` was pushed directly to `origin/master` with
+  command-line Git SSH.
+- Exact JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 32 seconds.
+  The ARM64-only APK is 29,006,484 bytes,
+  has SHA-256 `ECE6AA41909B2571C6161A3513B6AEAD8794C9BE561516371E8A2B1D6468D4FA`, and reports package
+  `org.azahar_emu.azahar.debug` version `a8611bf76-vanilla-thor`. It was installed over Wi-Fi ADB,
+  immediately force-stopped, and verified `stopped=true` with no PID; neither the app nor a game
+  was launched.
+- Cleanup removed 2,497,115,187 logical host bytes: the 26,167,732-byte scratch tree, the
+  448,982,400-byte unstripped native test executable, and reproducible Gradle staging. C: recovered
+  2,070,192,128 physical bytes and reports 56,486,883,328 bytes free. The retained active ARM64
+  CMake/Ninja cache is 2,797,255,579 bytes; retained Gradle output is only the 29,006,484-byte APK
+  and 476-byte metadata. Both exact device helpers were removed; no PDF, benchmark, test binary,
+  rendered manual page, or scratch note was committed.
+- This is optimization 119 in the overlapping Thor work tally. The 1.815167x-4.343224x figures
+  apply only to the exact removed instruction chain and cannot be added to the other 118 entries.
+  Lower code-cache, fetch/decode, dependency, and integer-issue work makes lower energy plausible,
+  but whole-game FPS, frametime, temperature, thermal slope, and watts still require a controlled
+  matched title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/
+  duration A/B run.
