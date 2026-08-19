@@ -145,6 +145,49 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   frametimes, temperature, and thermal slope with title, scene, caches, renderer, resolution,
   driver, layout, brightness, performance/fan mode, power source, and duration fixed.
 
+## 2026-08-19 Targeted Vulkan Presentation Synchronization
+
+- Optimization/candidate 145 addresses another every-presented-frame cost identified by the
+  whole-frame pivot. `PresentWindow::CopyToSwapchain()` previously emitted a same-layout barrier for
+  the intermediate frame even though the submit waits for the render submission's `render_ready`
+  semaphore and the image remains `TransferSrcOptimal`. The semaphore already supplies the required
+  availability and visibility for that unchanged-layout producer/consumer handoff, so the duplicate
+  image barrier is removed.
+- The acquired swapchain image still receives its required `Undefined` to `TransferDstOptimal`
+  transition. Both `image_acquired` and `render_ready` waits now target `Transfer`, the stage that
+  first consumes either image, instead of `ColorAttachmentOutput` and `AllGraphics`. The completed
+  transfer's present transition is narrowed from an `AllCommands`-to-`AllCommands` barrier with
+  `TransferWrite`-to-`MemoryRead` access into `Transfer`-to-`BottomOfPipe` with no destination access
+  mask.
+  The present-ready semaphore continues to order queue presentation. Frame reuse fences and the
+  queue-idle paths used when recreating or destroying presentation resources are unchanged.
+- This follows Khronos' [synchronization examples](https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples),
+  which explain that a semaphore is sufficient when no image layout transition is needed and that
+  wait stages should match the consumer, plus the official [pipeline-barrier performance
+  sample](https://docs.vulkan.org/samples/latest/samples/performance/pipeline_barriers/README.html),
+  which warns that broad `ALL_COMMANDS` barriers can drain the pipeline and are particularly costly
+  on tile-based GPUs. Current [RPCS3 Vulkan presentation
+  code](https://github.com/RPCS3/rpcs3/blob/master/rpcs3/Emu/RSX/VK/VKPresent.cpp) likewise uses
+  transfer-specific present synchronization; no RPCS3 code was copied.
+- The complete pre-commit JDK 17 ARM64 package build passed in 3 minutes 17 seconds, compiling the
+  changed object and linking the native tests and production `libcitra-android.so`. Source commit
+  `9bb4444bb` was pushed directly to `origin/master` with command-line Git over SSH. The post-commit
+  package rebuild passed in 1 minute 51 seconds and embeds that source revision.
+- The retained APK contains only `arm64-v8a`, reports version `9bb4444bb-vanilla-thor`, is
+  29,013,532 bytes, and has SHA-256
+  `F4A57FD9E4E1DE0D884009CBBA7715C26752741CBA4C24D11066A76CE58DE6B7`. Its active CMake cache
+  records `ENABLE_THOR_FRAME_PROFILING=OFF`.
+- Exact bounded cleanup removed 2,023,510,839 logical bytes of reproducible Gradle, JNI, R8,
+  native-symbol, mapping, and packaging staging. Reported C: free space increased by 1,579,917,312
+  physical bytes to 51,477,413,888. The retained build output is only the APK plus its 476-byte
+  metadata and the 3,247,883,063-byte active ARM64 CMake/Ninja cache. No ADB command, APK install,
+  app/game launch, or runtime capture was used.
+- One image barrier and one broad full-pipeline synchronization point are removed per presented
+  frame. That is a real recurring-work reduction and therefore passes the forest/trees acceptance
+  gate, but its driver-dependent FPS, frametime, and power effect is unmeasured. It may be negligible
+  if the driver had already optimized the old dependency. A future allowed matched Thor A/B remains
+  mandatory before claiming speed or watt gains.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

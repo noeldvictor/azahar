@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **144 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **145 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -506,6 +506,13 @@ levels. It accepts fractional modes such as 59.94 Hz, selects only rates availab
 resolution, clears the resolution-carrying display-mode preference, and requests 60 Hz game content
 on the actual `Surface`. Menus still request their highest same-resolution rate. Android may
 override these preferences, so the panel/compositor power effect remains pending a matched Thor A/B.
+
+Optimization 145 narrows the synchronization around every Vulkan presentation transfer. The
+render-ready semaphore already makes the unchanged intermediate transfer-source image available,
+so the duplicate same-layout image barrier is gone. Swapchain acquisition and render completion now
+wait at the transfer stage that first consumes them, and the final present transition no longer uses
+an `ALL_COMMANDS`-to-`ALL_COMMANDS` full-pipeline barrier. This removes recurring driver/GPU
+synchronization work, but the FPS, frametime, and watt effect remains pending a matched Thor A/B.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

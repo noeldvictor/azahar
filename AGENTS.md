@@ -56,6 +56,12 @@
   instrumentation as an optimization-ledger entry. `RenderPassImageBarriers` counts only barriers
   emitted while ending render passes, not every Vulkan image barrier in the emulator. Do not launch
   the app or a game while the user's current no-launch restriction remains in effect.
+- Treat the forest/trees pivot as an acceptance gate, not just a documentation warning. Without a
+  permitted profiler capture, accept new performance code only when static correctness evidence
+  proves that it removes a recurring whole-frame operation, memory pass, broad synchronization
+  point, driver call, wakeup, or panel/compositor request. Keep merely plausible instruction-level
+  ideas in the candidate ledger until a profile ranks their subsystem. Never add isolated speedup
+  ratios together or translate them into whole-game FPS or watt estimates.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target
@@ -456,6 +462,13 @@
   blit with a 1:1 mapping. Keep `vkCmdBlitImage` for actual extent scaling when the destination
   supports blitting, and keep the established overlapping copy fallback when it does not. Do not
   infer equal extents from Android alone; select the route from the acquired swapchain extent.
+- Vulkan presentation's `render_ready` semaphore owns availability for the intermediate image once
+  the render submission leaves it in `TransferSrcOptimal`; do not re-add a redundant same-layout
+  image barrier. Both `image_acquired` and `render_ready` waits must target the transfer stage, their
+  first consumer. Keep the acquired-image transition `TopOfPipe` to `Transfer` and the completed
+  transfer's present transition `Transfer` to `BottomOfPipe` with no destination access mask; never
+  restore the former `AllCommands`-to-`AllCommands` full-pipeline barrier. Preserve the existing
+  per-frame fence/reuse waits and queue-idle synchronization for swapchain/surface recreation.
 - HLE audio intermediate mixes deliberately use `PlanarQuadFrame32` from `Source::MixInto()` through
   aux exchange and final downmix. Preserve channel-major live storage, contiguous whole-buffer aux
   copies on little-endian hosts, the endian-converting fallback, and the historical sample-major
