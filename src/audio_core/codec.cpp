@@ -138,4 +138,15 @@ StereoBuffer16 DecodePCM16(const unsigned num_channels, const u8* const data,
 
     return ret;
 }
+
+StereoBuffer16 DecodePCM16FromSample(const unsigned num_channels, const u8* const data,
+                                     const std::size_t sample_count,
+                                     const std::size_t first_sample) {
+    ASSERT(first_sample <= sample_count);
+    if (first_sample == 0) {
+        return DecodePCM16(num_channels, data, sample_count);
+    }
+    const u8* const first_data = data + first_sample * num_channels * sizeof(s16);
+    return DecodePCM16(num_channels, first_data, sample_count - first_sample);
+}
 } // namespace AudioCore::Codec

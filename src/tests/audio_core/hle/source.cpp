@@ -1,11 +1,14 @@
 #include <array>
 #include <cstdio>
 #include <limits>
+#include <utility>
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include "audio_core/hle/shared_memory.h"
 #include "audio_core/hle/source.h"
 #include "common/settings.h"
+#include "core/core.h"
+#include "core/memory.h"
 #include "tests/audio_core/merryhime_3ds_audio/merry_audio/merry_audio.h"
 
 namespace AudioCore::HLE {
@@ -57,6 +60,27 @@ struct SourceMixTestAccess {
     static u32 CurrentSampleNumber(const Source& source) {
         return source.state.current_sample_number;
     }
+
+    static void ConfigurePartialPCM16(Source& source, Memory::MemorySystem& memory,
+                                      unsigned channels, PAddr physical_address,
+                                      u32 current_sample_number) {
+        source.SetMemory(memory);
+        source.state.format = Source::Format::PCM16;
+        source.state.mono_or_stereo =
+            channels == 2 ? Source::MonoOrStereo::Stereo : Source::MonoOrStereo::Mono;
+        source.state.current_buffer_physical_address = physical_address;
+        source.state.current_sample_number = current_sample_number;
+        source.state.current_buffer.assign(3, {-12345, 23456});
+    }
+
+    static void ParseConfig(Source& source, SourceConfiguration::Configuration& config) {
+        const s16_le adpcm_coefficients[16]{};
+        source.ParseConfig(config, adpcm_coefficients);
+    }
+
+    static const AudioInterp::StereoBuffer16& CurrentBuffer(const Source& source) {
+        return source.state.current_buffer;
+    }
 };
 
 } // namespace AudioCore::HLE
@@ -80,6 +104,52 @@ void ReferenceSourceMix(AudioCore::PlanarQuadFrame32& dest, const AudioCore::Ste
 }
 
 } // Anonymous namespace
+
+TEST_CASE("HLE partial PCM16 updates decode only the retained suffix", "[audio_core][hle]") {
+    constexpr std::size_t SampleCount = 17;
+    constexpr std::array<std::pair<u32, u32>, 5> PositionAndLength{{
+        {0, 0},
+        {0, 17},
+        {5, 17},
+        {17, 17},
+        {13, 7},
+    }};
+
+    Core::System system;
+    Memory::MemorySystem memory{system};
+    u8* const fcram = memory.GetFCRAMPointer(0);
+
+    for (unsigned channels = 1; channels <= 2; ++channels) {
+        for (std::size_t sample = 0; sample < SampleCount; ++sample) {
+            for (unsigned channel = 0; channel < channels; ++channel) {
+                const u16 bits = static_cast<u16>(sample * 40503 + channel * 32771 + 0x1234);
+                const std::size_t byte = (sample * channels + channel) * sizeof(s16);
+                fcram[byte] = static_cast<u8>(bits);
+                fcram[byte + 1] = static_cast<u8>(bits >> 8);
+            }
+        }
+
+        for (const auto [position, length] : PositionAndLength) {
+            CAPTURE(channels, position, length);
+            AudioCore::HLE::Source source{0};
+            AudioCore::HLE::SourceMixTestAccess::ConfigurePartialPCM16(
+                source, memory, channels, Memory::FCRAM_PADDR, position);
+
+            AudioCore::HLE::SourceConfiguration::Configuration config{};
+            config.partial_embedded_buffer_dirty.Assign(1);
+            config.length = length;
+            AudioCore::HLE::SourceMixTestAccess::ParseConfig(source, config);
+
+            const std::size_t first_sample = position <= length ? position : 0;
+            const auto expected =
+                AudioCore::Codec::DecodePCM16FromSample(channels, fcram, length, first_sample);
+            REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentBuffer(source) == expected);
+            REQUIRE(AudioCore::HLE::SourceMixTestAccess::CurrentSampleNumber(source) ==
+                    first_sample);
+            REQUIRE(config.partial_embedded_buffer_dirty == 0);
+        }
+    }
+}
 
 TEST_CASE("HLE source generation overwrites full frames and silences missing samples",
           "[audio_core][hle]") {

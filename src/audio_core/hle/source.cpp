@@ -435,17 +435,14 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
         // buffer_id (after a check comparing the buffer_id to something, probably to make sure it's
         // the same buffer?), flags2_raw.is_looping, and length.
 
-        // A quick and dirty way of extending the current buffer is to just read the whole thing
-        // again with the new length. Note that this uses the latched physical address instead of
-        // whatever is in config, because that may be invalid.
+        // Use the latched physical address instead of the current config value, which may be
+        // invalid. PCM16 can decode directly from the current position instead of rebuilding and
+        // then erasing the already-consumed prefix.
         const u8* const memory =
             memory_system->GetPhysicalPointer(state.current_buffer_physical_address & 0xFFFFFFFC);
 
-        // TODO(xperia64): This could potentially be optimized by only decoding the new data and
-        // appending that to the buffer.
         if (memory) {
             const unsigned num_channels = state.mono_or_stereo == MonoOrStereo::Stereo ? 2 : 1;
-            bool valid = false;
             switch (state.format) {
             case Format::PCM8:
                 // TODO(xperia64): This may just work fine like PCM16, but I haven't tested and
@@ -454,8 +451,14 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
                 // state.current_buffer = Codec::DecodePCM8(num_channels, memory, config.length);
                 break;
             case Format::PCM16:
-                state.current_buffer = Codec::DecodePCM16(num_channels, memory, config.length);
-                valid = true;
+                // Tomodachi Life can shrink the declared length when dialogue is skipped. Keep the
+                // established reset behavior in that case; otherwise decode only the suffix that
+                // the old full-decode-plus-erase path retained.
+                if (config.length < state.current_sample_number) {
+                    state.current_sample_number = 0;
+                }
+                state.current_buffer = Codec::DecodePCM16FromSample(
+                    num_channels, memory, config.length, state.current_sample_number);
                 break;
             case Format::ADPCM:
                 // TODO(xperia64): Are partial embedded buffer updates even valid for ADPCM? What
@@ -468,24 +471,6 @@ void Source::ParseConfig(SourceConfiguration::Configuration& config,
             default:
                 UNIMPLEMENTED();
                 break;
-            }
-
-            // Again, because our interpolation consumes samples instead of using an index, let's
-            // just re-consume the samples up to the current sample number. There may be some
-            // imprecision here with the current sample number, as Detective Pikachu sounds a little
-            // rough at times.
-            if (valid) {
-
-                // TODO(xperia64): Tomodachi life apparently can decrease config.length when the
-                // user skips dialog. I don't know the correct behavior, but to avoid crashing, just
-                // reset the current sample number to 0 and don't try to truncate the buffer
-                if (state.current_buffer.size() < state.current_sample_number) {
-                    state.current_sample_number = 0;
-                } else {
-                    state.current_buffer.erase(
-                        state.current_buffer.begin(),
-                        std::next(state.current_buffer.begin(), state.current_sample_number));
-                }
             }
         }
         LOG_TRACE(Audio_DSP, "partially updating embedded buffer addr={:#010x} len={} id={}",

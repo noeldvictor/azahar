@@ -145,6 +145,15 @@ TEST_CASE("PCM decoding preserves samples across deque blocks", "[audio_core][co
                             std::bit_cast<s16>(expected16_bits));
                 }
             }
+
+            for (const std::size_t first_sample :
+                 std::array{std::size_t{0}, sample_count / 2, sample_count}) {
+                CAPTURE(first_sample);
+                const auto suffix = AudioCore::Codec::DecodePCM16FromSample(
+                    channels, pcm16.data(), sample_count, first_sample);
+                REQUIRE(suffix.size() == sample_count - first_sample);
+                REQUIRE(std::equal(suffix.begin(), suffix.end(), decoded16.begin() + first_sample));
+            }
         }
     }
 }
