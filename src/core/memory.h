@@ -5,13 +5,10 @@
 #pragma once
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/vector.hpp>
-#include "common/arch.h"
-#include "common/assert.h"
 #include "common/common_types.h"
 #include "common/memory_ref.h"
 #include "common/swap.h"
@@ -68,21 +65,20 @@ struct PageTable {
      */
 
     // The reason for this rigmarole is to keep the 'raw' and 'refs' arrays in sync.
-    // We need 'raw' for Dynarmic and 'refs' for serialization. On AArch64, raw entries are
-    // adjusted so Dynarmic can add the full guest address instead of masking its page offset.
+    // We need 'raw' for Dynarmic and 'refs' for serialization.
     struct Pointers {
 
         struct Entry {
             Entry(Pointers& pointers_, VAddr idx_) : pointers(pointers_), idx(idx_) {}
 
             Entry& operator=(MemoryRef value) {
-                pointers.raw[idx] = EncodeForDynarmic(value.GetPtr(), idx);
+                pointers.raw[idx] = value.GetPtr();
                 pointers.refs[idx] = std::move(value);
                 return *this;
             }
 
             operator u8*() {
-                return DecodeFromDynarmic(pointers.raw[idx], idx);
+                return pointers.raw[idx];
             }
 
         private:
@@ -99,35 +95,6 @@ struct PageTable {
         }
 
     private:
-        static u8* EncodeForDynarmic(u8* pointer, VAddr page_index) {
-            if constexpr (!CITRA_ARCH(arm64)) {
-                return pointer;
-            }
-            if (pointer == nullptr) {
-                return nullptr;
-            }
-
-            const auto guest_page_base = static_cast<std::uintptr_t>(page_index) << CITRA_PAGE_BITS;
-            const auto encoded_address =
-                reinterpret_cast<std::uintptr_t>(pointer) - guest_page_base;
-            ASSERT_MSG(encoded_address != 0,
-                       "A mapped page cannot use a null Dynarmic absolute offset");
-            return reinterpret_cast<u8*>(encoded_address);
-        }
-
-        static u8* DecodeFromDynarmic(u8* pointer, VAddr page_index) {
-            if constexpr (!CITRA_ARCH(arm64)) {
-                return pointer;
-            }
-            if (pointer == nullptr) {
-                return nullptr;
-            }
-
-            const auto guest_page_base = static_cast<std::uintptr_t>(page_index) << CITRA_PAGE_BITS;
-            return reinterpret_cast<u8*>(reinterpret_cast<std::uintptr_t>(pointer) +
-                                         guest_page_base);
-        }
-
         std::array<u8*, PAGE_TABLE_NUM_ENTRIES> raw;
         std::array<MemoryRef, PAGE_TABLE_NUM_ENTRIES> refs;
         friend struct PageTable;
@@ -141,11 +108,7 @@ struct PageTable {
      */
     std::array<PageType, PAGE_TABLE_NUM_ENTRIES> attributes;
 
-    static constexpr bool UsesAbsoluteOffsetPageTable() {
-        return CITRA_ARCH(arm64);
-    }
-
-    std::array<u8*, PAGE_TABLE_NUM_ENTRIES>& GetDynarmicPageTable() {
+    std::array<u8*, PAGE_TABLE_NUM_ENTRIES>& GetPointerArray() {
         return pointers.raw;
     }
 
@@ -174,8 +137,7 @@ private:
         ar & attributes;
         ar & watchpoint_pages_map;
         for (std::size_t i = 0; i < PAGE_TABLE_NUM_ENTRIES; i++) {
-            pointers.raw[i] =
-                Pointers::EncodeForDynarmic(pointers.refs[i].GetPtr(), static_cast<VAddr>(i));
+            pointers.raw[i] = pointers.refs[i].GetPtr();
         }
     }
     friend class boost::serialization::access;
