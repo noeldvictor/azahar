@@ -41,10 +41,9 @@ VertexLoader::VertexLoader(Memory::MemorySystem& memory_, const PipelineRegs& re
                 vertex_attribute_sources[attribute_index] = loader_config.data_offset + offset;
                 vertex_attribute_strides[attribute_index] =
                     static_cast<u32>(loader_config.byte_count);
-                vertex_attribute_formats[attribute_index] =
-                    attribute_config.GetFormat(attribute_index);
-                vertex_attribute_elements[attribute_index] =
-                    attribute_config.GetNumElements(attribute_index);
+                vertex_attribute_loaders[attribute_index] =
+                    VertexLoaderUtils::Decode(attribute_config.GetFormat(attribute_index),
+                                              attribute_config.GetNumElements(attribute_index));
                 offset += attribute_config.GetStride(attribute_index);
             } else if (attribute_index < 16) {
                 // Attribute ids 12, 13, 14 and 15 signify 4, 8, 12 and 16-byte paddings,
@@ -73,7 +72,8 @@ void VertexLoader::LoadVertex(PAddr base_address, u32 index, u32 vertex, Attribu
         // TODO(yuriks): In this case, no data gets loaded and the vertex
         // remains with the last value it had. This isn't currently maintained
         // as global state, however, and so won't work in Citra yet.
-        if (vertex_attribute_elements[i] == 0) {
+        const auto attribute_loader = vertex_attribute_loaders[i];
+        if (attribute_loader == VertexLoaderUtils::AttributeLoader::Invalid) {
             LOG_ERROR(HW_GPU, "Vertex retension unimplemented");
             continue;
         }
@@ -82,27 +82,8 @@ void VertexLoader::LoadVertex(PAddr base_address, u32 index, u32 vertex, Attribu
         const PAddr source_addr =
             base_address + vertex_attribute_sources[i] + vertex_attribute_strides[i] * vertex;
 
-        switch (vertex_attribute_formats[i]) {
-        case PipelineRegs::VertexAttributeFormat::BYTE:
-            LoadAttribute<s8>(source_addr, i, input);
-            break;
-        case PipelineRegs::VertexAttributeFormat::UBYTE:
-            LoadAttribute<u8>(source_addr, i, input);
-            break;
-        case PipelineRegs::VertexAttributeFormat::SHORT:
-            LoadAttribute<s16>(source_addr, i, input);
-            break;
-        case PipelineRegs::VertexAttributeFormat::FLOAT:
-            LoadAttribute<f32>(source_addr, i, input);
-            break;
-        }
-
-        // Default attribute values set if array elements have < 4 components. This
-        // is *not* carried over from the default attribute settings even if they're
-        // enabled for this attribute.
-        for (u32 comp = vertex_attribute_elements[i]; comp < 4; comp++) {
-            input[i][comp] = comp == 3 ? f24::One() : f24::Zero();
-        }
+        const void* source = memory.GetPhysicalPointer(source_addr);
+        VertexLoaderUtils::LoadAttribute(attribute_loader, source, input[i]);
     }
 }
 
