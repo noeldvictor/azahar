@@ -265,7 +265,11 @@ SHADER_TEST_CASE("DP4", "[video_core][shader]") {
     REQUIRE(shader.Run({vec4_inf, vec4_zero}).x == 0.0f);
     REQUIRE(std::isnan(shader.Run({vec4_nan, vec4_zero}).x));
 
-    REQUIRE(shader.Run({vec4_one, vec4_one}).x == 4.0f);
+    REQUIRE(shader.Run({vec4_one, vec4_one}) == Common::Vec4f::AssignToAll(4.0f));
+
+    const Common::Vec4f lhs = {2.0f, -3.0f, 4.0f, -5.0f};
+    const Common::Vec4f rhs = {5.0f, 6.0f, -7.0f, 8.0f};
+    REQUIRE(shader.Run({lhs, rhs}) == Common::Vec4f::AssignToAll(-76.0f));
 }
 
 SHADER_TEST_CASE("DPH", "[video_core][shader]") {
@@ -281,8 +285,13 @@ SHADER_TEST_CASE("DPH", "[video_core][shader]") {
     REQUIRE(shader.Run({vec4_inf, vec4_zero}).x == 0.0f);
     REQUIRE(std::isnan(shader.Run({vec4_nan, vec4_zero}).x));
 
-    REQUIRE(shader.Run({vec4_one, vec4_one}).x == 4.0f);
-    REQUIRE(shader.Run({vec4_zero, vec4_one}).x == 1.0f);
+    REQUIRE(shader.Run({vec4_one, vec4_one}) == Common::Vec4f::AssignToAll(4.0f));
+    REQUIRE(shader.Run({vec4_zero, vec4_one}) == Common::Vec4f::AssignToAll(1.0f));
+
+    // DPH replaces the first source's W component with one before multiplying.
+    const Common::Vec4f lhs = {2.0f, -3.0f, 4.0f, NAN};
+    const Common::Vec4f rhs = {5.0f, 6.0f, -7.0f, 8.0f};
+    REQUIRE(shader.Run({lhs, rhs}) == Common::Vec4f::AssignToAll(-28.0f));
 }
 
 SHADER_TEST_CASE("LG2", "[video_core][shader]") {

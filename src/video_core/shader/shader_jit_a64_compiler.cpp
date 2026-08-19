@@ -727,9 +727,10 @@ void JitShader::Compile_DP4(Instruction instr) {
 
     Compile_SanitizedMul(SRC1, SRC2, VSCRATCH0);
 
+    // The first pairwise add produces [X+Y, Z+W, X+Y, Z+W]. Repeating the same
+    // vector form computes (X+Y)+(Z+W) in every lane with the same operand order.
     FADDP(SRC1.S4(), SRC1.S4(), SRC1.S4());
-    FADDP(SRC1.toS(), SRC1.toD().S2());
-    DUP(SRC1.S4(), SRC1.Selem()[0]);
+    FADDP(SRC1.S4(), SRC1.S4(), SRC1.S4());
 
     Compile_DestEnable(instr, SRC1);
 }
@@ -748,9 +749,10 @@ void JitShader::Compile_DPH(Instruction instr) {
 
     Compile_SanitizedMul(SRC1, SRC2, VSCRATCH0);
 
+    // Preserve the x64 pairwise grouping while replicating the dot product in
+    // every lane, avoiding a scalar reduction followed by a vector broadcast.
     FADDP(SRC1.S4(), SRC1.S4(), SRC1.S4());
-    FADDP(SRC1.toS(), SRC1.toD().S2());
-    DUP(SRC1.S4(), SRC1.Selem()[0]);
+    FADDP(SRC1.S4(), SRC1.S4(), SRC1.S4());
 
     Compile_DestEnable(instr, SRC1);
 }
