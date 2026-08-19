@@ -120,19 +120,27 @@ TEST_CASE("PICA packed shader input map preserves register assignment semantics"
 
             Pica::ShaderUnit reference;
             Pica::ShaderUnit packed;
+            Pica::ShaderUnit configured;
             auto* reference_bytes = reinterpret_cast<u8*>(reference.input.data());
             auto* packed_bytes = reinterpret_cast<u8*>(packed.input.data());
+            auto* configured_bytes = reinterpret_cast<u8*>(configured.input.data());
             for (u32 byte = 0; byte < sizeof(reference.input); ++byte) {
                 reference_bytes[byte] = static_cast<u8>(byte * 61 + seed * 13 + count);
                 packed_bytes[byte] = reference_bytes[byte];
+                configured_bytes[byte] = reference_bytes[byte];
             }
 
-            reference.LoadInput(config, source);
+            for (u32 attribute = 0; attribute < count; ++attribute) {
+                reference.input[config.GetRegisterForAttribute(attribute)] = source[attribute];
+            }
             const Pica::ShaderInputMap input_map{config};
             packed.LoadInput(input_map, source);
+            configured.LoadInput(config, source);
 
             CAPTURE(count, seed, packed_map);
             REQUIRE(std::memcmp(reference.input.data(), packed.input.data(),
+                                sizeof(reference.input)) == 0);
+            REQUIRE(std::memcmp(reference.input.data(), configured.input.data(),
                                 sizeof(reference.input)) == 0);
         }
     }

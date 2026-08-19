@@ -2,12 +2,35 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <bit>
+#include <cstring>
+
 #include "common/assert.h"
 #include "common/bit_set.h"
+#include "common/common_funcs.h"
 #include "video_core/pica/regs_shader.h"
 #include "video_core/pica/shader_unit.h"
 
 namespace Pica {
+
+namespace {
+
+FORCE_INLINE void LoadMappedInput(ShaderUnit& unit, u64 registers, u32 remaining,
+                                  const AttributeBuffer& buffer) {
+    DEBUG_ASSERT(remaining != 0);
+    if (remaining == 1) {
+        unit.input[registers & 0xF] = buffer[0];
+        return;
+    }
+
+    const auto* attribute = buffer.data();
+    do {
+        unit.input[registers & 0xF] = *attribute++;
+        registers >>= 4;
+    } while (--remaining != 0);
+}
+
+} // Anonymous namespace
 
 ShaderUnit::ShaderUnit(GeometryEmitter* emitter) : emitter_ptr{emitter} {}
 
@@ -20,20 +43,25 @@ ShaderInputMap::ShaderInputMap(const ShaderRegs& config)
 
 void ShaderUnit::LoadInput(const ShaderRegs& config, const AttributeBuffer& buffer) {
     const u32 max_attribute = config.max_input_attribute_index;
-    for (u32 attr = 0; attr <= max_attribute; ++attr) {
-        const u32 reg = config.GetRegisterForAttribute(attr);
-        input[reg] = buffer[attr];
+    if (max_attribute == 0) {
+        input[config.input_attribute_to_register_map_low & 0xF] = buffer[0];
+        return;
     }
+
+    u64 registers;
+    if constexpr (std::endian::native == std::endian::little) {
+        static_assert(offsetof(ShaderRegs, input_attribute_to_register_map_high) ==
+                      offsetof(ShaderRegs, input_attribute_to_register_map_low) + sizeof(u32));
+        std::memcpy(&registers, &config.input_attribute_to_register_map_low, sizeof(registers));
+    } else {
+        registers = (static_cast<u64>(config.input_attribute_to_register_map_high) << 32) |
+                    config.input_attribute_to_register_map_low;
+    }
+    LoadMappedInput(*this, registers, max_attribute + 1, buffer);
 }
 
 void ShaderUnit::LoadInput(const ShaderInputMap& input_map, const AttributeBuffer& buffer) {
-    u64 registers = input_map.registers;
-    u32 remaining = input_map.count;
-    const auto* attribute = buffer.data();
-    while (remaining-- != 0) {
-        input[registers & 0xF] = *attribute++;
-        registers >>= 4;
-    }
+    LoadMappedInput(*this, input_map.registers, input_map.count, buffer);
 }
 
 void ShaderUnit::WriteOutput(const ShaderRegs& config, AttributeBuffer& buffer) {
