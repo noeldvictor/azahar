@@ -7127,3 +7127,64 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   old-value reads, comparisons, per-word procedural switches, and circular index work makes lower
   energy plausible on this path, but whole-game frametime, thermal slope, and battery power still
   require a controlled matched A/B.
+
+## Low-Lane AArch64 PICA Partial Stores (2026-08-19)
+
+- Entry 142 tightens the existing store-only lowering for six partial destination masks. A source
+  group beginning at PICA X is already in the low scalar portion of its SIMD register. `x` and `xy`
+  therefore use immediate `STR S`/`STR D` instead of first calculating an address and executing an
+  `ST1` element store. Noncontiguous `xz`, `xw`, `xyw`, and `xzw` use the same direct first store,
+  then calculate only the remaining group's address. Their recurring destination-write bodies fall
+  from four instructions to three; `x`/`xy` fall from two to one.
+- Disabled lanes remain untouched because scalar `STR S` and `STR D` write exactly the low four or
+  eight bytes. The empty mask, full `STR Q`, non-X-leading masks, and contiguous `xyz` post-indexed
+  route are unchanged. Lanes Y/Z/W retain `ST1` because they are not the low scalar register.
+  Output and temporary offsets are aligned multiples of the store width and well inside the scaled
+  immediate range. The Arm Architecture Reference Manual DDI0487 M.c scalar SIMD `STR` and earlier
+  `ST1` element semantics establish the encoding/correctness model; physical Thor timing decided
+  acceptance.
+- The standalone Android 29 ARM64 harness first compared every byte against an independent expected
+  image for all six masks, eight destination offsets, distinct lane values, and untouched sentinels.
+  It then used eleven alternating old/new-order samples, with eight exact write sequences per inner
+  iteration. The longer confirmation medians were:
+
+  | Thor core | `x` | `xy` | `xz` | `xw` | `xyw` | `xzw` |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 5.901266x | 1.089771x | 1.351870x | 1.318610x | 0.997448x | 4.466630x |
+  | A715 CPU 3 | 1.000873x | 0.995859x | 0.999763x | 0.999827x | 0.995792x | 1.001867x |
+  | A710 CPU 5 | 0.998092x | 1.008555x | 1.204097x | 1.190127x | 1.207907x | 1.205705x |
+  | X3 CPU 7 | 0.997424x | 1.002594x | 0.998304x | 1.000084x | 0.999953x | 1.000223x |
+
+  Every cell stayed above the 0.995 acceptance floor. A715 and X3 results are correctly described
+  as ties; the material gains concentrate on A510's element-store forms and A710's two-store forms.
+  The Thor was AC-powered at 80%, 4.269 V, and 26.0 C before testing, so these are sustained
+  instruction-path measurements rather than battery-discharge watt evidence.
+- Permanent coverage retains all 14 partial masks and both output banks, and now specifically runs
+  the six direct-store masks through output register 15 in both banks and temporary register 15.
+  Enabled components receive distinct inputs while every disabled component retains a nonzero
+  sentinel. The complete `[video_core][shader]` interpreter/JIT suite passed 18,506 assertions in
+  52 cases independently on A510 CPU0, A715 CPU3, A710 CPU5, and X3 CPU7. The JDK 17 native ARM64
+  build compiled the changed JIT and tests and linked `libcitra-android.so` plus the test runner.
+  The established complete `[video_core]` gate then passed 433,094 assertions in 82 cases on A510.
+- Source/test commit `cf7285cd8` was pushed directly to `origin/master` with command-line Git over
+  SSH. The post-commit JDK 17 `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache`
+  package build passed. The ARM64-only, v2-signed APK is 29,010,184 bytes with SHA-256
+  `9DA8210CA63082D1ECC9D60AE95EF1E27C09330794F206E38F971B9C50FBB629`; its signer certificate
+  SHA-256 is `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `cf7285cd8-vanilla-thor`, minimum SDK 29,
+  and target SDK 37. Wi-Fi ADB installed it successfully; the app was immediately force-stopped,
+  no app PID remained, and `stay_on_while_plugged_in` was restored and verified as `0`. Neither app
+  nor game was launched.
+- Exact bounded cleanup removed 2,500,666,313 logical host bytes and recovered 2,029,305,856
+  physical bytes, leaving 51,789,287,424 bytes free on C:. Retained repo build output is only the
+  29,010,184-byte APK and 476-byte metadata; the active ARM64 CMake/Ninja cache is 2,807,835,967
+  bytes. The 449,916,600-byte native test ELF, Gradle/JNI/R8/symbol/mapping staging, and all host/
+  device benchmark helpers were removed. No PDF, benchmark, test binary, rendered page, APK, or
+  scratch note was committed.
+- This is optimization/candidate entry 142 and raises the total overlapping ledger count to 142.
+  The table measures only a saturated generated destination-store body; its ratios cannot be added
+  to the prior 141 entries or converted into whole-game FPS or battery watts. The main remaining
+  performance question is subsystem-level CPU/GPU synchronization, Vulkan barrier/render-pass
+  churn, texture upload/conversion traffic, hardware-shader fallback frequency, pipeline churn,
+  frame pacing, and idle wakeups. Those need counters plus matched scenes; further instruction
+  reductions should not substitute for that whole-emulator accounting.

@@ -342,6 +342,15 @@
   permanent `All Source Swizzles` generated-shader test. Do not claim this affects draws that
   successfully use hardware vertex shaders; it targets immediate, geometry, and software-fallback
   shader invocations.
+- AArch64 PICA partial destination stores must keep disabled components untouched without loading
+  and blending the old vector. Preserve paired X/Y and Z/W lane groups, the zero-write empty mask,
+  and full-mask `STR Q`. For `x`/`xy`, store low `S`/`D` directly with an immediate `STR`; for
+  `xz`/`xw`/`xyw`/`xzw`, use that direct first store and form only the remaining group's address.
+  Keep contiguous `xyz` on its post-indexed two-store path and retain `ST1` for every nonzero source
+  lane. Do not generalize scalar `STR` to lanes one through three. Preserve both output banks and
+  far output/temporary offsets in the permanent destination-mask test. Exact affected-path timing
+  ranged from 0.997x-5.90x on A510, 0.996x-1.002x on A715, 0.998x-1.208x on A710, and
+  0.997x-1.003x on X3; near-one results are ties, not whole-game gains.
 - AArch64 PICA `EX2`/`LG2` calls made while a guest `CALL` return is live in `X30` must preserve that
   guest link in reserved `X16` around the local math-helper `BL`, then restore `X30` and return
   architecturally through `X30`. Keep the helper target passed by reference: Oaknut attaches an

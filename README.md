@@ -28,7 +28,7 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The overlapping Thor evidence ledger currently contains **141 accepted optimization/candidate
+The overlapping Thor evidence ledger currently contains **142 accepted optimization/candidate
 entries**. This is the total ledger count; smaller figures quoted for a recent time window or code
 slice are subsets, not the project total. The entries are not additive percentages: many affect
 different paths, and whole-game FPS or battery watts still require a matched title/scene/device A/B.
@@ -108,7 +108,10 @@ This fork has moved away from stock Azahar in visible ways:
 - The AArch64 PICA vertex-shader JIT lowers 149 of 256 source selectors to at most two
   register-only AdvSIMD permutations. The other 107 retain exact native table lookup.
 - Partial PICA destination masks use native AArch64 SIMD lane stores instead of loading,
-  blending, and rewriting the entire destination vector. Full-vector stores stay native `STR Q`.
+  blending, and rewriting the entire destination vector. Masks `x`/`xy` store the low scalar
+  register directly, while `xz`/`xw`/`xyw`/`xzw` do the same before their remaining lane store,
+  removing one address instruction from each affected write. Full-vector stores stay native
+  `STR Q`.
 - The AArch64 PICA JIT caches the selected output-register bank pointer once per shader invocation
   and refreshes it only after geometry `EMIT`, removing repeated bank loads and address generation
   from every ordinary output write.
@@ -473,6 +476,15 @@ the per-word loop. Exact already-dirty kernel medians improved by **1.26x-5.66x 
 The complete 432,920-assertion video-core suite passes on all three accessible classes. X3 was
 parked by Android `core_ctl`. These are dirty-LUT upload-path ratios, not additive FPS or measured
 battery-watt gains.
+
+Optimization 142 streamlines six AArch64 PICA partial-destination masks whose first stored group is
+the low SIMD lane. `x` and `xy` fall from `ADD + ST1` to one immediate `STR S/D`; `xz`, `xw`,
+`xyw`, and `xzw` fall from four store/address instructions to three. Every other partial mask and
+the full-vector path remain unchanged. Exact wall-powered Thor medians ranged from **0.997x-5.90x
+on A510**, **0.996x-1.002x on A715**, **0.998x-1.208x on A710**, and **0.997x-1.003x on X3**;
+near-one values are ties under the all-core acceptance floor, not claimed speedups. The complete
+PICA shader suite passed 18,506 assertions on all four classes. These are affected-store-path
+results, not whole-game FPS or measured battery-watt gains.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
