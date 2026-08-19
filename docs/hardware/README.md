@@ -21,9 +21,16 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
 
 - Fold only measured small immediate left shifts into AArch64's shifted-register `ADD`. The
   accepted Dynarmic gate is a sole immediately adjacent flag-free A32 `LSL #1..#4` feeding ADD;
-  shared, flag-setting, variable, immediate-source, and wider forms remain split. Exact all-core
+  shared, carry-producing, variable, immediate-source, and wider forms remain split. Exact all-core
   measurements overruled the tempting instruction-count generalization because base-dependent
   shifts 16/31 fell to about half speed on A715/A710/X3.
+- Measure flag-setting shifted arithmetic separately from no-flags ADD/SUB. The basic arithmetic
+  rows are on X3 page 15, A715 and A710 page 17, and A510 page 14, and AArch64 can encode shifted
+  `ADDS`/`SUBS`; those facts prove availability, not a universal speedup. Exact Thor runs accepted
+  only a sole adjacent no-carry `LSL #1..#4` feeding normal-carry-in ADD/SUB with exactly one NZCV
+  pseudo-result. Every accepted dependency shape was neutral or faster on A510/A715/A710/X3.
+  Flag-setting LSR/ASR and LSL 5..31 stay split because base-dependent forms fell to roughly
+  0.51x-0.53x on the big cores. Preserve this narrower gate for ADDS/SUBS/CMN/CMP.
 - Treat right shifts as a separately measured instruction family. AArch64 shifted-register `ADD`
   encodes `LSR` and `ASR` immediates through 31, and representative 1/2/3/4/8/16/31 measurements
   retained or improved throughput on every Thor core class. The accepted Dynarmic path therefore

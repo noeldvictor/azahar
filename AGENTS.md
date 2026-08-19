@@ -756,6 +756,18 @@
   representative shifts 1/2/3/4/8/16/31 must remain the performance gate: affected-path medians
   improved on A510/A715/A710, while X3 independent work was neutral and dependency chains won.
   Keep all claims path-local until a matched title and battery-power A/B exists.
+- ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32 `LogicalShiftLeft32`
+  into flag-setting `Add32` or normal-carry-in `Sub32` only for immediate shifts 1 through 4 and
+  only when the arithmetic instruction's sole pseudo-operation is `GetNZCVFromOp`. Emit one
+  `ADDS`/`SUBS Wd,Wbase,Windex,LSL #shift`; this covers ARM/Thumb-2 ADDS/SUBS and the same IR used
+  by CMN/CMP. The shift must have one use and no carry pseudo-result. Keep shared/non-adjacent,
+  immediate-source, variable, zero, carry/overflow/other pseudo users, every flag-setting LSR/ASR,
+  and flag-setting LSL 5 through 31 on the established split lowering. Preserve destination/base/
+  index aliases, comparison no-write behavior, full NZCV including carry and overflow boundaries,
+  Q/GE, unrelated GPRs, and FPSCR in permanent ARM and Thumb tests. Do not generalize from static
+  instruction count: base-dependent right/wide-shift forms measured about 0.51x-0.53x on Thor's
+  A715/A710/X3, while the accepted small-LSL range stayed above the 0.995 floor on all four core
+  classes. Keep gains path-local until a matched title and battery-power A/B exists.
 - ARM64 Dynarmic may alias a sole, immediately adjacent, non-immediate A32 LSL/LSR/ASR producer
   into an ordinary flag-free/carry-free `Sub32` only when its immediate is 1 through 31 and the
   subtraction carry-in is the normal true value. Emit one

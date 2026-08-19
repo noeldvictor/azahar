@@ -6003,3 +6003,79 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   plausible only when this guest path executes; whole-game frametime, thermal slope, and battery
   watts still require a controlled matched title/scene/cache/renderer/driver/resolution/layout/
   performance-mode/fan/brightness/duration A/B run.
+
+## ARM64 Flag-Setting Small-LSL Arithmetic Folding (2026-08-19)
+
+- Command-line Git refreshed authoritative `upstream/master` at
+  `db15d78feb97ed19b6fc0354481e74694d339594`; the fork was 229 commits ahead and zero behind before
+  this source change, so no merge was needed. RPCS3 master was also refreshed at
+  `ddd82ecada385db436f77bed21ffca46da5d008b`. Its recent
+  [`Additional constant folding for intrinsics`](https://github.com/RPCS3/rpcs3/commit/502ea1f43624)
+  change is x86-intrinsic-specific and was not copied, but it reinforces the transferable rule:
+  eliminate redundant materialization only behind an exact semantic and target-performance gate.
+- Dynarmic already folded selected no-flags shifted ADD/SUB forms, but rejected every arithmetic
+  instruction with an associated pseudo-result. A32 ADDS/SUBS/CMN/CMP create `Add32` or normal-
+  carry-in `Sub32` plus `GetNZCVFromOp`; their arithmetic NZCV does not consume the shift's carry.
+  The new gate therefore requires exactly that sole NZCV pseudo-operation, a sole-use immediately
+  adjacent non-immediate `LogicalShiftLeft32` producer with no carry pseudo-operation, and an
+  immediate amount from 1 through 4. Overflow/carry/other pseudo users, shared or non-adjacent
+  shifts, immediate sources, variable/zero shifts, every flag-setting LSR/ASR, and LSL 5..31 retain
+  the established split lowering. Existing no-flags gates are unchanged.
+- The initial disassembly-checked helper covered ADDS and SUBS, LSL/LSR/ASR amounts
+  1/2/3/4/5/8/16/31, and independent/base-dependent/shifted-index-dependent shapes: 144 rows per
+  core, 100,000 iterations, and nine alternating-order samples. Checksums included the result and
+  final carry and matched for every old/fused pair. A global flag-setting fold was rejected:
+  base-dependent right-shift or wide-LSL rows fell to 0.516636x on A715, 0.532947x on A710, and
+  0.512581x on X3, while X3 independent right shifts were also slightly negative around 0.981x.
+- The accepted LSL 1..4 subset received a 1,000,000-iteration, 21-alternating-sample confirmation.
+  The 24 rows per core all matched and measured the following old-over-fused median ranges:
+
+  | Thor core | ADDS independent | ADDS base dependency | ADDS index dependency | SUBS independent | SUBS base dependency | SUBS index dependency |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 1.386344x-1.411093x | 0.999987x-1.002197x | 0.997101x-1.000758x | 1.753822x-1.783091x | 0.997249x-1.003986x | 0.996813x-0.999658x |
+  | A715 CPU 3 | 1.785637x-1.790345x | 1.030837x-1.036421x | 1.994028x-2.000236x | 1.770285x-1.789932x | 1.030944x-1.037272x | 1.996517x-1.999474x |
+  | A710 CPU 6 | 1.387422x-1.408469x | 1.044024x-1.052955x | 1.984874x-1.988536x | 1.387526x-1.393477x | 1.044189x-1.052473x | 1.987025x-1.989183x |
+  | X3 CPU 7 | 1.121517x-1.162937x | 1.022735x-1.026055x | 2.004439x-2.016717x | 1.153209x-1.155187x | 1.021842x-1.026588x | 2.009119x-2.016168x |
+
+  No accepted row crossed the conservative 0.995 floor. Android had parked CPU7, so the X3 runner
+  used temporary workers only to schedule a waiting shell on CPU7, pinned that shell, then killed
+  and reaped every worker before releasing the benchmark. Thor began on AC power with USB and
+  wireless charging false, 80% charge, 4.269 V, and 22.0 C. These are wall-powered instruction-
+  kernel timings, not a battery-discharge watt measurement.
+- The checked Cortex-X3, A715, A710, and A510 basic arithmetic/flag-setting tables are on pages 15,
+  17, 17, and 14. The A-profile architecture and those core guides establish that shifted ADDS/SUBS
+  are real native operations, but the physical heterogeneous-core results above control the narrow
+  1..4 gate and the right/wide-shift no-go.
+- Temporary actual-emitter tracing captured words `2b130674`, `2b130a74`, `2b130e74`, and
+  `2b131274` for ADD and `6b130674`, `6b130a74`, `6b130e74`, and `6b131274` for SUB.
+  `llvm-objdump` decoded them as exactly one `adds/subs w20,w19,w19,lsl #1/#2/#3/#4`. No rejected
+  shift entered the traced fused branch. The trace was removed; the clean 449,230,928-byte
+  unstripped test ELF and its 26,176,904-byte stripped copy contained no trace marker. The stripped
+  SHA-256 is `FA8C7B9DFDA8B4B688EAC274B4D410C4AF0EEF59498977F9C6C7CC80800D9E3D`.
+- Permanent ARM and Thumb-2 coverage exercises ADDS/SUBS/CMN/CMP; LSL/LSR/ASR encodings at
+  0/1/2/3/4/5/16/31; every destination/base/index alias layout; full-width carry and signed-overflow
+  boundaries; comparison no-write behavior; every unrelated GPR; NZCV/Q/GE; and FPSCR. The clean
+  focused case passed 91,392 assertions independently on A510 CPU 0, A715 CPU 3, A710 CPU 6, and
+  X3 CPU 7. The final trace-free full `[core][arm][dynarmic]` suite passed 436,628 assertions in
+  45 cases on A715. Source/test commit `8c4f938d1` was pushed directly to `origin/master` over
+  command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 5 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,196 bytes, has SHA-256
+  `51A6D46D303C84F1BD3B120D5D4B5D189A37DB1D3BC7607672021F6C9E2CDA55`, and reports package
+  `org.azahar_emu.azahar.debug` version `8c4f938d1-vanilla-thor`. Wi-Fi ADB installed it, then a
+  force-stop verified `stopped=true` with no device PID. Neither app nor game was launched.
+- Exact bounded cleanup removed 2,462,888,344 logical host bytes: 80,829,781 bytes of scratch,
+  the 449,230,928-byte unstripped test ELF, and 1,932,827,635 bytes of reproducible Gradle/JNI/R8/
+  symbol/mapping staging. C: recovered 2,019,205,120 physical bytes and reports 56,021,700,608 bytes
+  free. The retained active ARM64 CMake/Ninja cache is 2,793,216,649 bytes; retained build output is
+  only the 29,010,196-byte APK and 476-byte metadata. Four exact device helpers totaling 54,642,608
+  bytes were removed from `/data/local/tmp`. No PDF, benchmark, test binary, rendered manual page,
+  or scratch note was committed.
+- This is optimization/candidate entry 125 in the overlapping Thor ledger. It ships one bounded
+  flag-setting small-LSL fold and permanently rejects a tempting global flag-setting shifted-
+  arithmetic fold. The exact-loop ratios cannot be added to the other 124 entries or converted into
+  whole-emulator FPS or watts. Lower code-cache, fetch/decode, dependency, and integer-issue work
+  makes lower energy plausible only when this guest path executes; whole-game frametime, thermal
+  slope, and battery watts still require a controlled matched title/scene/cache/renderer/driver/
+  resolution/layout/performance-mode/fan/brightness/duration A/B run.

@@ -975,6 +975,20 @@ ARM Dynarmic suite passed 345,236 assertions in 44 cases. This is optimization 1
 shifted-`BIC` sibling was rejected after repeatable A510 base-dependent losses; these are path-local
 instruction-kernel results, not an additive whole-emulator speedup or measured watt reduction.
 
+Flag-setting A32 ARM/Thumb-2 `ADD`, `SUB`, `CMN`, and `CMP` now fold a sole immediately adjacent
+`LSL #1..#4` into one native ARM64 shifted-register `ADDS` or `SUBS`. The gate requires normal
+addition/subtraction carry-in, a non-immediate one-use shift with no carry pseudo-result, and
+exactly one arithmetic NZCV pseudo-result; all other side users stay split. Actual JIT words decoded
+as the eight exact `adds/subs Wd,Wbase,Windex,lsl #1..#4` forms. Long alternating Thor medians were
+neutral or faster in every accepted dependency shape: minimum accepted ratios were 0.997x on A510,
+1.031x on A715, 1.044x on A710, and 1.022x on X3, with independent/index-dependent gains reaching
+1.78x/1.00x, 1.79x/2.00x, 1.41x/1.99x, and 1.16x/2.02x respectively. Flag-setting `LSR`/`ASR`
+and `LSL #5..#31` deliberately remain split because base-dependent forms fell to about
+0.51x-0.53x on A715/A710/X3. The focused test passed 91,392 assertions on every Thor core class and
+the full ARM Dynarmic suite passed 436,628 assertions in 45 cases. This is optimization 125; it
+removes one host instruction only on matching paths and is not an additive whole-emulator FPS or
+measured-watt percentage.
+
 ## Vulkan Worker-Power Updates
 
 Vulkan command chunks are recycled after their commands execute. Their command pointers and storage
