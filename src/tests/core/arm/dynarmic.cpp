@@ -3489,3 +3489,98 @@ TEST_CASE("Dynarmic A32 signed narrow loads fuse on callback and fastmem paths",
         }
     }
 }
+
+TEST_CASE("Dynarmic A32 shifted ADD preserves aliases, flags, and full-width wrapping",
+          "[core][arm][dynarmic]") {
+    struct RegisterLayout {
+        std::uint8_t destination;
+        std::uint8_t base;
+        std::uint8_t index;
+    };
+    constexpr std::array layouts{
+        RegisterLayout{0, 1, 2}, // Distinct operands.
+        RegisterLayout{1, 1, 2}, // Destination aliases the base.
+        RegisterLayout{2, 1, 2}, // Destination aliases the shifted index.
+        RegisterLayout{0, 1, 1}, // Base and shifted index alias.
+        RegisterLayout{1, 1, 1}, // All operands alias.
+    };
+    constexpr std::array<std::uint8_t, 7> shifts{1, 2, 3, 4, 5, 16, 31};
+
+    struct Inputs {
+        std::uint32_t base;
+        std::uint32_t index;
+    };
+    constexpr std::array inputs{
+        Inputs{0x00000000, 0x00000000},
+        Inputs{0x00000001, 0x00000001},
+        Inputs{0xffffffff, 0x00000001},
+        Inputs{0x00000001, 0xffffffff},
+        Inputs{0x7fffffff, 0x80000000},
+        Inputs{0x80000000, 0x7fffffff},
+        Inputs{0x01234567, 0x89abcdef},
+        Inputs{0xa5a55a5a, 0x5aa5a55a},
+    };
+    constexpr std::uint32_t preserved_flags = 0xf80f0000; // NZCV/Q/GE
+    constexpr std::uint32_t initial_fpscr = 0xa3400001; // N/C, rounding mode, IOC
+
+    for (const bool thumb : {false, true}) {
+        for (const auto& layout : layouts) {
+            for (const std::uint8_t shift : shifts) {
+                const std::uint32_t instruction = [&] {
+                    if (!thumb) {
+                        return 0xe0800000U |
+                               (static_cast<std::uint32_t>(layout.base) << 16) |
+                               (static_cast<std::uint32_t>(layout.destination) << 12) |
+                               (static_cast<std::uint32_t>(shift) << 7) | layout.index;
+                    }
+                    const std::uint32_t first_half = 0xeb00U | layout.base;
+                    const std::uint32_t second_half =
+                        (static_cast<std::uint32_t>(shift >> 2) << 12) |
+                        (static_cast<std::uint32_t>(layout.destination) << 8) |
+                        (static_cast<std::uint32_t>(shift & 3) << 6) | layout.index;
+                    return (second_half << 16) | first_half;
+                }();
+
+                for (const auto& input : inputs) {
+                    CAPTURE(thumb, layout.destination, layout.base, layout.index, shift, input.base,
+                            input.index, instruction);
+                    ArmTestCallbacks callbacks;
+                    callbacks.code = {
+                        instruction,
+                        thumb ? 0xe7fee7fe : 0xeafffffe, // B .
+                    };
+                    Dynarmic::A32::UserConfig config{&callbacks};
+                    Dynarmic::A32::Jit jit{config};
+
+                    std::array<std::uint32_t, 16> initial_regs{
+                        0xdeadbeef, 0x13579bdf, 0x2468ace0, 0x55aa55aa,
+                        0x10203040, 0x50607080, 0x90a0b0c0, 0xd0e0f001,
+                        0x01234567, 0x89abcdef, 0x0f1e2d3c, 0x4b5a6978,
+                        0x87654321, 0xcafebabe, 0xa5a55a5a, 0,
+                    };
+                    initial_regs[layout.base] = input.base;
+                    initial_regs[layout.index] =
+                        layout.base == layout.index ? input.base : input.index;
+                    const std::uint32_t expected =
+                        initial_regs[layout.base] + (initial_regs[layout.index] << shift);
+                    jit.Regs() = initial_regs;
+                    jit.SetCpsr(preserved_flags | 0x000001d0 | (thumb ? 0x20 : 0));
+                    jit.SetFpscr(initial_fpscr);
+                    callbacks.ticks_left = 2;
+                    jit.Run();
+
+                    CHECK(jit.Regs()[layout.destination] == expected);
+                    for (std::size_t reg = 0; reg < 15; ++reg) {
+                        if (reg == layout.destination) {
+                            continue;
+                        }
+                        CAPTURE(reg);
+                        CHECK(jit.Regs()[reg] == initial_regs[reg]);
+                    }
+                    CHECK((jit.Cpsr() & 0xf80f0000) == preserved_flags);
+                    CHECK(jit.Fpscr() == initial_fpscr);
+                }
+            }
+        }
+    }
+}

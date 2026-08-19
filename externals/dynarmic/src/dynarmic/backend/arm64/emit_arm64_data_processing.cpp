@@ -142,6 +142,33 @@ static bool IsAlreadyZeroExtendedByte(const IR::Value& value) {
            !IsSoleVariableShiftConsumer(producer);
 }
 
+static const IR::Inst* GetImmediatelyShiftedAddOperand(const IR::Inst* add) {
+    if (!add || add->GetOpcode() != IR::Opcode::Add32 || add->HasAssociatedPseudoOperation() ||
+        !add->GetArg(2).IsImmediate() || add->GetArg(2).GetU1()) {
+        return nullptr;
+    }
+
+    const IR::Value shifted_value = add->GetArg(1);
+    if (shifted_value.IsImmediate()) {
+        return nullptr;
+    }
+
+    const IR::Inst* shift = shifted_value.GetInst();
+    if (shift->GetOpcode() != IR::Opcode::LogicalShiftLeft32 ||
+        shift->HasAssociatedPseudoOperation() || shift->UseCount() != 1 ||
+        shift->GetNextInstruction() != add || shift->GetArg(0).IsImmediate() ||
+        !shift->GetArg(1).IsImmediate()) {
+        return nullptr;
+    }
+
+    // Wider immediates lose dependent throughput on the heterogeneous Thor cores.
+    const u8 shift_amount = shift->GetArg(1).GetU8();
+    if (shift_amount < 1 || shift_amount > 4) {
+        return nullptr;
+    }
+    return shift;
+}
+
 template<>
 void EmitIR<IR::Opcode::Pack2x32To1x64>(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* inst) {
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
@@ -359,6 +386,12 @@ void EmitIR<IR::Opcode::LogicalShiftLeft32>(oaknut::CodeGenerator& code, EmitCon
     const bool shift_is_zero_extended_byte = IsAlreadyZeroExtendedByte(inst->GetArg(1));
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    if (GetImmediatelyShiftedAddOperand(inst->GetNextInstruction()) == inst) {
+        ctx.reg_alloc.DefineAsExisting(inst, args[0]);
+        return;
+    }
+
     auto& operand_arg = args[0];
     auto& shift_arg = args[1];
     auto& carry_arg = args[2];
@@ -1031,6 +1064,18 @@ static void EmitAddSub(oaknut::CodeGenerator& code, EmitContext& ctx, IR::Inst* 
     const auto overflow_inst = inst->GetAssociatedPseudoOperation(IR::Opcode::GetOverflowFromOp);
 
     auto args = ctx.reg_alloc.GetArgumentInfo(inst);
+
+    if constexpr (bitsize == 32 && !sub) {
+        if (const IR::Inst* shift = GetImmediatelyShiftedAddOperand(inst)) {
+            auto Wresult = ctx.reg_alloc.WriteW(inst);
+            auto Wbase = ctx.reg_alloc.ReadW(args[0]);
+            auto Windex = ctx.reg_alloc.ReadW(args[1]);
+            RegAlloc::Realize(Wresult, Wbase, Windex);
+
+            code.ADD(Wresult, *Wbase, Windex, LSL, shift->GetArg(1).GetU8());
+            return;
+        }
+    }
 
     auto Rresult = ctx.reg_alloc.WriteReg<bitsize>(inst);
     auto Ra = ctx.reg_alloc.ReadReg<bitsize>(args[0]);
