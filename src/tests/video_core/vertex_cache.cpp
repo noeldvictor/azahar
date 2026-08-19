@@ -3,11 +3,13 @@
 // Refer to the license.txt file included.
 
 #include <array>
+#include <cstring>
 #include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "common/common_types.h"
+#include "video_core/pica/output_vertex.h"
 #include "video_core/pica/vertex_cache.h"
 
 namespace {
@@ -49,4 +51,24 @@ TEST_CASE("PICA vertex cache lookup matches scalar first-match semantics", "[vid
     REQUIRE(Pica::VertexCacheUtils::FindVertex(duplicate_ids.data(), duplicate_count, 42) == 5);
     REQUIRE(Pica::VertexCacheUtils::FindVertex(duplicate_ids.data(), duplicate_count, 99) ==
             duplicate_count);
+}
+
+TEST_CASE("PICA vertex cache copies every live output", "[video_core]") {
+    Pica::AttributeBuffer source{};
+    Pica::AttributeBuffer initial{};
+    auto* source_bytes = reinterpret_cast<u8*>(source.data());
+    auto* initial_bytes = reinterpret_cast<u8*>(initial.data());
+    for (u32 byte = 0; byte < sizeof(source); ++byte) {
+        source_bytes[byte] = static_cast<u8>(byte * 37 + 11);
+        initial_bytes[byte] = static_cast<u8>(byte * 53 + 19);
+    }
+
+    for (u32 count = 0; count <= Pica::VertexCacheUtils::MAX_BOUNDED_OUTPUTS; ++count) {
+        Pica::AttributeBuffer actual = initial;
+        Pica::VertexCacheUtils::CopyVertexOutputPrefix(actual, source, count);
+        CAPTURE(count);
+        REQUIRE(std::memcmp(actual.data(), source.data(), count * sizeof(source[0])) == 0);
+        REQUIRE(std::memcmp(actual.data() + count, initial.data() + count,
+                            (source.size() - count) * sizeof(source[0])) == 0);
+    }
 }

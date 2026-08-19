@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <bit>
+
 #include "common/arch.h"
 #include "common/archives.h"
 #include "common/common_funcs.h"
@@ -1290,54 +1292,101 @@ void PicaCore::LoadVertices(bool is_indexed) {
     geometry_pipeline.Setup(shader_engine.get());
     ASSERT(!geometry_pipeline.NeedIndexInput() || is_indexed);
 
-    for (u32 index = 0; index < pipeline.num_vertices; ++index) {
-        // Indexed rendering doesn't use the start offset
-        const u32 vertex = is_indexed
+    u32 vertex_cache_output_count = 0;
+    bool use_bounded_vertex_cache = false;
+    if (is_indexed) {
+        const u32 shader_output_count =
+            std::popcount(static_cast<u32>(regs.internal.vs.output_mask));
+        const u32 consumed_output_count =
+            pipeline.use_gs == PipelineRegs::UseGS::Yes
+                ? static_cast<u32>(pipeline.vs_outmap_total_minus_1_a) + 1
+                : static_cast<u32>(regs.internal.rasterizer.vs_output_total);
+        vertex_cache_output_count = shader_output_count;
+        use_bounded_vertex_cache = shader_output_count == consumed_output_count &&
+                                   shader_output_count <= VertexCacheUtils::MAX_BOUNDED_OUTPUTS;
+    }
+
+    const auto process_vertices = [&]<bool bounded_vertex_cache>() {
+        for (u32 index = 0; index < pipeline.num_vertices; ++index) {
+            // The bounded specialization is selected only for indexed draws.
+            const u32 vertex = [&] {
+                if constexpr (bounded_vertex_cache) {
+                    return index_u16 ? index_address_16[index] : index_address_8[index];
+                } else {
+                    return is_indexed
                                ? (index_u16 ? index_address_16[index] : index_address_8[index])
                                : (index + pipeline.vertex_offset);
+                }
+            }();
 
-        bool vertex_cache_hit = false;
-        if (is_indexed) {
-            if (geometry_pipeline.NeedIndexInput()) {
-                geometry_pipeline.SubmitIndex(vertex);
-                continue;
+            bool vertex_cache_hit = false;
+            if constexpr (bounded_vertex_cache) {
+                if (geometry_pipeline.NeedIndexInput()) {
+                    geometry_pipeline.SubmitIndex(vertex);
+                    continue;
+                }
+
+                const u32 cache_index = VertexCacheUtils::FindVertex(
+                    vertex_cache_ids.data(), vertex_cache_count, static_cast<u16>(vertex));
+                if (cache_index != vertex_cache_count) {
+                    VertexCacheUtils::CopyVertexOutputPrefix(vs_output, vertex_cache[cache_index],
+                                                             vertex_cache_output_count);
+                    vertex_cache_hit = true;
+                }
+            } else if (is_indexed) {
+                if (geometry_pipeline.NeedIndexInput()) {
+                    geometry_pipeline.SubmitIndex(vertex);
+                    continue;
+                }
+
+                const u32 cache_index = VertexCacheUtils::FindVertex(
+                    vertex_cache_ids.data(), vertex_cache_count, static_cast<u16>(vertex));
+                if (cache_index != vertex_cache_count) {
+                    vs_output = vertex_cache[cache_index];
+                    vertex_cache_hit = true;
+                }
             }
 
-            const u32 cache_index = VertexCacheUtils::FindVertex(
-                vertex_cache_ids.data(), vertex_cache_count, static_cast<u16>(vertex));
-            if (cache_index != vertex_cache_count) {
-                vs_output = vertex_cache[cache_index];
-                vertex_cache_hit = true;
+            if (!vertex_cache_hit) {
+                // Initialize data for the current vertex
+                AttributeBuffer input;
+                loader.LoadVertex(vertex, input, input_default_attributes);
+
+                // Record vertex processing to the debugger.
+                if (debug_context) {
+                    debug_context->OnEvent(DebugContext::Event::VertexShaderInvocation,
+                                           std::addressof(input));
+                }
+
+                // Invoke the vertex shader for this vertex.
+                shader_unit.LoadInput(regs.internal.vs, input);
+                shader_engine->Run(vs_setup, shader_unit);
+                shader_unit.WriteOutput(regs.internal.vs, vs_output);
+
+                // Cache the vertex when doing indexed rendering.
+                if constexpr (bounded_vertex_cache) {
+                    VertexCacheUtils::CopyVertexOutputPrefix(vertex_cache[vertex_cache_pos],
+                                                             vs_output, vertex_cache_output_count);
+                    vertex_cache_ids[vertex_cache_pos] = vertex;
+                    vertex_cache_count = std::min(vertex_cache_count + 1, VERTEX_CACHE_SIZE);
+                    vertex_cache_pos = (vertex_cache_pos + 1) & (VERTEX_CACHE_SIZE - 1);
+                } else if (is_indexed) {
+                    vertex_cache[vertex_cache_pos] = vs_output;
+                    vertex_cache_ids[vertex_cache_pos] = vertex;
+                    vertex_cache_count = std::min(vertex_cache_count + 1, VERTEX_CACHE_SIZE);
+                    vertex_cache_pos = (vertex_cache_pos + 1) & (VERTEX_CACHE_SIZE - 1);
+                }
             }
+
+            // Send to geometry pipeline
+            geometry_pipeline.SubmitVertex(vs_output);
         }
+    };
 
-        if (!vertex_cache_hit) {
-            // Initialize data for the current vertex
-            AttributeBuffer input;
-            loader.LoadVertex(vertex, input, input_default_attributes);
-
-            // Record vertex processing to the debugger.
-            if (debug_context) {
-                debug_context->OnEvent(DebugContext::Event::VertexShaderInvocation,
-                                       std::addressof(input));
-            }
-
-            // Invoke the vertex shader for this vertex.
-            shader_unit.LoadInput(regs.internal.vs, input);
-            shader_engine->Run(vs_setup, shader_unit);
-            shader_unit.WriteOutput(regs.internal.vs, vs_output);
-
-            // Cache the vertex when doing indexed rendering.
-            if (is_indexed) {
-                vertex_cache[vertex_cache_pos] = vs_output;
-                vertex_cache_ids[vertex_cache_pos] = vertex;
-                vertex_cache_count = std::min(vertex_cache_count + 1, VERTEX_CACHE_SIZE);
-                vertex_cache_pos = (vertex_cache_pos + 1) & (VERTEX_CACHE_SIZE - 1);
-            }
-        }
-
-        // Send to geometry pipeline
-        geometry_pipeline.SubmitVertex(vs_output);
+    if (use_bounded_vertex_cache) {
+        process_vertices.template operator()<true>();
+    } else {
+        process_vertices.template operator()<false>();
     }
 }
 

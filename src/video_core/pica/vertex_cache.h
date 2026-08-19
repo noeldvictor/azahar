@@ -7,13 +7,52 @@
 #include <array>
 
 #include "common/arch.h"
+#include "common/assert.h"
 #include "common/common_types.h"
+#include "video_core/pica/output_vertex.h"
 
 #if CITRA_ARCH(arm64)
 #include <arm_neon.h>
 #endif
 
 namespace Pica::VertexCacheUtils {
+
+constexpr u32 MAX_BOUNDED_OUTPUTS = 6;
+
+// Copy the packed prefix produced by ShaderUnit::WriteOutput(). Callers select this bounded path
+// once per draw so wider shaders retain the established branch-free full copy inside the loop.
+[[gnu::always_inline]] inline void CopyVertexOutputPrefix(AttributeBuffer& destination,
+                                                          const AttributeBuffer& source,
+                                                          u32 count) {
+    DEBUG_ASSERT(count <= MAX_BOUNDED_OUTPUTS);
+
+    // Enter once at the live prefix length, then copy one 16-byte attribute per straight-line
+    // step. This avoids both the old unconditional 256-byte transfer and a counted-loop branch.
+    switch (count) {
+    case 6:
+        destination[5] = source[5];
+        [[fallthrough]];
+    case 5:
+        destination[4] = source[4];
+        [[fallthrough]];
+    case 4:
+        destination[3] = source[3];
+        [[fallthrough]];
+    case 3:
+        destination[2] = source[2];
+        [[fallthrough]];
+    case 2:
+        destination[1] = source[1];
+        [[fallthrough]];
+    case 1:
+        destination[0] = source[0];
+        [[fallthrough]];
+    case 0:
+        return;
+    default:
+        UNREACHABLE();
+    }
+}
 
 // Return the first matching entry, or count when the vertex is not cached.
 [[nodiscard]] inline u32 FindVertex(const u16* ids, u32 count, u16 vertex) {
