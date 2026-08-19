@@ -77,6 +77,24 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - The latest fetched `upstream/master` is `f6a3e3aa5` (2026-08-19) and is already an ancestor of
   this fork. Upstream still selects blit solely from format support, so this is a current fork-side
   change rather than a duplicate of a newer Azahar fix.
+- The first complete JDK 17 `arm64-v8a` package build passed in 2 minutes 6 seconds, compiling the
+  selector assertions and linking both the native test executable and production
+  `libcitra-android.so`. Linked AArch64 inspection shows the final presentation function loading
+  the blit-capability byte, taking the copy route immediately when it is false, and otherwise
+  comparing both frame dimensions with the acquired extent before reaching the blit route only on
+  a mismatch. The post-commit package rebuild passed in 1 minute 38 seconds.
+- The retained post-commit APK contains only `arm64-v8a`, reports version
+  `5513c61a5-vanilla-thor`, is 29,010,804 bytes, and has SHA-256
+  `74E56BD6824FEA506B03953233B8CE317C65C70244602D66A9817819D73CB8BC`. Its CMake cache records
+  `ENABLE_THOR_FRAME_PROFILING=OFF`, and the final normal library contains zero profiler log or
+  warning strings. Source commit `5513c61a5` was pushed directly to `origin/master` with
+  command-line Git over SSH.
+- Exact bounded cleanup removed 2,023,457,379 logical bytes of reproducible Gradle, JNI, native
+  test, R8, symbol, and mapping staging. R8 held one generated `classes.dex` open until the Gradle
+  daemon stopped; the validated second pass removed the remaining 5,181,700 bytes. Reported C:
+  free space increased by 1,579,343,872 physical bytes to 52,209,246,208. The retained build output
+  is only the APK plus its 476-byte metadata and the 3,247,645,239-byte active profile-disabled
+  ARM64 CMake/Ninja cache. No ADB command, install, app/game launch, or runtime capture was used.
 - This is optimization/candidate entry 143 and raises the overlapping ledger count to 143. It
   removes an API-level filtered transfer from the equal-size route; it does not remove the
   intermediate presentation image, the render-ready submission, swapchain acquisition, the final
