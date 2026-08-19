@@ -118,3 +118,17 @@ TEST_CASE("Vulkan resource pools use refreshed progress across the hint wrap",
     REQUIRE(semaphore.KnownGpuTick() == 1);
     REQUIRE(pool.allocations.empty());
 }
+
+TEST_CASE("Vulkan resource pools reuse cached progress before refreshing", "[video_core][vulkan]") {
+    CountingMasterSemaphore semaphore;
+    TestResourcePool pool{&semaphore, Vulkan::MasterSemaphore::SUBMISSION_REFRESH_INTERVAL};
+
+    // The tail is busy, but the monotonic cached completion already proves index zero reusable.
+    pool.SetResources({1, 5, 5, 5}, 2);
+    semaphore.AdvanceCompletionForTest(1);
+
+    REQUIRE(pool.Commit() == 0);
+    REQUIRE(semaphore.refresh_count == 0);
+    REQUIRE(semaphore.KnownGpuTick() == 1);
+    REQUIRE(pool.allocations.empty());
+}

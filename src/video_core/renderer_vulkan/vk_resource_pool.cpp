@@ -34,21 +34,24 @@ std::size_t ResourcePool::CommitResource() {
     // Try to find a free resource from the hinted position to the end.
     auto found = search(gpu_tick, hint_iterator, ticks.size());
     if (!found) {
+        // Reuse an already-known free resource before querying the driver for newer progress.
+        found = search(gpu_tick, 0, hint_iterator);
+    }
+    if (!found) {
         // Refresh semaphore to query updated results
         master_semaphore->Refresh();
         gpu_tick = master_semaphore->KnownGpuTick();
         found = search(gpu_tick, hint_iterator, ticks.size());
+        if (!found) {
+            found = search(gpu_tick, 0, hint_iterator);
+        }
     }
     if (!found) {
-        // Search from beginning to the hinted position.
-        found = search(gpu_tick, 0, hint_iterator);
-        if (!found) {
-            // Both searches failed, the pool is full; handle it.
-            const std::size_t free_resource = ManageOverflow();
+        // Both searches failed with fresh progress, so the pool is full.
+        const std::size_t free_resource = ManageOverflow();
 
-            ticks[free_resource] = master_semaphore->CurrentTick();
-            found = free_resource;
-        }
+        ticks[free_resource] = master_semaphore->CurrentTick();
+        found = free_resource;
     }
 
     // Free iterator is hinted to the resource after the one that's been commited.
