@@ -28,6 +28,10 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
+The overlapping Thor evidence ledger currently contains **131 accepted optimization/candidate
+entries**. Those entries are not additive percentages: many affect different paths, and whole-game
+FPS or battery watts still require a matched title/scene/device A/B.
+
 See [Thor optimization notes](docs/thor-optimization-notes.md) for current performance hooks and candidate code paths.
 
 ## What This Is Not
@@ -117,6 +121,9 @@ This fork has moved away from stock Azahar in visible ways:
   headers together, vector-updates consecutive registers, and coalesces their dirty-bit writes.
 - The AArch64 PICA `EX2` and `LG2` helpers pack their exact approximation constants into aligned
   paired-Q blocks, replacing repeated scalar address/load sequences with 128-bit paired loads.
+- When `EX2` or `LG2` executes inside a PICA guest `CALL`, the AArch64 shader JIT keeps the guest
+  link in reserved `X16` across the local helper `BL` instead of pushing and reloading `X30`.
+  Normal architectural returns still use `X30`, and the established guest stack frame is unchanged.
 - Repeated PICA program-code and swizzle uploads scan eight words per AArch64 NEON block, sharing
   the expensive unchanged-data reduction and loop bookkeeping across two vectors.
 - ETC1 and ETC1A4 texture uploads decode each 4x4 block as two eight-pixel AArch64 AdvSIMD bands.
@@ -352,6 +359,17 @@ with three. Ten-million-iteration exact-loop medians measured **4.99x on A510, 1
 1.52x on A710, and 1.37x on X3** for this classifier. NaN, both signed zeros, both infinities, and
 finite signs retain their previous results; all 18,332 shader assertions pass on every Thor core
 class. This is optimization 130 in the overlapping ledger, not a whole-game FPS or watt result.
+
+`EX2` and `LG2` inside a guest shader subroutine previously wrapped every local math-helper call in
+`STR X30,[SP],#-16` and `LDR X30,[SP,#16]!`. The AArch64 JIT now reserves `X16` for that short live
+range and emits `MOV X16,X30; BL helper; MOV X30,X16`, retaining the ordinary `RET X30` path and the
+existing root/guest stack layout. This removes two stack-memory accesses and two stack-pointer
+updates per affected helper call without changing the three-instruction call-site count. Exact
+10-million-iteration medians were **14.6% faster on A510, 19.1% on A715, 24.0% on A710, and 25.0%
+on X3**. Designs that returned through X16/X17 or compacted the guest root frame were slower on
+A510 and were rejected. All 18,332 shader assertions pass on every Thor core class, and the broader
+video-core suite passes 135,046 assertions. This is optimization 131; the figures apply only to
+this guest-subroutine math-call path, not whole-game FPS or watts.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

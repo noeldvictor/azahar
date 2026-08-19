@@ -6353,3 +6353,67 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   branch-dependency work makes lower energy plausible only when guest shaders execute `LG2`.
   Whole-game frametime, thermal slope, and battery watts still require a controlled matched title/
   scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/duration A/B run.
+
+## AArch64 PICA Guest Math Link Register (2026-08-19)
+
+- The AArch64 PICA shader JIT's `EX2` and `LG2` helpers use a local `BL`. When either instruction
+  ran inside a guest shader `CALL`, `X30` already held the guest-subroutine return. The inherited
+  ARM64 port therefore emitted `STR X30,[SP],#-16; BL helper; LDR X30,[SP,#16]!` around every math
+  invocation. The store/load forwarded correctly, but each helper still touched the stack and
+  updated `SP` twice.
+- The accepted lowering reserves AAPCS intra-procedure scratch register `X16` for this bounded live
+  range: `MOV X16,X30; BL helper; MOV X30,X16`. The local math helpers do not call an external ABI
+  or use X16. Their returns and the guest-subroutine return all remain ordinary `RET X30`, retaining
+  the CPU return predictor. Math calls outside guest subroutines retain their original one-
+  instruction direct `BL`; the native caller save, 48-byte guest root layout, guest return records,
+  helper arithmetic, swizzles, and destination writes are unchanged. `Compile_MathCall()` takes its
+  target by reference because Oaknut records a forward branch's writeback on that exact unbound
+  `Label` object.
+- A temporary Android 29 AArch64 assembly helper executed the exact old and accepted sequences for
+  10,000,000 iterations across 21 alternating-order samples. Both paths produced identical
+  checksums. Median results while the Thor was AC-powered were:
+
+  | Thor core | Old ns/call | New ns/call | Time saved | Old/new |
+  | --- | ---: | ---: | ---: | ---: |
+  | A510 CPU 0 | 6.513641 | 5.559792 | 14.644% | 1.171562x |
+  | A715 CPU 3 | 3.981469 | 3.222146 | 19.071% | 1.235658x |
+  | A710 CPU 5 | 2.864568 | 2.177630 | 23.980% | 1.315452x |
+  | X3 CPU 7 | 2.516255 | 1.886776 | 25.017% | 1.333627x |
+
+  CPU5 and CPU7 used the established unpark-and-pin helper; every staging worker was killed and
+  reaped before timing. These are wall-powered exact-path timings, not battery-discharge watts.
+- Measurement rejected three broader-looking variants. Keeping the native caller in `X17` and
+  returning through `RET X17` changed the A510 root median from 4.032760 to 4.537854 ns, a 12.5%
+  regression. Returning from the nested math helper through `RET X16` changed its A510 median from
+  6.545078 to 17.594229 ns. Separately compacting the established guest root frame from 48 to 32
+  bytes changed an isolated A510 median from 6.958635 to 8.705635 ns, a 25.1% regression. Folding
+  only the root X30 push/pop into pre/post-indexed loads and stores measured neutral/noisy on A510
+  and was removed as unproven. The committed change contains none of those variants.
+- The final trace-free stripped ARM64 test was 26,191,288 bytes with SHA-256
+  `B6CB41544D983E3DC9730F09C105D4F74C2A4AEAD794921C8975750D262C8711`. Exact nested `CALL`,
+  `EX2`, and `LG2` cases passed 1, 13, and 74 assertions on A510. The complete shader selection
+  passed 18,332 assertions in 52 cases independently on A510 CPU 0, A715 CPU 3, A710 CPU 5, and X3
+  CPU 7. Full `[video_core]` passed 135,046 assertions in 72 cases on A715. Source commit
+  `f8f2166e0` was pushed directly to `origin/master` over command-line Git SSH.
+- Exact post-commit JDK 17 packaging with
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` passed in 3 minutes 3 seconds
+  with LTO and ARMv8 NEON enabled. The ARM64-only, v2-signed APK is 29,010,440 bytes, has SHA-256
+  `21630E21DC9F7889D6C6F07500C98A687F6998C3CBB67D2BE859C394F3A69249`, and reports package
+  `org.azahar_emu.azahar.debug` version `f8f2166e0-vanilla-thor`. Wi-Fi ADB installed it, then an
+  immediate force-stop left no app PID. Neither app nor game was launched. The Thor stayed
+  AC-powered, and its temporary stay-awake value was restored from one to the original zero.
+- Exact bounded cleanup removed 2,471,858,956 logical host bytes: the 449,332,056-byte native test
+  ELF and 2,022,526,900 bytes of reproducible Gradle/JNI/R8/symbol/mapping staging. C: recovered
+  2,029,510,656 physical bytes and reports 55,010,025,472 bytes (51.23 GiB) free. The retained
+  active ARM64 CMake/Ninja cache is 2,797,896,308 bytes; retained build output is only the
+  29,010,440-byte APK and 476-byte metadata. The 26,191,288-byte test and 10,400-byte benchmark
+  helpers were removed from `/data/local/tmp`; repo-local benchmark scratch was deleted. No PDF,
+  benchmark, test binary, rendered manual page, or scratch note was committed.
+- This is optimization/candidate entry 131 in the overlapping Thor ledger. It removes two stack
+  accesses and two `SP` updates each time `EX2`/`LG2` executes inside a guest shader subroutine; it
+  does not speed ordinary direct math calls or hardware-vertex-shader draws. Its 1.17x-1.33x exact-
+  path ratios cannot be added to the prior 130 entries or converted into whole-emulator FPS or
+  battery watts. Lower data-cache and address-generation work makes lower energy plausible only on
+  this route; whole-game frametime, thermal slope, and battery power still require a controlled
+  matched title/scene/cache/renderer/driver/resolution/layout/performance-mode/fan/brightness/
+  duration A/B run.

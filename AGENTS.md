@@ -248,6 +248,15 @@
   permanent `All Source Swizzles` generated-shader test. Do not claim this affects draws that
   successfully use hardware vertex shaders; it targets immediate, geometry, and software-fallback
   shader invocations.
+- AArch64 PICA `EX2`/`LG2` calls made while a guest `CALL` return is live in `X30` must preserve that
+  guest link in reserved `X16` around the local math-helper `BL`, then restore `X30` and return
+  architecturally through `X30`. Keep the helper target passed by reference: Oaknut attaches an
+  unresolved branch writeback to that exact `Label` object before the helper is bound. Ordinary
+  math calls outside guest subroutines stay as one direct `BL`; keep the established root and guest
+  stack layout unchanged. The local math helpers must not grow an ABI/external call while `X16` is
+  live unless the guest link is explicitly preserved. Do not return through `X16`/`X17` or compact
+  the guest root frame: exact A510 measurements rejected both designs. Retain nested-CALL plus
+  `EX2`/`LG2` coverage, all-core shader runs, and exact-path alternating-order measurements.
 - The AArch64 PICA program/swizzle range updater scans eight words per first-stage NEON block and combines both comparison masks before its unchanged `UMAXV`. Preserve the all-equal `UINT32_MAX` sentinel, exact highest-changed-lane result (including low lane zero and high lane four), paired stores only after a detected change, the four-word tail, scalar remainder, dirty flags, and biggest-range accounting.
 - The AArch64 ETC1/ETC1A4 block decoder maps selector and negation bit `4 * x + y` into two
   row-major eight-pixel AdvSIMD bands. Preserve horizontal `x / 2` versus flipped `y / 2`

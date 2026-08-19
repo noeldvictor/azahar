@@ -260,6 +260,16 @@ Manual PDFs are deliberately not committed to this public fork. Their redistribu
   versus throughput 2 for one-table `TBL`; A715/A710 list the simple permutations and one-table
   `TBL` at latency 2, while A510 lists simple permutations at latency 3 and one-table `TBL` at
   latency 4. Preserve an exact `TBL` fallback and prove the synthesized maps exhaustively.
+- Preserve the hardware return predictor even when a register-only link save looks cheaper on
+  paper. A guest PICA `CALL` may keep its link in `X30` while local `EX2`/`LG2` helpers temporarily
+  save that value in AAPCS caller-scratch `X16`, execute an ordinary direct `BL`, restore `X30`, and
+  use normal `RET X30`. That exact substitution removed two stack accesses and measured 14.6%,
+  19.1%, 24.0%, and 25.0% less time on the A510, A715, A710, and X3 paths. In contrast, holding the
+  native caller in `X17` and returning through `RET X17` regressed the A510 root path by 12.5%, and
+  using `RET X16` inside the nested path was much worse. A 48-to-32-byte guest-frame compaction also
+  regressed the isolated A510 path by 25.1%. Instruction count and ABI scratch-register legality
+  therefore do not prove return-stack or stack-alias behavior; keep X16's lifetime inside a local,
+  non-calling helper and require exact measurements on every Thor core class.
 - When PICA `CMP` uses one operation for both X and Y, issue one four-lane AdvSIMD floating compare
   and extract the two lane sign bits instead of serial scalar compares and lane moves. The checked
   tables list `FCMEQ`/`FCMGE`/`FCMGT` at latency/throughput 2/4 on X3 page 28, 2/2 on A715 page 30,
