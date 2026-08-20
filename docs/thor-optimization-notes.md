@@ -1696,6 +1696,31 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   clears scene noise. Testing was AC/USB-powered, so no FPS or wattage gain is claimed and the
   discharging-battery mean and nearest-rank P95 at or below 6 W gate remains open.
 
+## Dynamic Vertex Input Pipeline-Churn Rejection (2026-08-20)
+
+- Entry 169 investigated whether `VK_EXT_vertex_input_dynamic_state` could materially reduce the
+  recurring Vulkan pipeline-bind path seen in the post-`a5de2546c` Super Mario 3D Land profile.
+  The clean profiling-off baseline attributed 1.62% inclusive/0.16% self to Azahar
+  `BindPipeline()` and 1.55% self to Turnip `tu_CmdBindPipeline`; this made actual bind frequency,
+  rather than sub-percent lookup bookkeeping, the relevant first gate.
+- A temporary `THOR_FRAME_PROFILING` probe counted consecutive state changes without modifying the
+  render path. On the physical AYN Thor, Wi-Fi ADB confirmed exact program ID
+  `0004000000054000`, generic Turnip R8 metadata, Mesa 25.99.99, and Adreno 740. At 300,000 draws,
+  the pipeline object changed 136,467 times (45.4890%). Within those overlapping changes, the
+  vertex shader changed 89,689 times, geometry shader 50,117, fragment shader 110,894, blending
+  state 38,452, attachments 3,576, and vertex layout 76,656.
+- The decisive counter compared the complete optimized static key with vertex layout excluded.
+  Pipeline changes caused only by vertex layout were exactly 0/100,000, 0/200,000, and 0/300,000.
+  Every observed layout change coincided with a shader, blend, or attachment change that would
+  still require a different pipeline. Dynamic vertex input therefore has a measured 0% maximum
+  consecutive-bind elimination opportunity in this title/scene, despite vertex layout appearing
+  in 56.17% of pipeline-change events.
+- No extension path was implemented. The profiler-only counters were removed after collection, and
+  Entry 169 does not raise the 163 active accepted-entry count. Reconsider only if a different
+  ranked title produces a nonzero layout-only rate. Testing was AC/USB-powered, so no FPS or
+  wattage gain is claimed and the discharging-battery mean and nearest-rank P95 at or below 6 W
+  gate remains open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
