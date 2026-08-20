@@ -633,7 +633,24 @@ SurfaceId RasterizerCache<T>::GetTextureSurface(const Pica::Texture::TextureInfo
         return NULL_SURFACE_ID;
     }
 
+    for (const TextureSurfaceCacheEntry& entry : texture_surface_cache) {
+        if (entry.Matches(params, surface_generation)) {
+            ValidateSurface(entry.surface_id, params.addr, params.size);
+            return entry.surface_id;
+        }
+    }
+
     SurfaceId surface_id = GetSurface(params, ScaleMatch::Ignore, true, initial_flags);
+    if (surface_id) {
+        TextureSurfaceCacheEntry& entry =
+            texture_surface_cache[next_texture_surface_cache++ % texture_surface_cache.size()];
+        entry = {
+            .surface_params = params,
+            .surface_id = surface_id,
+            .generation = surface_generation,
+            .valid = true,
+        };
+    }
     return surface_id ? surface_id : NULL_SURFACE_ID;
 }
 

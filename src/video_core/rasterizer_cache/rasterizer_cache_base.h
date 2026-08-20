@@ -16,6 +16,7 @@
 #include "video_core/rasterizer_cache/dirty_regions.h"
 #include "video_core/rasterizer_cache/framebuffer_base.h"
 #include "video_core/rasterizer_cache/sampler_params.h"
+#include "video_core/rasterizer_cache/surface_selection_cache.h"
 #include "video_core/rasterizer_cache/surface_params.h"
 #include "video_core/rasterizer_cache/texture_cube.h"
 
@@ -225,6 +226,8 @@ private:
     PageMap cached_pages;
     u32 resolution_scale_factor;
     FramebufferSurfaceCache framebuffer_surface_cache;
+    std::array<TextureSurfaceCacheEntry, 4> texture_surface_cache;
+    u32 next_texture_surface_cache{};
     u64 surface_generation{};
     Settings::TextureFilter filter;
     bool dump_textures;

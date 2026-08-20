@@ -6,6 +6,7 @@
 #include "video_core/rasterizer_cache/dirty_regions.h"
 #include "video_core/rasterizer_cache/framebuffer_base.h"
 #include "video_core/rasterizer_cache/resource_retirement.h"
+#include "video_core/rasterizer_cache/surface_selection_cache.h"
 
 TEST_CASE("Resource retirement requires strictly newer runtime completion",
           "[video_core][rasterizer_cache]") {
@@ -112,4 +113,45 @@ TEST_CASE("Framebuffer surface selection cache ignores inactive attachment param
     FramebufferSurfaceCache invalid_cache = cache;
     invalid_cache.valid = false;
     CHECK_FALSE(invalid_cache.Matches(color, unused_depth, true, false, 4));
+}
+
+TEST_CASE("Texture surface selection cache matches parameters, scale, and topology generation",
+          "[video_core][rasterizer_cache]") {
+    using namespace VideoCore;
+
+    const SurfaceParams params{
+        .addr = 0x1000,
+        .end = 0x5000,
+        .size = 0x4000,
+        .width = 128,
+        .height = 128,
+        .stride = 128,
+        .levels = 4,
+        .res_scale = 2,
+        .is_tiled = true,
+        .pixel_format = PixelFormat::RGBA8,
+        .type = SurfaceType::Color,
+    };
+    const TextureSurfaceCacheEntry entry{
+        .surface_params = params,
+        .surface_id = SurfaceId{9},
+        .generation = 17,
+        .valid = true,
+    };
+
+    CHECK(entry.Matches(params, 17));
+    CHECK_FALSE(entry.Matches(params, 18));
+
+    auto changed_params = params;
+    changed_params.addr += 0x1000;
+    CHECK_FALSE(entry.Matches(changed_params, 17));
+
+    changed_params = params;
+    changed_params.res_scale = 3;
+    CHECK(params == changed_params);
+    CHECK_FALSE(entry.Matches(changed_params, 17));
+
+    TextureSurfaceCacheEntry invalid_entry = entry;
+    invalid_entry.valid = false;
+    CHECK_FALSE(invalid_entry.Matches(params, 17));
 }
