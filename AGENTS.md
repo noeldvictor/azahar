@@ -65,6 +65,12 @@
   and restore only when the current value still equals the verified test value. Generated Gateway
   cheats stay disabled by default. Do not add host-process scanning, online use, background scans,
   raw-address-only reusable cheats, DRM/anti-cheat bypasses, or an unverified write path.
+- Keep Android guest-memory search beginner-first: expose the labeled `Find value` toolbar action,
+  explain that opening Cheats pauses the running game, start the main path as a 32-bit exact search,
+  and keep 8/16-bit sizing plus hexadecimal input under `Advanced`. Refinements should describe
+  what happened to the visible game number, possible-match lists should not lead with raw addresses,
+  and the normal loop must provide an explicit `Back to game` action. Preserve the guarded
+  reversible-write and disabled-by-default saved-cheat behavior while simplifying wording.
 - Performance work targets AYN Thor Base/Pro/Max: Snapdragon 8 Gen 2, Adreno 740, active cooling, LPDDR5X, and UFS 3.1 storage according to AYN's current product page. The mirrored Thor manual claims UFS 4.0, so do not use storage generation as an optimization premise without verifying the physical device. Do not tune defaults around Thor Lite / Snapdragon 865 unless the user explicitly asks.
 - Label Thor CPU-affinity measurements from the device MIDRs, not assumed Linux numbering: CPUs
   0-2 are Cortex-A510 (`0xd46`), CPUs 3-4 are Cortex-A715 (`0xd4d`), CPUs 5-6 are Cortex-A710

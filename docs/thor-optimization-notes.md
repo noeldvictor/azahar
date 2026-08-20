@@ -1721,6 +1721,37 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   wattage gain is claimed and the discharging-battery mean and nearest-rank P95 at or below 6 W
   gate remains open.
 
+## Beginner Guest-Memory Search UX (2026-08-20)
+
+- Android's paused offline-only guest-memory search now appears as an always-visible `Find value`
+  toolbar action. Its main path explains the visible-number loop in plain language and starts a
+  32-bit exact search directly; 8/16-bit sizes and hexadecimal input remain available under
+  `Advanced`. Refinement choices now describe what happened in the game (`Enter the new number`,
+  `It went up`, `It stayed the same`, and similar), while possible matches are presented by ordinal
+  and current value instead of leading with guest addresses.
+- The flow now uses the existing activity lifecycle instead of asking users to manage pause state:
+  opening Cheats from EmulationActivity pauses guest execution, and the new `Back to game` action
+  closes Cheats so EmulationActivity resumes it. A verified temporary write offers the same direct
+  return. The native safety contract is unchanged: offline single-player only, acknowledged pause,
+  surviving candidates, one pending write, verified readback, guarded restoration, and saved
+  Gateway cheats disabled by default.
+- Pure Kotlin coverage checks decimal/underscored/hexadecimal parsing, missing/negative/out-of-range
+  rejection, the complete unsigned 32-bit boundary, all three Gateway code widths, address masking,
+  and unsupported-width rejection. The focused Vanilla debug unit suite passed five tests. The
+  exact JDK 21 `:app:assembleVanillaRelWithDebInfoLite -PthorFrameProfiling=false
+  --no-configuration-cache` build passed in 2 minutes 21 seconds and produced a 29,073,548-byte APK
+  with SHA-256 `A8EA9BDDE7AF243B838F5B5A940E3004B1AFED66C7996AA91515760065533A7F`.
+- Wi-Fi ADB installed that exact production artifact on the AYN Thor, and the installed `base.apk`
+  reproduced the same SHA-256. APS3e was force-stopped before installation and both of its process
+  checks stayed empty. In a legally owned offline copy of 7TH DRAGON III CODE: VFD, display-0 visual
+  validation confirmed the labeled toolbar action, correctly paused Cheats activity, fitted
+  beginner dialog, and optional Advanced size dialog. The Wi-Fi ADB transport disconnected before
+  the initial scan tap could be delivered; therefore scan/refine/temporary-write/restore remains an
+  explicit pending device validation, and no live write or gameplay-effect claim is made here.
+- Source/test commit `aa043576f` was pushed directly to `origin/master`. This is a usability and
+  safety improvement, not optimization entry 170: it adds no FPS, frametime, or wattage claim and
+  does not change the active accepted-optimization count of 163.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
