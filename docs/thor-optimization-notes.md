@@ -788,6 +788,18 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Both processes remained alive with no fatal, assertion, signal, fastmem, page-fault, profiler, or
   Vulkan device-lost log match. The final power check was still AC-powered at 80%, 4.263 V, and
   24.0 C, so this production validation still cannot close the under-6-W battery gate.
+- A post-entry-158 instruction-level audit localized `FlushRegion`'s 0.91% self share to Boost ICL
+  erase machinery at the final `dirty_regions -= flushed_intervals`, rather than the previously
+  rejected `dirty_regions.empty()` probe. A candidate skipped that subtraction only when the local
+  `flushed_intervals` result was empty, which is algebraically a no-op and preserved all required
+  downloads. The ARM64 build passed, the focused rasterizer-cache case passed all four assertions,
+  and 7th Dragon reproduced the exact accepted screenshot. The 32,438,459-byte candidate debug APK
+  had SHA-256 `DE5A2B3D6BE9BF0E9E683BD2C8C8B37422B4C55E4BF5E236D259F0F9D5403993`.
+- The measured mechanism did not improve. Against the accepted 8,265-sample, zero-lost-sample
+  profile with 14,022,307,417 recorded cycles, `FlushRegion` changed only from 0.91% self to 0.89%
+  in an 8,261-sample, zero-lost-sample candidate profile with 14,034,484,337 cycles. That noise-scale
+  target movement does not justify an extra recurring branch, so the implementation was completely
+  reverted. This rejected follow-up is not entry 159 and makes no speed, FPS, or power claim.
 - Entry 158 raises the ledger to 158 numbered entries and 157 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 158 are
   measured recurring presentation, scheduler, and audio-work reductions, not additive percentages.

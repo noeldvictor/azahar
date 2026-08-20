@@ -152,7 +152,10 @@
 - Do not restore the rejected `dirty_regions.empty()` early return in `RasterizerCache::FlushRegion`
   without new attribution. A three-run 7th Dragon total looked about 0.5% lower, but the function's
   own sampled share rose from 1.03% to 1.12%; the dirty map was not the ranked self-cost and the
-  apparent total was noise. Required dirty-surface downloads and interval ownership remain intact.
+  apparent total was noise. Do not instead guard the final `dirty_regions -= flushed_intervals` on
+  `flushed_intervals.empty()`: instruction-level attribution identified Boost erase machinery, but
+  a zero-lost-sample candidate profile left `FlushRegion` self share effectively unchanged at 0.89%
+  versus 0.91% control. Required dirty-surface downloads and interval ownership remain intact.
 - Do not add a maintained 64-bit nonempty-priority mask to `ThreadQueueList` based on the 2026-08-20
   scheduler profile. Although it replaced historical-empty-queue scans with AArch64 `RBIT`/`CLZ`,
   its enqueue/dequeue maintenance increased mean 7th Dragon task-clock 1.051%, cycles 1.156%, and
