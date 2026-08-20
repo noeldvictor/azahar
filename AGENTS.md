@@ -99,6 +99,15 @@
   the matching config and screenshot hashes to the power tool for each row. The mostly-2D title
   screen does not establish representative 3D quality, so require a stable 3D scene before calling
   2x a general quality/performance balance or 1x acceptable.
+- Keep generic Turnip R8 as the accepted driver for the fixed 7th Dragon scene unless a harder,
+  matched workload proves otherwise. A live 20-sample bracket at 3x and 615 MHz measured generic
+  R8 at 8.022% mean KGSL busy, forced-Sysmem R8 at 9.775% (21.86% more GPU time), and the older
+  PurpleVK/T26 build at 8.008% (a 0.18% noise-scale tie). All reproduced the exact accepted frame;
+  process CPU activity was also similar. Reject Sysmem for this workload, and do not call PurpleVK
+  faster from this tie. Preserve the user's selected driver, restore it after experiments, and
+  require a representative 3D/shader-stutter case plus battery evidence before changing the generic
+  R8 recommendation. Driver identity is part of every performance/power matrix, not metadata to
+  omit because config and screenshot hashes happen to match.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.

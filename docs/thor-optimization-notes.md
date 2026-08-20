@@ -1017,6 +1017,30 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   relaunched, and the accepted 3x screenshot hash reproduced. A physical-battery 3x/2x/1x matrix in
   Standard mode, with matching config and screenshot expectations per row, is the next decision
   gate. This experiment is not optimization entry 161.
+- The three custom Vulkan packages already retained on the Thor were then bracketed without a
+  download or source change. The accepted production APK, exact 3x config and title scene, dual
+  displays, High Performance mode 2, fan mode 4, AC power, and 615 MHz GPU clock stayed fixed.
+  Each driver reproduced the exact accepted screenshot SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and remained alive:
+
+  | Custom driver | Runtime identity | Mean KGSL busy | Process CPU ticks/s | Result |
+  | --- | --- | ---: | ---: | --- |
+  | generic `Turnip_v26.0.0_R8.zip` | Turnip Mesa 25.99.99, Vulkan 1.4.335 | 8.02202% | 21.4438 | accepted bracket |
+  | forced-Sysmem R8 | Turnip Mesa 25.99.99, Vulkan 1.4.335 | 9.77545% | 20.8972 | reject: 21.86% more GPU time |
+  | `T26-toasted` | PurpleVK public 26.0.99, Vulkan 1.4.344 | 8.00780% | 21.6490 | 0.18% tie; no demonstrated win |
+
+  Each row used 20 KGSL samples over about 24.6-24.9 seconds. Sysmem's large penalty rejects it for
+  this workload even though output matched. PurpleVK's tiny difference is below a credible decision
+  threshold and its CPU activity was slightly higher, so there is no basis to replace the current
+  generic R8. A harder representative 3D/shader-compilation workload and a physical-battery bracket
+  remain necessary before changing the recommendation.
+- Generic R8 was restored after both alternatives. The running production package again reported
+  `37053eb9d-vanilla-thor`, ARM64, no `DEBUGGABLE` flag, Turnip Mesa 25.99.99, the exact accepted
+  config hash `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`, and the exact
+  screenshot hash. This AC-only ranking is not a watt result and is not optimization entry 161. It
+  also exposes a measurement requirement: a config and frame hash can match across materially
+  different driver paths, so the strict power gate must record and validate active Vulkan-driver
+  identity.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
