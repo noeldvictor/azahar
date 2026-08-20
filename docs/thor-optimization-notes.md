@@ -567,10 +567,10 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and Art Academy SHA-256
   `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and emitted no fatal log.
   AC remained connected at 80%, so these observations do not prove lower battery watts.
-- The final profiling-off Lite APK built from pushed documentation/source head `e0ca802f7` is
-  ARM64-only, 29,009,132 bytes, and SHA-256
-  `44F4A213A5AE150F0C92A77727B9D6809377888B6937CC1018FD83F65428EF18`. The installed package is
-  version `e0ca802f7-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
+- The final profiling-off Lite APK built from pushed documentation/source head `8352ca9d6` is
+  ARM64-only, 29,009,128 bytes, and SHA-256
+  `8EBB33FAFA6AE2CAF3D1824FD6C8BD236B2CF8160F2EA74367F9ADAF935865D1`. The installed package is
+  version `8352ca9d6-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
   library contains no `ThorFrameProfile` string. Wi-Fi ADB installation succeeded, the final Lite
   process remained alive and reproduced 7th Dragon SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and its log contained no
@@ -662,7 +662,9 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   those are regressions of 1.051%, 1.156%, and 1.836%, with frequency only 0.110% higher. A new
   30-second profile also raised `PopNextReadyThread` itself from 0.65% to 0.73%. Maintaining the mask
   on every queue mutation cost more than eliminating the scan in this title, so no scheduler code
-  or test from the experiment remains and this is not entry 157.
+  or test from the experiment remains and this is not entry 157. The clean rebuild restored the
+  linked function to 1,240 bytes, and the final Lite device checks above were repeated after that
+  rebuild.
 - Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
