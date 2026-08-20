@@ -26,6 +26,7 @@ add_library(citra-android SHARED
     multiplayer.cpp
     multiplayer.h
     native.cpp
+    native_state.h
     ndk_motion.cpp
     ndk_motion.h
     system_save_game.cpp

@@ -56,6 +56,15 @@
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
 - Android work lives under `src/android`; keep cheat-build branding and UI changes scoped there when possible.
+- Android guest-memory search is strictly for legally owned offline single-player games. Keep it
+  blocked while a room is joining or connected, and never scan or write until the emulation loop
+  has acknowledged the pause request. Initial scans are aligned unsigned little-endian 8/16/32-bit
+  exact-value searches over mapped process-image/application-heap pages, capped at one million
+  candidates; refinements compare against the last paused snapshot. A test write must target a
+  surviving candidate, record the original value, verify readback, allow only one pending write,
+  and restore only when the current value still equals the verified test value. Generated Gateway
+  cheats stay disabled by default. Do not add host-process scanning, online use, background scans,
+  raw-address-only reusable cheats, DRM/anti-cheat bypasses, or an unverified write path.
 - Performance work targets AYN Thor Base/Pro/Max: Snapdragon 8 Gen 2, Adreno 740, active cooling, LPDDR5X, and UFS 3.1 storage according to AYN's current product page. The mirrored Thor manual claims UFS 4.0, so do not use storage generation as an optimization premise without verifying the physical device. Do not tune defaults around Thor Lite / Snapdragon 865 unless the user explicitly asks.
 - Label Thor CPU-affinity measurements from the device MIDRs, not assumed Linux numbering: CPUs
   0-2 are Cortex-A510 (`0xd46`), CPUs 3-4 are Cortex-A715 (`0xd4d`), CPUs 5-6 are Cortex-A710

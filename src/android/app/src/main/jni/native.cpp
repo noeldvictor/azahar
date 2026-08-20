@@ -69,6 +69,7 @@
 #include "jni/id_cache.h"
 #include "jni/input_manager.h"
 #include "jni/ndk_motion.h"
+#include "jni/native_state.h"
 #include "multiplayer.h"
 #include "video_core/debug_utils/debug_utils.h"
 #include "video_core/gpu.h"
@@ -99,6 +100,7 @@ jlong ptm_current_title_id = std::numeric_limits<jlong>::max(); // Arbitrary def
 
 std::atomic<bool> stop_run{true};
 std::atomic<bool> pause_emulation{false};
+std::atomic<bool> emulation_paused{};
 
 std::mutex paused_mutex;
 std::mutex running_mutex;
@@ -197,6 +199,11 @@ std::unique_ptr<AndroidMultiplayer> multiplayer{nullptr};
 std::shared_ptr<Network::AnnounceMultiplayerSession> announce_multiplayer_session;
 
 } // Anonymous namespace
+
+bool AndroidNativeState::IsEmulationPaused() {
+    return pause_emulation.load(std::memory_order_acquire) &&
+           emulation_paused.load(std::memory_order_acquire);
+}
 
 static jobject ToJavaCoreError(Core::System::ResultStatus result) {
     static const std::map<Core::System::ResultStatus, const char*> CoreErrorNameMap{
@@ -408,6 +415,7 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
 
     stop_run = false;
     pause_emulation = false;
+    emulation_paused = false;
 
     LoadDiskCacheProgress(VideoCore::LoadCallbackStage::Prepare, 0, 0, "");
 
@@ -451,7 +459,9 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
             Settings::values.volume = 0;
 
             std::unique_lock pause_lock{paused_mutex};
+            emulation_paused.store(true, std::memory_order_release);
             running_cv.wait(pause_lock, [] { return !pause_emulation || stop_run; });
+            emulation_paused.store(false, std::memory_order_release);
             window->PollEvents();
         }
     }
@@ -942,6 +952,7 @@ void Java_org_citra_citra_1emu_NativeLibrary_stopEmulation([[maybe_unused]] JNIE
         return;
     }
     pause_emulation = false;
+    emulation_paused = false;
     if (window) {
         window->StopPresenting();
     }

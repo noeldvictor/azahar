@@ -32,6 +32,8 @@ add_library(citra_core STATIC EXCLUDE_FROM_ALL
     cheats/cheats.h
     cheats/gateway_cheat.cpp
     cheats/gateway_cheat.h
+    cheats/memory_search.cpp
+    cheats/memory_search.h
     core.cpp
     core.h
     core_timing.cpp
