@@ -59,6 +59,10 @@ after sampling, the script also requires both Azahar BLAST layers to exist and a
 50 ms. On this Thor firmware only the primary-display layer exposes SurfaceFlinger latency history;
 the second physical-panel layer is still required to be present. These defaults are specific to the
 fixed 30 FPS 7th Dragon scene and should be explicitly overridden for another target frame rate.
+The same warmup/end checks require one unchanged active AudioFlinger track at 32,728 Hz, no more
+than 2,048 frames or 150 ms reported latency, and zero underruns. This prevents a lower-wakeup audio
+configuration from passing power and frame-pacing checks while introducing crackle or input-to-audio
+delay.
 
 ## Upstream Release Checklist
 

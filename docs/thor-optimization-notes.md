@@ -979,6 +979,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   rows, so the gate requires its presence while using the primary layer's timestamps. The complete
   parser and pass/fail paths are deterministic-self-tested. This strengthens measurement validity;
   it is not optimization entry 161 and does not close the still-AC-powered 6 W gate.
+- Audio quality is now part of the same acceptance gate rather than an informal follow-up. At the
+  end of warmup and after measurement, the tool parses the one active AudioFlinger track for the
+  exact Azahar PID and requires its track ID to remain unchanged, sample rate to remain 32,728 Hz,
+  frame count at or below 2,048, reported latency at or below 150 ms, and total underruns to remain
+  zero. The deterministic control fixture is the restored 1,962-frame / 117.56 ms / zero-underrun
+  production row; the rejected 4,096-frame / 271.84 ms / 989-underrun row fails. This is another
+  correctness guard for the future physical-battery run, not optimization entry 161.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
