@@ -1499,6 +1499,14 @@ class EmulationFragment :
         updateDetailedPerfStatsState()
 
         if (performanceOverlayEnabled) {
+            if (BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean) {
+                binding.performanceOverlayShowText.setBackgroundResource(
+                    R.color.citra_transparent_black
+                )
+            } else {
+                binding.performanceOverlayShowText.setBackgroundResource(0)
+            }
+
             @Suppress("UnusedVariable")
             val systemFps = 0
             val fps = 1
@@ -1571,15 +1579,10 @@ class EmulationFragment :
                         sb.append(String.format("%.1f°C/%.1f°F", batteryTemp, tempF))
                     }
 
-                    if (BooleanSetting.PERF_OVERLAY_BACKGROUND.boolean) {
-                        binding.performanceOverlayShowText.setBackgroundResource(
-                            R.color.citra_transparent_black
-                        )
-                    } else {
-                        binding.performanceOverlayShowText.setBackgroundResource(0)
+                    val overlayText = sb.toString()
+                    if (binding.performanceOverlayShowText.text.toString() != overlayText) {
+                        binding.performanceOverlayShowText.text = overlayText
                     }
-
-                    binding.performanceOverlayShowText.text = sb.toString()
                 }
                 perfStatsUpdateHandler.postDelayed(perfStatsUpdater!!, 1000)
             }
