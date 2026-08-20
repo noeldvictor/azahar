@@ -28,6 +28,12 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
+For ordinary 30/60 FPS play, start with the Thor's **Standard** device performance mode and move up
+only when a title cannot hold speed. In a matched 7th Dragon title-screen check, Standard preserved
+the exact pixels and the same 30 FPS frame pacing as High Performance while lowering the fixed live
+Adreno clock from 615 to 401 MHz. That is the strongest current under-6-W operating candidate, not
+yet a battery-watt result because the device was still AC-powered during the comparison.
+
 The Thor evidence ledger currently has **153 numbered entries, 152 of them active**. Entry 153
 skips redundant Dynarmic context reloads when the live JIT already targets the exact same page
 table, entry 152 lets exact-size Android Vulkan frames render their final composition directly into

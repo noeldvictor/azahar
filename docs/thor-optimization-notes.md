@@ -548,6 +548,18 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   without page-table, fastmem, fatal, or Vulkan device-lost logs. The measurements used a temporary
   debuggable package with native frame profiling disabled; the Lite package remains the acceptance
   and battery-power target.
+- A device-policy follow-up checked the forest-level power control before selecting another small
+  code path. The Thor Quick Settings UI identified `performance_mode=2` as High Performance. In the
+  final profiling-off 7th Dragon title scene it pinned Adreno at 615 MHz, used 517 process CPU ticks
+  over the matched interval, and reported 8.268% mean / 8.404% P95 KGSL busy. The setting was
+  temporarily changed through the vendor UI to Standard (`performance_mode=0`), then restored.
+- Standard held Adreno at 401 MHz, used 509 process ticks, and reported 10.375% mean / 10.499% P95
+  busy while reproducing the exact established screenshot hash. A cleared 20-second SurfaceFlinger
+  window measured 33.431 ms mean / 33.524 ms median / 34.314 ms P95 with no interval over 50 ms;
+  restored High Performance measured 33.444 / 33.516 / 34.355 ms with the same zero-drop result.
+  Thus Standard is the default recommendation for capped titles and the pending under-6-W run,
+  escalating only if a title misses speed. AC remained connected, so lower battery watts are not
+  claimed from frequency and utilization alone.
 - Power remains an explicit open gate. Both 60 Hz panels were on, primary brightness was 255,
   secondary brightness was 100, Thor performance mode was 2, fan mode was 4, and Adreno was held
   at 615 MHz. The normal build's single steady sample used 25.54% of one CPU core with KGSL busy
