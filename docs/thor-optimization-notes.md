@@ -418,6 +418,55 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   this is numbered ledger entry 150 but leaves 149 active accepted entries rather than hiding the
   regression by inflating the total.
 
+## 2026-08-19 Vulkan Acquire Recovery and Uncapped Power Guard
+
+- The on-device power investigation found `Renderer_FrameLimit: 0` in the active Azahar launch
+  log. On 7th Dragon's visible title screen the overlay reported 412 game FPS. A 20-second Thor
+  mode-2 sample consumed 1,484 process CPU ticks and the two KGSL busy snapshots were 99.67% and
+  99.76%, with the Adreno at 680 MHz. No screen or texture filter was active; Vulkan, 3x internal
+  resolution, dual displays, Turnip Mesa 25.99.99, and Eco Turbo were active.
+- Restoring **Limit Speed** to its normal 100% value changed the same visible title screen to 30
+  game FPS. The matched 20-second sample used 520 process CPU ticks and KGSL busy snapshots of
+  9.53% and 9.98%, with the GPU at Thor mode 2's 615 MHz floor. That is 65.0% less Azahar process
+  CPU time and roughly 90% less GPU active share in this title-screen test. It is not a whole-game
+  speedup or watt figure: the device was AC-powered, so battery-current telemetry could not isolate
+  emulator power. A temporary mode-0 check lowered the GPU floor to 401 MHz, but that capture was
+  not a visually identical scene and is not promoted to a power percentage. Mode 2 was restored.
+- The uncapped run also exposed a correctness failure in entry 149's combined presentation path.
+  The Vulkan worker held `swapchain_mutex` across an effectively unbounded image acquire while the
+  presentation thread needed the same lock to return older images. Turnip eventually returned
+  numeric result 2 (`VK_TIMEOUT`), which the code treated as unreachable and aborted in
+  `Swapchain::AcquireNextImage()`. Rotating binary acquire semaphores also lacked proof that the
+  prior queue wait had completed before a semaphore could be signaled again.
+- Commit `2a265cd23` uses a finite one-millisecond acquire timeout, treats `VK_TIMEOUT` and
+  `VK_NOT_READY` as retryable, releases the swapchain host lock between retries, and consumes valid
+  suboptimal acquisitions instead of abandoning a signaled semaphore. Each presentation frame now
+  owns its acquire semaphore and records the scheduler submission tick; frame reuse waits for that
+  tick so the binary wait is complete before the semaphore can be signaled again. The submission
+  tick is published inside the worker callback before `queue_mutex` exposes the frame to the
+  presentation thread, avoiding a producer/presenter data race.
+- The profiling-off ARM64 native and package builds passed. The corrected APK visibly rendered 7th
+  Dragon and stayed alive for multiple minutes, and Art Academy stayed alive beyond 55 seconds;
+  both exceeded the old roughly 18-second acquire failure. With the normal 100% cap, neither title
+  logged a fatal signal, swapchain-acquire abort, or dequeue timeout during the recorded runs.
+- Optimization/candidate entry 151 closes the remaining power trap without redefining uncapped
+  emulation. Commit `774a2ce5a` makes Eco Turbo's 60 FPS host-presentation token budget apply when
+  the frame limit is either above 100% or exactly zero/unthrottled. Guest CPU/PICA emulation remains
+  uncapped. The same predicate keeps FIFO back-pressure when VSync is enabled, and compile-time
+  assertions cover normal, explicit Turbo, uncapped, Eco-off, and low-refresh policy states. The
+  Android UI now explicitly warns that disabling **Limit Speed** can produce hundreds of FPS and
+  high power use.
+- In a follow-up uncapped candidate run, the overlay reached 615 game FPS, the GPU remained about
+  99.8% busy because guest PICA rendering itself was still uncapped, and the process used 1,336
+  ticks over 20 seconds. The important correctness result was zero dequeue/acquire-timeout log
+  lines instead of the baseline timeout storm. Eco Turbo can remove surplus host composition; it
+  cannot make maximum-rate guest rendering low power. The final user configuration was restored to
+  `use_frame_limit = true`, Thor performance mode 2 was restored, and Azahar was force-stopped.
+- Entry 151 raises the ledger to 151 numbered entries and 150 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. The numeric CPU/GPU reductions
+  above apply only to enabling the normal cap in this title scene and must not be added to other
+  optimization percentages or translated into battery watts.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

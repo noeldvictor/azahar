@@ -28,9 +28,10 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The Thor evidence ledger currently has **150 numbered entries, 149 of them active**. Entry 150 added
-a recurring Vulkan presentation reduction, while the earlier ARM64 absolute-offset page-table entry
-was withdrawn after it caused reproducible game-start crashes on the Thor. Smaller figures quoted
+The Thor evidence ledger currently has **151 numbered entries, 150 of them active**. Entry 151
+extends Eco Turbo's 60 FPS host-presentation cap to fully uncapped emulation, while the earlier
+ARM64 absolute-offset page-table entry was withdrawn after it caused reproducible game-start
+crashes on the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
 not additive percentages: many affect different paths, and whole-game FPS or battery watts still
 require a matched title/scene/device A/B.
@@ -66,9 +67,11 @@ This fork has moved away from stock Azahar in visible ways:
 - Bundled Android cheats live under `src/android/app/src/main/assets/cheats/`.
 - Android game list marks titles with available bundled cheats more clearly.
 - Turbo speed toast spam is suppressed.
-- Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS above 100% speed
-  while emulation continues at the selected turbo limit. It can be disabled under General for
-  smoother fast-forward on the Thor's 120 Hz panel.
+- Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS during explicit
+  Turbo or fully uncapped emulation while guest emulation continues at the selected speed. It can
+  be disabled under General for smoother fast-forward on the Thor's 120 Hz panel. Normal play
+  should keep **Limit Speed** enabled at 100%; the UI now warns that disabling it can produce
+  hundreds of FPS and high power use.
 - During emulation, Android receives both a refresh-only window preference near 60 Hz and a 60 Hz
   game-surface frame-rate hint. This avoids tying ordinary 3DS presentation to the Thor primary
   panel's 120 Hz maximum; frontend menus retain their high-refresh preference.
@@ -516,13 +519,12 @@ wait at the transfer stage that first consumes them, and the final present trans
 an `ALL_COMMANDS`-to-`ALL_COMMANDS` full-pipeline barrier. This removes recurring driver/GPU
 synchronization work, but the FPS, frametime, and watt effect remains pending a matched Thor A/B.
 
-Optimization 146 keeps Android Eco Turbo's capped >100% path on FIFO presentation instead of
-MAILBOX, allowing mobile-friendly queue back-pressure rather than continuously replacing frames
-that the 60 FPS host-composition cap will not display. Skipped Eco Turbo frames also avoid submitting
-an empty Vulkan command chunk; any real emulation commands still flush normally. Eco Turbo off,
-unthrottled 0%, VSync off, low-refresh handling, explicit waits, and presentation signaling are
-unchanged. This removes recurring queue/driver work, but its sustained-speed and watt effect remains
-pending a matched Thor A/B.
+Optimization 146 keeps Android Eco Turbo's capped path on FIFO presentation instead of MAILBOX,
+allowing mobile-friendly queue back-pressure rather than continuously replacing frames that the
+60 FPS host-composition cap will not display. Skipped Eco Turbo frames also avoid submitting an
+empty Vulkan command chunk; any real emulation commands still flush normally. Entry 151 later
+extended this protection from explicit limits above 100% to the `0`/unthrottled setting. Eco Turbo
+off, VSync off, low-refresh handling, explicit waits, and presentation signaling remain unchanged.
 
 Optimization 147 moves default-on duplicate-frame suppression ahead of guest display preparation.
 On Vulkan, a suppressed duplicate now avoids the two normal mono display-surface cache lookups (or
@@ -567,6 +569,17 @@ patch sites, aborting both tested games during startup. The table again stores r
 pointers and Dynarmic's absolute-offset mode is disabled. With the corrected path, both titles
 remained alive and rendered after the prior 1.5-3 second failure window. Because that earlier entry
 is no longer active, entry 150 leaves the active accepted count at 149 rather than inflating it.
+
+Optimization 151 closes the uncapped-power hole in Eco Turbo. `Limit Speed = off` is represented
+internally as a zero frame limit; it previously bypassed the 60 FPS host-presentation budget and
+could drive the Thor title screen at hundreds of game frames per second. Zero/unthrottled now uses
+the same wall-clock host-presentation cap as explicit Turbo while guest CPU/PICA emulation remains
+uncapped. Compile-time assertions cover normal, Turbo, unthrottled, and Eco-off policy states, and
+the Android descriptions now tell users to keep 100% enabled for normal play. In the same visible
+7th Dragon title scene, restoring the normal 100% cap reduced a 20-second process sample from 1,484
+to 520 CPU ticks and KGSL busy readings from about 99.6% to about 9.8%. That is approximately 65%
+less process CPU time and 90% less GPU active share for this scene, not a battery-watt or whole-game
+claim. The Thor was wall-powered, and its mode-2 policy still held the Adreno floor at 615 MHz.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

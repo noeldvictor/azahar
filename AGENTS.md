@@ -62,12 +62,12 @@
   point, driver call, wakeup, or panel/compositor request. Keep merely plausible instruction-level
   ideas in the candidate ledger until a profile ranks their subsystem. Never add isolated speedup
   ratios together or translate them into whole-game FPS or watt estimates.
-- Android Eco Turbo already caps host presentation/composition to 60 FPS above 100% emulation
-  speed. With VSync enabled, keep that capped path on FIFO so the mobile swapchain supplies
-  back-pressure instead of MAILBOX replacing undisplayed frames. Preserve the established non-FIFO
-  handling when Eco Turbo is off, the frame limit is 0/unthrottled, VSync is off, or the display is
-  classified as low refresh. Present-mode selection occurs during swapchain creation, so do not
-  claim every hotkey-Turbo session changed modes without proving that the swapchain was recreated.
+- Android Eco Turbo caps host presentation/composition to 60 FPS when the active frame limit is
+  above 100% or is `0`/unthrottled. With VSync enabled, keep either capped path on FIFO so the
+  mobile swapchain supplies back-pressure instead of MAILBOX replacing undisplayed frames.
+  Preserve non-FIFO handling when Eco Turbo is off, VSync is off, or the display is classified as
+  low refresh. Present-mode selection occurs during swapchain creation, so do not claim every
+  hotkey-Turbo session changed modes without proving that the swapchain was recreated.
 - A skipped-presentation path may use `Scheduler::FlushIfPending()` only when it supplies no signal
   or wait semaphore and `CommandChunk::Empty()` proves that no GPU command was recorded. Any real
   emulation work must still submit; presentation signaling, explicit readback/finish waits, and
@@ -488,6 +488,13 @@
   than the sentenced resource tick; equality must retain the resource because that tick can still
   be queued or in flight. Any value read by a worker callback while the producer may begin the next
   frame, such as the presentation clear color, must be captured by value.
+- `vkAcquireNextImageKHR` must never wait indefinitely while holding `swapchain_mutex`: the present
+  thread needs that same host-synchronization lock to return previously submitted images. Use a
+  finite timeout, treat `VK_TIMEOUT`/`VK_NOT_READY` as retryable, release the lock between retries,
+  and never abandon a successfully acquired/suboptimal image with a signaled binary semaphore.
+  Acquire semaphores are frame-owned; publish the scheduler submission tick before queueing the
+  frame, and wait for that tick before signaling the same binary semaphore again. Preserve
+  out-of-date/surface-lost recreation and do not turn an ordinary timeout into an abort.
 - Vulkan presentation frames use the swapchain's exact format. When the intermediate frame and
   acquired swapchain image also have identical extents, retain the direct `vkCmdCopyImage` route:
   it preserves every pixel bit-for-bit and avoids asking the transfer path to perform a filtered
@@ -689,7 +696,14 @@
   `delete[]`; staging partition addresses remain outside the strip loop. Retain all-format active-
   gap/output-condition predicate tests plus null-staging transfer/state coverage, and keep the
   hidden test hook absent from the production library.
-- Android Eco Turbo defaults on. Above 100% speed it uses a wall-clock token budget to cap host presentation/composition at 60 FPS without changing guest timing or the selected turbo limit. Do not replace this with a divisor derived from the requested speed: a scene that cannot reach that speed would be undersampled. Preserve screenshot and video-dump preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is smoother but uses more GPU work on the 120 Hz panel.
+- Android Eco Turbo defaults on. Above 100% speed and at `0`/unthrottled it uses a wall-clock token
+  budget to cap host presentation/composition at 60 FPS without changing guest timing or the
+  selected speed. Do not replace this with a divisor derived from the requested speed: a scene
+  that cannot reach that speed would be undersampled. Preserve screenshot and video-dump
+  preparation, reset the budget at normal speed, and keep the UI clear that disabling Eco Turbo is
+  smoother but uses more GPU work on the 120 Hz panel. For ordinary power tests, verify the launch
+  log says `Renderer_FrameLimit: 100`; a zero value means truly uncapped guest rendering and can
+  saturate Adreno even when host presentation is capped.
 - Android emulation must request the closest current-resolution display rate within 1 Hz of 60 and
   call `Surface.setFrameRate(60, FRAME_RATE_COMPATIBILITY_DEFAULT)` on each valid game surface on
   API 30 or newer. Frontend activities keep the highest current-resolution refresh preference.
