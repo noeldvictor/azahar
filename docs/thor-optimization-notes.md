@@ -954,6 +954,21 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   10-tick/second and 1%-busy floors therefore reject an idle/frozen 7th Dragon run without turning
   activity counters into speed targets. This is measurement tooling, not optimization entry 161,
   and the under-6-W result remains pending a physical unplug.
+- A forest-level Android audio-buffer experiment was rejected and completely reverted. The accepted
+  entry-160 profile attributed about 3% inclusive to the AudioTrack callback stack, while Cubeb's
+  Android backend documents a power-saving selection above 4,000 requested frames. Live
+  AudioFlinger state showed that production used a 32,728-Hz, 1,962-frame normal track at 131.24 ms
+  reported latency with zero current underruns. An Android-only 4,096-frame candidate built and
+  installed successfully, but its live track reported 271.84 ms latency and accumulated 989
+  underruns within roughly one minute. That severe latency/stability regression rejects the
+  theoretical reduction in callback wakeups without requiring a watt claim.
+- The exact preserved production APK was restored with ADB's explicit downgrade flag after Android
+  correctly rejected its older version code on the first attempt. The installed package again
+  reported `37053eb9d-vanilla-thor`, ARM64, and no `DEBUGGABLE` flag; its first captured 7th Dragon
+  frame reproduced SHA-256 `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`.
+  The restored AudioTrack returned to 1,962 frames, 117.56 ms live latency, and zero underruns, with
+  no fatal, assertion, fastmem, page-fault, device-lost, or profiler log match. AC remained connected,
+  so this is a rejection/correctness result, not battery-power evidence and not entry 161.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

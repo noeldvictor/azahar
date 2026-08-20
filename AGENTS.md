@@ -46,6 +46,12 @@
   report TDStretch-only latency and tail-call `TDStretch::putSamples` without the AA FIR,
   interpolator, or RateTransposer FIFO path. Retain byte-exact 0.72/0.93/1.08 tempo coverage,
   awkward chunk boundaries, flush/clear checks, and the non-unity auto-disable assertion.
+- Do not force Android Cubeb output above its 4,000-frame power-saving threshold. On the physical
+  Thor, the accepted minimum-latency path created a 32,728-Hz, 1,962-frame AudioTrack at roughly
+  118-131 ms reported latency with zero current underruns. A 4,096-frame candidate raised reported
+  latency to 271.84 ms and accumulated 989 underruns within roughly one minute. It was fully
+  reverted. Any future audio-buffer experiment must be opt-in, prove clean interactive audio, and
+  beat the existing path in matched whole-device battery measurements before acceptance.
 - Ask the user before making a materially different product, source-policy, or UX choice when the repository and existing requirements do not settle it. Keep moving with safe, reversible assumptions when the choice does not materially change the result.
 - The active GitHub fork is `git@github.com:noeldvictor/azahar-thor-experiment.git`; keep fork-facing docs branded as Azahar Thor Experiment, not upstream Azahar.
 - Public-facing docs should clearly disclose that this is a personal, AI-assisted/vibe-coded, no-support experiment with no stability guarantee.
