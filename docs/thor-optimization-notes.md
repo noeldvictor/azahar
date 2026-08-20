@@ -1338,6 +1338,24 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   0.67626% (1.10% relative), confirming that the optimization did not merely skip required
   validation. All inspected control and candidate frames were visibly clean; the animated title
   sequence displayed 58-62 FPS.
+- Source/test/guidance commit `f692d3962` was pushed directly to `origin/master`. Its post-commit
+  JDK 21 `:app:assembleVanillaRelWithDebInfoLite -PthorFrameProfiling=false
+  --no-configuration-cache` build passed in 1 minute 53 seconds. The ARM64-only, v2-signed
+  production APK is 29,011,488 bytes with SHA-256
+  `D07E1FFC918934F53694550F52B47CDA2748D506C0DA3E4112C3064C4FDE04F2`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `f692d3962-vanilla-thor`, minimum SDK 29,
+  target SDK 37, ARM64 ABI, and no `DEBUGGABLE` attribute. The active native cache records profiling
+  OFF, and the unstripped library contains no profiler log or warning string.
+- Wi-Fi ADB installed that exact production APK, and the on-device base APK reproduced SHA-256
+  `D07E1FFC918934F53694550F52B47CDA2748D506C0DA3E4112C3064C4FDE04F2`. The 412-byte configuration
+  remained byte-identical at SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`; performance/fan modes
+  remained 2/4 and brightness remained 255. The exact title again logged program ID
+  `0004000000054000`, Turnip Mesa 25.99.99, and Adreno 740; its final production frame was visibly
+  clean at 60 FPS, with no fatal, device-lost, or ANR match. AC remained connected at 80%, 4.266 V,
+  and 25.0 C, so none of this runtime evidence is presented as battery power. The strict power-tool
+  default now names this production version.
 - Entry 163 raises the ledger to 163 numbered entries and 162 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. This bracket proves less CPU
   work in one recurring rasterizer-cache path; it does not prove a whole-game FPS gain, cannot be
