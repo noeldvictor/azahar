@@ -873,6 +873,35 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 159 are
   measured recurring presentation, scheduler, audio, and Android wakeup reductions, not additive
   percentages.
+- Entry 160 removes redundant Android UI redraws from the enabled performance overlay. Its
+  one-second updater still fetches and formats every enabled statistic, so changed FPS, speed,
+  frametime, memory, and battery-temperature values remain live. It now calls `TextView.setText()`
+  only when the complete formatted text differs, and applies the configured background when the
+  overlay is enabled or refreshed instead of recreating it on every timer tick.
+- The pinned JDK 17 / NDK 27.3 `:app:testVanillaRelWithDebInfoUnitTest` and debuggable APK build both
+  passed. The 32,438,927-byte candidate APK had SHA-256
+  `21A72EF49E70A527EACD720314268327B90D0F512A08C610E9879520937F1910`. Both the candidate and the
+  exact accepted control reproduced 7th Dragon screenshot SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`; a live Android UI hierarchy
+  independently reported the candidate overlay text as `FPS: 30`.
+- The candidate's 30-second profile recorded 7,497 samples, lost zero, and counted
+  12,354,324,643 cycles versus the accepted control profile's 7,631 samples, zero lost, and
+  12,650,989,901 cycles. The overlay updater's inclusive share fell from 0.75% to 0.27%,
+  `ViewRootImpl.doTraversal` from 1.40% to 0.19%, `TextView.setText` from 0.54% to 0.10%, and UI
+  render-thread drawing from 0.75% to 0.09%. This supports the intended suppression mechanism;
+  other Android Choreographer work remains and is not claimed as removed.
+- A same-scene six-versus-six ten-second hardware-counter bracket confirmed lower whole-process
+  work. Candidate means were 2,276.578 ms task-clock, 4.451113 billion CPU cycles, and 1.519717
+  billion retired instructions versus control means of 2,360.924 ms, 4.608947 billion, and
+  1.548599 billion. Candidate deltas were -3.573%, -3.425%, and -1.865%; median deltas agreed at
+  -3.532%, -3.334%, and -1.712%. Mean sampled frequency changed from 1.919399 to 1.922776 GHz
+  (+0.176%). The Thor remained AC-powered at 80%, 4.262 V, and 23.0 C, so entry 160 proves recurring
+  Android UI-work removal but not battery watts or the under-6-W requirement. Source commit
+  `2b02f5cf5` was pushed directly to `origin/master`.
+- Entry 160 raises the ledger to 160 numbered entries and 159 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 160 are
+  measured recurring presentation, scheduler, audio, Android wakeup, and overlay-work reductions,
+  not additive percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

@@ -145,6 +145,16 @@
   hidden; task-clock and cycles changed -0.214% and -0.278%. `__kernel_clock_gettime` self share
   fell from 1.11% in the prior profile to 0.29%, and `steady_clock::now` fell from 0.86% to 0.02%.
   Treat this as measured recurring-work removal, not an FPS or battery-watt claim.
+- Preserve the redundant Android performance-overlay redraw guard from commit `2b02f5cf5`. The
+  one-second updater must continue sampling and formatting enabled statistics, but it should call
+  `TextView.setText()` only when the formatted text actually changes. Apply the configured overlay
+  background when the overlay is enabled or its settings are refreshed, not on every timer tick.
+  Retain live enable/disable, FPS changes, background changes, and detailed-stat gating. In an exact
+  7th Dragon six-versus-six bracket this reduced mean task-clock 3.573%, CPU cycles 3.425%, and
+  retired instructions 1.865% at only 0.176% higher sampled frequency; the overlay-triggered
+  `ViewRootImpl.doTraversal` call tree fell from 1.40% to 0.19%. Preserve the exact frame and visible
+  `FPS: 30` checks. This is recurring Android UI-work removal, not a battery-watt claim while the
+  Thor remains AC-powered.
 - Preserve the Vulkan Choreographer-wakeup elision from commit `b62eb36f2`. Android must post one
   frame callback on fragment resume and keep it alive while the native renderer window is still
   being constructed. Once running, the base/Vulkan window reports that it does not require another
