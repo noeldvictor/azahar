@@ -2,6 +2,7 @@
 [Bb]uild*/
 doc-build/
 build-*/
+thor-power-results/
 
 # NSIS built executables
 src/installer/*.exe

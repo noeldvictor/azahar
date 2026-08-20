@@ -933,6 +933,20 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   on either panel. No source optimization was accepted from this audit. The device was still
   AC-powered at 80%, 4.266 V, and 23.0 C in performance/fan modes 2/4, so the under-6-W battery
   gate remains open.
+- `tools/measure-thor-power.ps1` now makes that open gate reproducible over Wi-Fi ADB. It reads the
+  Thor's native battery `power_now`, `power_avg`, current, voltage, temperature, capacity, and USB,
+  wireless, and UCSI charger-online nodes, then writes raw CSV plus a JSON summary with mean,
+  median, nearest-rank P95, maximum, temperature range, and least-squares thermal slope. The default
+  acceptance policy requires production ARM64 version `37053eb9d-vanilla-thor`, the accepted config
+  hash, Standard mode 0, fan mode 4, and both mean and P95 at or below 6 W. An expected brightness
+  and before/after exact screenshot hash can lock the scene.
+- The deterministic script self-test passed its statistics, pass/fail, thermal-slope, real-battery,
+  and simulated-battery cases. A live production-package negative test on Wi-Fi Thor
+  `192.168.1.33:5555` correctly stopped at preflight because AC was connected; it created no result
+  directory and no watt claim. On that hardware, AC state also read `usb/online=1`,
+  `ucsi.../online=1`, `current_now=0`, and `power_now=46,960,186`, demonstrating why the charger
+  checks cannot be replaced with a superficially plausible battery status. This is measurement
+  tooling, not optimization entry 161, and the under-6-W result remains pending a physical unplug.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

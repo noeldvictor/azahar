@@ -17,6 +17,38 @@ cd src/android
 
 Do not treat the Google Play, Flathub, Internet Archive, or RetroArch checklist below as active work for this personal Thor fork unless the user explicitly asks.
 
+## Thor battery-power gate
+
+`measure-thor-power.ps1` samples the AYN Thor's battery power and temperature over Wi-Fi ADB. It is
+read-only apart from optional temporary screenshots, which it removes from the device. Run its
+built-in deterministic checks before using it:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\measure-thor-power.ps1 -SelfTest
+```
+
+For the accepted 7th Dragon scene, physically unplug the Thor, select device-wide Standard mode,
+leave fan mode 4 and a fixed recorded brightness, launch the production Lite APK into the exact
+scene, then run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\measure-thor-power.ps1 `
+  -ExpectedBrightness <recorded-value> `
+  -ExpectedScreenshotSha256 E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C
+```
+
+Defaults provide a 60-second warmup followed by 180 seconds of one-second samples. The gate passes
+only when both mean and nearest-rank P95 battery power are at most 6 W. It records raw current,
+voltage, direct and averaged power nodes, battery temperature/capacity, charger flags, package and
+device metadata, config hash, and before/after screenshot hashes under `thor-power-results/`.
+
+The script deliberately fails instead of producing a watt claim if the battery is simulated, any
+external-power flag is present, a charger appears during sampling, the app exits, hardware is not an
+AYN Thor, ADB is not using a host:port endpoint, the package is debuggable/non-ARM64, or the expected
+version, config, performance mode, fan mode, brightness, or frame hash differs. Override an expected
+value explicitly when validating a newer accepted build; do not weaken the charger or simulated-
+battery checks.
+
 ## Upstream Release Checklist
 
 The upstream release checklist was removed from this fork-facing README because it is obsolete for Azahar Thor Experiment. This fork does not publish Google Play, Flathub, Internet Archive, compatibility-list, translation, or RetroArch releases.
