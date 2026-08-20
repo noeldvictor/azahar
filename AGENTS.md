@@ -741,6 +741,16 @@
   transfer commands, and surface-validation copies/blits were zero. These are guest-visible
   framebuffer operations, not another host presentation layer. Do not remove or alias them without
   exact PICA memory/coherency reasoning, multi-title pixel/state tests, and a new Thor capture.
+- Preserve the entry-161 dirty-region semantic no-op guard. A nonzero-owner invalidation may skip
+  `DirtyRegionMap::set()` only when Boost ICL proves that the complete invalidated interval is
+  already mapped to that exact owner. Wrong-owner, extending, partially covered, and mixed-owner
+  intervals must update normally, and owner-zero invalidation must retain the established erase.
+  Keep the map helper independently testable and retain exact-range, contained-subrange,
+  wrong-owner, extension, and mixed-owner coverage. Profiler-only invalidation/update/elision
+  counters must compile out of normal builds. On the Thor's Super Mario 3D Land attract loop,
+  steady five-second windows elided 96.64%-98.58% of candidate same-owner rewrites; a scene-matched
+  cycle profile reduced `InvalidateRegion` inclusive share from 2.08% to 1.35% and removed the
+  control's large allocation/free branches. This proves recurring CPU work removal, not watts.
 - Vulkan presentation frames use the swapchain's exact format. When the intermediate frame and
   acquired swapchain image also have identical extents, retain the direct `vkCmdCopyImage` route:
   it preserves every pixel bit-for-bit and avoids asking the transfer path to perform a filtered
@@ -1319,6 +1329,12 @@
   command-line Git during configuration, and Gradle 8.13 rejects that while storing the cache even
   after native and APK tasks succeed. Use `--no-configuration-cache`; the ordinary Gradle build
   cache and active native CMake/Ninja cache remain useful.
+- Drive Android native builds through Gradle with the pinned JDK, SDK, NDK, and vcpkg environment;
+  do not invoke an unrelated system Ninja directly against `app/.cxx`. A `.ninja_deps` access or
+  sharing failure can mean another Gradle/CMake build still owns the active configuration: wait for
+  that owner instead of deleting the cache or starting a parallel build. Toggling
+  `thorFrameProfiling` reconfigures the native target and can legitimately rebuild all 2,203 ARM64
+  actions even when the configuration hash remains `5h1x5ud1`.
 - The Thor may enumerate through both USB (`c3ca0370`) and wireless ADB. The user currently prefers
   wireless ADB at `192.168.1.33:5555`; use that transport for installs and tests unless they ask to
   switch back, and always pass `-s` so the same physical device is not addressed twice. Record AC,

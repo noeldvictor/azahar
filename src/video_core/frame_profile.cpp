@@ -118,7 +118,8 @@ void ReportFrameProfileWindow() {
     LOG_INFO(Render_Vulkan,
              "ThorFrameProfile cache_paths texture_copy={} texture_copy_mpix={:.3f} "
              "display_transfer={} display_transfer_mpix={:.3f} validation_copy={} "
-             "validation_copy_mpix={:.3f} validation_blit={} validation_blit_mpix={:.3f}",
+             "validation_copy_mpix={:.3f} validation_blit={} validation_blit_mpix={:.3f} "
+             "invalidations={} dirty_updates={} dirty_updates_elided={}",
              values[Index(FrameProfileEvent::AcceleratedTextureCopies)],
              values[Index(FrameProfileEvent::AcceleratedTextureCopyPixels)] / 1'000'000.0,
              values[Index(FrameProfileEvent::AcceleratedDisplayTransfers)],
@@ -126,7 +127,10 @@ void ReportFrameProfileWindow() {
              values[Index(FrameProfileEvent::SurfaceValidationCopies)],
              values[Index(FrameProfileEvent::SurfaceValidationCopyPixels)] / 1'000'000.0,
              values[Index(FrameProfileEvent::SurfaceValidationBlits)],
-             values[Index(FrameProfileEvent::SurfaceValidationBlitPixels)] / 1'000'000.0);
+             values[Index(FrameProfileEvent::SurfaceValidationBlitPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::RasterizerInvalidations)],
+             values[Index(FrameProfileEvent::DirtyRegionUpdates)],
+             values[Index(FrameProfileEvent::DirtyRegionUpdatesElided)]);
     LOG_INFO(Render_Vulkan,
              "ThorFrameProfile present blits={} copies={} direct={} mpix={:.3f} "
              "queue_wait_ms_per_swap={:.3f} combined_submissions={}",

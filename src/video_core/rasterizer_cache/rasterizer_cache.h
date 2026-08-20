@@ -1320,6 +1320,8 @@ void RasterizerCache<T>::InvalidateRegion(PAddr addr, u32 size, SurfaceId region
         return;
     }
 
+    AddFrameProfileEvent(FrameProfileEvent::RasterizerInvalidations);
+
     const SurfaceInterval invalid_interval(addr, addr + size);
 
     if (region_owner_id) {
@@ -1351,7 +1353,12 @@ void RasterizerCache<T>::InvalidateRegion(PAddr addr, u32 size, SurfaceId region
     });
 
     if (region_owner_id) {
-        dirty_regions.set({invalid_interval, region_owner_id});
+        if (IsRegionOwnedBy(dirty_regions, invalid_interval, region_owner_id)) {
+            AddFrameProfileEvent(FrameProfileEvent::DirtyRegionUpdatesElided);
+        } else {
+            AddFrameProfileEvent(FrameProfileEvent::DirtyRegionUpdates);
+            dirty_regions.set({invalid_interval, region_owner_id});
+        }
     } else {
         dirty_regions.erase(invalid_interval);
     }

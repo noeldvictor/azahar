@@ -13,6 +13,7 @@
 #include <boost/icl/interval_map.hpp>
 #include <tsl/robin_map.h>
 
+#include "video_core/rasterizer_cache/dirty_regions.h"
 #include "video_core/rasterizer_cache/framebuffer_base.h"
 #include "video_core/rasterizer_cache/sampler_params.h"
 #include "video_core/rasterizer_cache/surface_params.h"
@@ -68,10 +69,6 @@ class RasterizerCache {
     using Surface = typename T::Surface;
     using Framebuffer = typename T::Framebuffer;
     using DebugScope = typename T::DebugScope;
-
-    using SurfaceMap = boost::icl::interval_map<PAddr, SurfaceId, boost::icl::partial_absorber,
-                                                std::less, boost::icl::inplace_plus,
-                                                boost::icl::inter_section, SurfaceInterval>;
 
     using SurfaceRect_Tuple = std::pair<SurfaceId, Common::Rectangle<u32>>;
     using PageMap = boost::icl::interval_map<u32, int>;
@@ -224,7 +221,7 @@ private:
     Common::SlotVector<Surface> slot_surfaces;
     Common::SlotVector<Sampler> slot_samplers;
     Common::SlotVector<Framebuffer> slot_framebuffers;
-    SurfaceMap dirty_regions;
+    DirtyRegionMap dirty_regions;
     PageMap cached_pages;
     u32 resolution_scale_factor;
     FramebufferParams fb_params;

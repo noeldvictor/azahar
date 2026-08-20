@@ -1116,6 +1116,51 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   the accepted 7th Dragon screenshot SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. This policy matrix is not
   optimization entry 161 and makes no AC-derived watt claim.
+- Entry 161 removes redundant Boost ICL dirty-region rewrites found by the post-forest CPU profile.
+  The pre-change Super Mario 3D Land (`0004000000054000`) capture attributed 2.08% inclusive and
+  0.78% self of sampled CPU cycles to `RasterizerCache<Vulkan::Traits>::InvalidateRegion`. Its call
+  tree included 14.02% of the function's event count below an interval-map/free branch and 10.15%
+  below an interval-map/allocation branch. `FramebufferHelper` repeatedly reasserted that an
+  interval belonged to the owner already covering the complete interval, but `interval_map::set()`
+  still erased, allocated, reinserted, and coalesced nodes.
+- A nonzero-owner invalidation now asks Boost ICL whether the complete interval already contains the
+  exact owner segment and skips only that semantic no-op. Wrong-owner, partially covered, extending,
+  and mixed-owner intervals still call `set()`. Owner-zero invalidation still erases the interval,
+  and surface discovery, invalidation, unregister, flush, and page-count behavior are unchanged.
+  Permanent tests cover exact and contained same-owner intervals plus wrong-owner, extension, and
+  mixed-owner rejection.
+- The profiler-enabled ARM64 build completed all 2,203 native actions and linked the test runner.
+  Its focused device test passed 9 assertions in two rasterizer-cache cases. In steady 5.014-second
+  title windows with 600 combined dual-panel presents, `dirty_updates=1650` while
+  `dirty_updates_elided` ranged from 47,400 to 114,604: 96.64%-98.58% of candidate same-owner
+  rewrites were no-ops. The rendered top screen remained at a visible 60 FPS. The profiler APK was
+  32,440,183 bytes with SHA-256
+  `643B55C66CFFEBA470E4339E3116A6E9A85F61271EAE9148F7D0E64D563D0853`.
+- A separate profiling-off build completed all 2,203 native actions and packaged successfully in
+  9 minutes 23 seconds. Its APK was 32,439,807 bytes with SHA-256
+  `9EC1DF3108C1E6FF29E2277E6979B4290D8BAB2C17D68B74E6A96853C007548C`. Wi-Fi ADB preserved the
+  exact configuration SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`, then relaunched the exact
+  title on Mesa Turnip 25.99.99 / Adreno 740 without any `ThorFrameProfile` line.
+- Two profiling-off candidate captures ran for 29.995 seconds apiece with zero lost samples. The
+  candidate trace whose command/draw mix most closely matched the control placed `ProcessCmdList`
+  at 20.75% versus 20.17% control, while `InvalidateRegion` fell from 2.08% inclusive / 0.78% self
+  to 1.35% / 0.74%. Process-wide Scudo allocation fell from 1.29% to 0.93% inclusive, deallocation
+  from 1.55% to 1.00%, and quarantine/deallocation from 1.07% to 0.74%. The independent candidate
+  trace put `InvalidateRegion` at 1.13% / 0.61%. Candidate call trees retain the bounded ownership
+  lookup and genuine map mutations but no longer contain the control's recurring allocation/free
+  branches for already-owned segments.
+- The complete patched native suite on the physical Thor ran 925,380 assertions in 173 cases:
+  167 cases and 925,377 assertions passed. The only three failures are the established standalone-
+  JNI `get_build_flavor` omissions, and the only three skips are the established missing-DSP-
+  firmware cases. This is the expected one-case/one-pass increase over the pre-change 172/166
+  result.
+- Entry 161 raises the ledger to 161 numbered entries and 160 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. The measured 35.1% reduction in
+  this function's inclusive sampled share and the allocator-share reductions are path-local CPU-
+  work evidence; they are not additive with earlier entries and do not prove FPS or battery watts.
+  The Thor remained AC-powered, so the physical discharging-battery mean/P95 <=6 W gate remains
+  open.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
