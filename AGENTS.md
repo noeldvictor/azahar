@@ -156,6 +156,13 @@
   `flushed_intervals.empty()`: instruction-level attribution identified Boost erase machinery, but
   a zero-lost-sample candidate profile left `FlushRegion` self share effectively unchanged at 0.89%
   versus 0.91% control. Required dirty-surface downloads and interval ownership remain intact.
+- Do not remove `ProcessNormalCommandBatch()`'s command-list bounds check or coalesce its recurring
+  `delay_generator.AddCommands(1)` calls based only on smaller AArch64 code. The candidate reduced
+  the linked helper from 236 to 208 bytes and passed all 21,008 focused PICA assertions, but an exact
+  7th Dragon six-versus-six bracket regressed mean process CPU cycles by 0.559% and retired
+  instructions by 0.206% (median regressions 0.467% and 0.504%). `ProcessCmdList` sampling moved
+  only from 0.73% to 0.71% self, inside noise. Keep the per-command delay updates and defensive
+  bounds condition unless a differently shaped implementation wins a matched whole-app bracket.
 - Do not add a maintained 64-bit nonempty-priority mask to `ThreadQueueList` based on the 2026-08-20
   scheduler profile. Although it replaced historical-empty-queue scans with AArch64 `RBIT`/`CLZ`,
   its enqueue/dequeue maintenance increased mean 7th Dragon task-clock 1.051%, cycles 1.156%, and

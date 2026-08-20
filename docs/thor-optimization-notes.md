@@ -800,6 +800,26 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   in an 8,261-sample, zero-lost-sample candidate profile with 14,034,484,337 cycles. That noise-scale
   target movement does not justify an extra recurring branch, so the implementation was completely
   reverted. This rejected follow-up is not entry 159 and makes no speed, FPS, or power claim.
+- A subsequent `ProcessNormalCommandBatch()` candidate was also rejected and fully reverted. Its
+  caller already limited the ordinary-command prefix to the remaining command pairs, so the helper
+  removed its duplicate recurring bounds check and accumulated the same delay count once after the
+  prefix instead of once per command. The total delay and special-register ordering were unchanged,
+  the linked AArch64 helper shrank from 236 to 208 bytes, the pinned native build passed, and all
+  21,008 assertions in the three focused ARM64 PICA cases passed. Its 32,440,487-byte debug APK had
+  SHA-256 `34C34D4C6FEECD0EBDE1772CAD9D3D886F927AA01C743E879760E437E173304E`;
+  7th Dragon reproduced exact SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and remained alive.
+- The target profile was noise-scale rather than a win. The candidate's 8,353-sample, zero-lost
+  30-second capture recorded 13,887,596,480 cycles and placed `ProcessCmdList` at 5.57% inclusive /
+  0.71% self. The closest untouched profile recorded 8,261 samples, zero lost, 14,034,484,337 cycles,
+  and 5.72% inclusive / 0.73% self. A stricter exact-scene six-versus-six counter bracket then
+  rejected the smaller helper: candidate means were 4.976310 billion CPU cycles and 1.608208 billion
+  retired instructions per ten-second window versus control means of 4.948643 and 1.604904 billion.
+  Candidate deltas were +0.559% cycles and +0.206% instructions; median deltas were +0.467% and
+  +0.504%. The 32,439,999-byte rebuilt control had SHA-256
+  `5F7EEE22B280B8C972578A1147FFAE2889636722E3E68D114FC89437AE16460C` and reproduced the same exact
+  scene. Smaller code did not reduce application work here, so no source or test remains and this is
+  not entry 159. The Thor remained AC-powered, so neither profile can establish battery watts.
 - Entry 158 raises the ledger to 158 numbered entries and 157 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 158 are
   measured recurring presentation, scheduler, and audio-work reductions, not additive percentages.
