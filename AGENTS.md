@@ -528,6 +528,16 @@
   descriptor shares also varied upward. The candidate was fully reverted. Reconsider only when a
   ranked title proves frequent blend-only pipeline-key churn and a matched bracket shows less
   recurring driver work; extension availability is not optimization evidence.
+- Do not bypass the Vulkan graphics-pipeline map lookup from a remembered pipeline/state match.
+  The exact shortcut passed focused static/dynamic-state tests but crashed the physical Thor's
+  Turnip worker in `tu_cmd_render<chip7>` with a null dereference. Also do not retain the safer
+  consecutive disk-bookkeeping cache merely to skip `PipelineInfo::Hash()` and the known-pipeline
+  set lookup. It preserved the required optimized map lookup and passed 53 assertions in six
+  physical-device Vulkan cases, but only 153,847 of 300,000 live Super Mario 3D Land queries
+  (51.28%) repeated the prior static state. `ShaderDiskCache::GetPipeline()` remained below 1% of
+  process work, while control/candidate trace variance was larger than the entire function. Keep
+  the direct hash/set route until a ranked title proves materially higher repetition and a matched
+  complete-path bracket beats the comparison/cache overhead without changing pipeline lifetime.
 - Keep the rasterizer cache's last framebuffer-surface selection guarded by both the active color/
   depth `SurfaceParams` and `surface_generation`. Compare resolution scale explicitly because
   `SurfaceParams::operator==` intentionally omits it. Advance the generation for every registered

@@ -1658,6 +1658,44 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   not merely because driver leaf calls decline. The Thor was wall-powered, so the discharging-
   battery mean and nearest-rank P95 at or below 6 W gate remains open.
 
+## Consecutive Vulkan Pipeline Bookkeeping Rejection (2026-08-20)
+
+- Entry 168 tested two ways to reduce the recurring Vulkan pipeline lookup/bookkeeping subtree in
+  the post-`a5de2546c` Super Mario 3D Land profile. The first remembered the last exact static state
+  and pipeline and bypassed `ShaderDiskCache::GetPipeline()` entirely on a match. Its focused
+  physical-device suite passed 53 assertions in six `[video_core][vulkan]` cases, but the 32,502,453-
+  byte APK (`340E75870BDB070E9F7D249B9D94F898FCFDA66184689DD46BAD586680E74FBD`) crashed the exact title
+  after about 18 seconds. The Vulkan worker raised `SIGSEGV` at address `0x40` in Turnip
+  `tu_cmd_render<chip7>+312` (driver build ID `c4461fe...`). The shortcut was immediately reverted;
+  a rebuilt control survived the same launch. Pipeline map lookup/lifetime is therefore mandatory
+  even when consecutive Azahar state appears equal.
+- The narrower candidate always computed `StaticPipelineInfo::OptimizedHash()`, always performed
+  `graphics_pipelines.try_emplace()`, and always returned through the established map. It skipped
+  only the full static hash, known-pipeline set lookup, and disk append check when the immediately
+  preceding 152-byte `StaticPipelineInfo` matched; dynamic blend color, stencil reference, and
+  viewport changes intentionally did not invalidate that disk-only comparison. The same Thor suite
+  passed all 53 assertions in six cases. The preserved profiling-off control APK was 32,501,545
+  bytes with SHA-256 `F65033F361385CBF43ED43955FEA6354C7E303BD71A9714F396DF32B41259141`;
+  the 32,502,725-byte candidate was
+  `6522023D0271DC842EEA533A1E2DEE144F56E982E02C2D7233BA0B62FEA91004`.
+- Wi-Fi ADB retained the byte-identical accepted configuration, exact program ID
+  `0004000000054000`, generic Turnip R8 metadata, Mesa 25.99.99, Adreno 740, and profiling-off
+  builds for the performance screens. The 30-second candidate call graph recorded 45,157 samples,
+  17,874,885,557 user cycles, and zero lost samples. Two controls recorded 18,147,651,668 and
+  20,103,045,597 cycles; their `GetPipeline()` inclusive shares varied from 0.93% to 0.59%, while
+  the candidate was 0.85%. The candidate looked 1.50% better than one control but 11.08% better
+  than the other, proving animated-scene/system variance dominated this sub-percent subtree rather
+  than proving a whole-emulator gain.
+- A temporary profiler-only counter then supplied the decisive work-frequency check and was removed
+  before commit. Cumulative repeated-static-state counts were 50,312/100,000, 102,554/200,000, and
+  153,847/300,000 queries: only 51.2823% of calls avoided the hash/set route. Paying the full static
+  comparison on every draw to skip tiny bookkeeping on half the calls is not a forest-level win
+  when the complete function is below 1% of process work. The narrow candidate and its tests were
+  fully reverted; Entry 168 does not raise the 163 active accepted-entry count. Reconsider only if
+  a ranked title shows materially higher consecutive repetition and a matched complete-path bracket
+  clears scene noise. Testing was AC/USB-powered, so no FPS or wattage gain is claimed and the
+  discharging-battery mean and nearest-rank P95 at or below 6 W gate remains open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
