@@ -467,6 +467,72 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   above apply only to enabling the normal cap in this title scene and must not be added to other
   optimization percentages or translated into battery watts.
 
+## 2026-08-19 Direct-to-Swapchain Android Vulkan Composition
+
+- Optimization/candidate entry 152 removes the intermediate full-frame transfer when Android's
+  final layout dimensions exactly match the current Vulkan swapchain. The renderer performs one
+  finite acquire before recording final composition. If an image is immediately available, that
+  swapchain image and its Android-only framebuffer become the final color attachment; the render
+  pass discards prior contents on entry and finishes in `PresentSrcKHR`.
+- Correctness and recovery are deliberately conservative. Acquisition still uses the frame-owned
+  binary semaphore whose prior scheduler submission tick is complete before reuse. The combined
+  submission waits at `ColorAttachmentOutput`, and an explicit external-to-subpass dependency makes
+  the acquired image available to color writes. A retry, surface recreation, invalid swapchain,
+  extent mismatch, or incomplete direct framebuffer set returns to the established intermediate
+  image and copy/blit path. Swapchain recreation waits for the graphics queue, destroys the direct
+  framebuffers and views before the old swapchain, and creates replacements only after a valid new
+  image set exists.
+- A successful direct frame eliminates the intermediate presentation image's final write-to-
+  transfer dependency, the full-frame copy, both transfer-image transitions, and the intermediate
+  image's post-copy restore barrier. It does not remove layout composition draws, swapchain acquire
+  or present, the graphics submission, or guest rendering. The opt-in profiler now reports
+  `PresentDirectRenders` separately from fallback copies and blits; ordinary builds still compile
+  the profiling operations out.
+- The indexed local Qualcomm Adreno Game Developer Guide was read directly and its SHA-256 matched
+  `0872AA49B763ACB46AEB7427784E926D2BF3939F2E731B405DEF977A5BFAECAC`. Pages 60-61 recommend
+  minimizing final render passes and avoiding wasteful GMEM-to-system-memory resolves; page 64
+  says Vulkan image layouts should be specific and recommends FIFO swapchains for efficient GPU
+  use and battery behavior. Page 70 documents blit/SurfaceFlinger scaling for mismatched final
+  sizes, which is why this change retains the existing copy/blit fallback instead of stretching the
+  direct route beyond exact extents. Those manual statements rank the candidate; the profiler and
+  pixel comparison below are the acceptance evidence.
+- The synchronization model follows Khronos' [`VkSubmitInfo`
+  reference](https://docs.vulkan.org/refpages/latest/refpages/source/VkSubmitInfo.html), including
+  waiting at the first stage that consumes an acquired image, and its official [swapchain semaphore
+  reuse guide](https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html), which ties
+  presentation-finished semaphore reuse to swapchain images.
+- JDK 17 Kotlin compilation passed all 22 tasks. A clean profiling-off ARM64 package build compiled
+  all 2,203 native actions and linked both `libcitra-android.so` and the native test executable; the
+  later profiler-on and final profiler-off packages also passed. The profiler cache records
+  `ENABLE_THOR_FRAME_PROFILING=ON` and its linked library contains the
+  `ThorFrameProfile present ... direct={}` format. The final normal cache records the option `OFF`,
+  and the linked normal library contains no `ThorFrameProfile present` string.
+- Wi-Fi ADB identified the physical target as AYN Thor / QCS8550 on Android 13 with Turnip Adreno
+  740. The installed old profiler build booted 7th Dragon III (`000400000018F800`) to its animated
+  title at a visible 30 FPS. Its steady 5.014-second windows reported `swaps=300`, `presented=300`,
+  `present copies=300`, and `511.920` presentation MPix. The new profiler build booted the same
+  title and its steady windows reported `presented=300`, `direct=300`, `copies=0`, and the same
+  `511.920` MPix. Thus every presented exact-size frame in this scene took the direct route and the
+  measured full-frame copy count fell from one per presentation to zero.
+- Correctness was checked independently of counters. The old-copy screenshot, profiler-on direct
+  screenshot, and profiling-off direct screenshot are byte-identical with SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. There were no fatal log
+  entries. The accepted native implementation is commit `57044971c`, pushed to `origin/master`.
+- The profiling-off ARM64-only APK is 29,010,992 bytes with SHA-256
+  `206B09DE56B0A5078A60715E18756CB7AB9F468E8E2445A09BA72F5EE9CE1FDF`. It reports package
+  `org.azahar_emu.azahar.debug`, version `57044971c-vanilla-thor`, minimum SDK 29, and target SDK 37,
+  installed successfully over Wi-Fi ADB, and booted the same title without profiler log lines.
+- Power remains an explicit open gate. Both 60 Hz panels were on, primary brightness was 255,
+  secondary brightness was 100, Thor performance mode was 2, fan mode was 4, and Adreno was held
+  at 615 MHz. The normal build's single steady sample used 25.54% of one CPU core with KGSL busy
+  mean 8.03% and P95 8.17%, but the battery reported AC-powered at 80%, 4.265 V, and 23.0 C with
+  `current_now=0`. Those are utilization observations only. No watt, thermal, battery-life, or
+  whole-game FPS improvement is claimed until the charger is physically unplugged and a matched
+  discharge capture confirms the required ceiling.
+- Entry 152 raises the ledger to 152 numbered entries and 151 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. It is a recurring presentation-
+  traffic reduction, not an additive speed percentage.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

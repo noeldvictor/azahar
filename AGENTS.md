@@ -54,8 +54,9 @@
   waits, render-pass reuse/churn, texture transfer volume, and presentation copies. A profiling
   APK perturbs timing and is not valid for FPS, power, or thermal A/B claims. Do not count profiler
   instrumentation as an optimization-ledger entry. `RenderPassImageBarriers` counts only barriers
-  emitted while ending render passes, not every Vulkan image barrier in the emulator. Do not launch
-  the app or a game while the user's current no-launch restriction remains in effect.
+  emitted while ending render passes, not every Vulkan image barrier in the emulator. Install or
+  launch on the Thor only when the user explicitly authorizes on-device testing; the 2026-08-19
+  direct-presentation sprint has that authorization.
 - Treat the forest/trees pivot as an acceptance gate, not just a documentation warning. Without a
   permitted profiler capture, accept new performance code only when static correctness evidence
   proves that it removes a recurring whole-frame operation, memory pass, broad synchronization
@@ -476,10 +477,12 @@
   recreation, presentation-window destruction, and renderer teardown where the host actually needs
   completed work or is about to destroy its backing resources.
 - Native Vulkan presentation must use `Scheduler::FlushWithDynamicSubmission()` so final
-  composition and the swapchain transfer stay in one scheduler command buffer and one graphics-
-  queue submission. The worker-side prepare callback must acquire and capture the exact swapchain
-  image plus its binary semaphores, record the transfer and both post-transfer image transitions,
-  and wait for `image_acquired` at `Transfer`. Only after `vkQueueSubmit` may the post-submit
+  composition and any required swapchain transfer stay in one scheduler command buffer and one
+  graphics-queue submission. The intermediate fallback's worker-side prepare callback must acquire
+  and capture the exact swapchain image plus its binary semaphores, record the transfer and both
+  post-transfer image transitions, and wait for `image_acquired` at `Transfer`. Android's exact-size
+  direct route acquires before recording composition and instead waits at `ColorAttachmentOutput`.
+  Only after `vkQueueSubmit` may the post-submit
   callback enqueue the frame while holding `queue_mutex`; release that predicate mutex before
   notifying the present thread. Do not restore a separate presentation command pool/buffer, second
   `vkQueueSubmit`, `render_ready` handoff, or `present_done` fence wait/reset. Keep the worker drain
@@ -495,6 +498,25 @@
   Acquire semaphores are frame-owned; publish the scheduler submission tick before queueing the
   frame, and wait for that tick before signaling the same binary semaphore again. Preserve
   out-of-date/surface-lost recreation and do not turn an ordinary timeout into an abort.
+- Android Vulkan may render final composition directly into an acquired swapchain image only when
+  the frame and current swapchain extents match exactly, the swapchain is valid, and one finite
+  acquire succeeds immediately while holding `swapchain_mutex`. `Retry`, `Recreate`, an extent
+  mismatch, or incomplete direct framebuffer state must fall back to the intermediate image; never
+  add a direct-path acquire retry loop before composition. Wait for the acquired image at
+  `ColorAttachmentOutput`. Keep the direct render pass `Undefined` on entry and `PresentSrcKHR` on
+  exit with an explicit external-to-color-output dependency, and preserve the frame-owned acquire-
+  semaphore submission-tick reuse rule. Direct image views and framebuffers are Android-only
+  swapchain-lifecycle resources: destroy them before recreation, rebuild them only for a valid new
+  image set, and clear stale swapchain images/count on destruction. Keep the fallback framebuffer,
+  render pass, copy/blit route, and restore-only recovery intact. Count successful direct renders
+  only through the opt-in `PresentDirectRenders` Thor profiler event.
+- Preserve the entry-152 device acceptance result. On the animated 7th Dragon III title at the
+  exact 1920x1080 layout, the old profiler build reported `presented=300`, `copies=300`, and
+  `511.920` presentation MPix per steady 5.014-second window. The direct build reported
+  `direct=300`, `copies=0`, and the same presented pixels, while old, profiled-direct, and normal-
+  direct screenshots had the identical SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. A profiler route-count
+  win and a pixel-identical frame prove removal and correctness, not FPS or battery watts.
 - Vulkan presentation frames use the swapchain's exact format. When the intermediate frame and
   acquired swapchain image also have identical extents, retain the direct `vkCmdCopyImage` route:
   it preserves every pixel bit-for-bit and avoids asking the transfer path to perform a filtered

@@ -28,8 +28,10 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The Thor evidence ledger currently has **151 numbered entries, 150 of them active**. Entry 151
-extends Eco Turbo's 60 FPS host-presentation cap to fully uncapped emulation, while the earlier
+The Thor evidence ledger currently has **152 numbered entries, 151 of them active**. Entry 152
+lets exact-size Android Vulkan frames render their final composition directly into an acquired
+swapchain image, while entry 151 extends Eco Turbo's 60 FPS host-presentation cap to fully uncapped
+emulation and the earlier
 ARM64 absolute-offset page-table entry was withdrawn after it caused reproducible game-start
 crashes on the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
@@ -66,7 +68,8 @@ This fork has moved away from stock Azahar in visible ways:
 - Android launcher icon and README branding changed for this experiment.
 - Bundled Android cheats live under `src/android/app/src/main/assets/cheats/`.
 - Android game list marks titles with available bundled cheats more clearly.
-- Turbo speed toast spam is suppressed.
+- Fast-forward controls use clearer labels, and toggle-only toasts report the active speed or the
+  return to normal speed without showing again when settings are merely reloaded.
 - Android Eco Turbo defaults on and caps host presentation/composition to 60 FPS during explicit
   Turbo or fully uncapped emulation while guest emulation continues at the selected speed. It can
   be disabled under General for smoother fast-forward on the Thor's 120 Hz panel. Normal play
@@ -580,6 +583,20 @@ the Android descriptions now tell users to keep 100% enabled for normal play. In
 to 520 CPU ticks and KGSL busy readings from about 99.6% to about 9.8%. That is approximately 65%
 less process CPU time and 90% less GPU active share for this scene, not a battery-watt or whole-game
 claim. The Thor was wall-powered, and its mode-2 policy still held the Adreno floor at 615 MHz.
+
+Optimization 152 removes the remaining full-frame transfer from Android Vulkan presentation when
+the final layout and current swapchain have exactly matching dimensions. If a swapchain image is
+immediately available, the layout pass renders into that image and finishes it in
+`PresentSrcKHR`; the submission waits for acquisition at color output and signals the same
+image-specific present semaphore as before. A busy, invalid, rebuilding, or differently sized
+swapchain keeps the established intermediate render plus copy/blit route. This statically removes
+one intermediate-image write/read cycle, copy command, and its transfer barriers on each successful
+direct frame. A Wi-Fi ADB capture on the animated 7th Dragon III title confirmed the recurring
+route: the old build performed 300 presentation copies covering 511.920 MPix in each steady
+300-frame window; the new build performed 300 direct renders and zero presentation copies. Old,
+profiled-direct, and profiling-off direct screenshots were byte-identical, and the normal build
+held the title's visible 30 FPS. The Thor was still AC-powered, so this proves the eliminated work
+and matching output, not a battery-watt, thermal, or whole-game FPS improvement.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
