@@ -771,6 +771,23 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   audio hotspot, with no FPS claim and no whole-app speed claim. Thor was still AC-powered at 80%,
   about 4.264 V and 25.0 C, so the under-6-W gate remains open and no battery-power claim is made.
   Source and independent coverage were committed and pushed as `ac8037b39`.
+- After the `AGENTS.md` and evidence checkpoint `22bcfa820` was pushed, the pinned JDK 17
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build passed in 1 minute 11
+  seconds. The final ARM64-only APK is 29,010,536 bytes with SHA-256
+  `F3E492E0C1188AC7F0D9F09CB91D205484EEB338B551D132CEB9D760E005DB83`. It reports package
+  `org.azahar_emu.azahar.debug`, version `22bcfa820-vanilla-thor`, minimum SDK 29, and target SDK 37;
+  APK Signature Scheme v2 verification passed with signer-certificate SHA-256
+  `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. Its CMake cache records
+  `ENABLE_THOR_FRAME_PROFILING=OFF`, the stripped linked library contains zero `ThorFrameProfile`
+  strings, and neither the manifest nor installed package flags contain `DEBUGGABLE`.
+- Wi-Fi ADB installed that exact final APK. Its 7th Dragon title screen reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`; the adjacent capture that
+  initially differed was decoded and localized entirely to the expected pulsing prompt, and the
+  next frame matched byte-for-byte. Art Academy likewise reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932` on the next live-FPS update.
+  Both processes remained alive with no fatal, assertion, signal, fastmem, page-fault, profiler, or
+  Vulkan device-lost log match. The final power check was still AC-powered at 80%, 4.263 V, and
+  24.0 C, so this production validation still cannot close the under-6-W battery gate.
 - Entry 158 raises the ledger to 158 numbered entries and 157 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 158 are
   measured recurring presentation, scheduler, and audio-work reductions, not additive percentages.
