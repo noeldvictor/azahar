@@ -51,7 +51,8 @@ AYN Thor, ADB is not using a host:port endpoint, the package is debuggable/non-A
 version, config, performance mode, fan mode, brightness, or frame hash differs. It requires manual
 brightness mode and exactly two active displays, records the display service's brightness for each
 physical panel, and rejects a panel disappearing, turning off, or changing brightness during warmup
-or sampling. Override an expected
+or sampling. When `-ExpectedBrightness` is supplied, both panels must match Android 13's normalized
+value for that integer setting; dimming only the primary panel is rejected. Override an expected
 value explicitly when validating a newer accepted build; do not weaken the charger or simulated-
 battery checks. It also rejects an idle or frozen fixed scene unless the run averages at least 10
 Azahar process CPU ticks per second and 1% KGSL GPU busy. Those deliberately loose defaults validate
@@ -87,6 +88,23 @@ as luminance evidence. `dumpsys display` is the authoritative automation source 
 Android brightness 255 it reported both physical displays ON with brightness 1.0. Full-scale panel
 brightness is a major uncontrolled variable near a 6 W device budget, so use a repeatable lower
 manual brightness for the eventual unplugged matrix and pass its integer setting explicitly.
+Changing `settings put system screen_brightness` affects only display 0 on this firmware. The
+installed Dual Screen Assistant instead calls Android 13's hidden
+`DisplayManager.setBrightness(displayId, float)` for display 4; changing the persisted
+`dual_screen_brightness_level` key alone did not actuate that panel. For this exact firmware,
+transaction 35 was verified from `/system/framework/framework.jar` as `setBrightness(int,float)`:
+
+```powershell
+adb -s 192.168.1.33:5555 shell settings put system screen_brightness 48
+adb -s 192.168.1.33:5555 shell service call display 35 i32 4 f 0.18503937
+```
+
+Those values set both panels to the same normalized brightness; the device display configuration
+maps approximately 0.185 to 95 nits. Record the original values first and restore them after an
+experiment. Treat the Binder transaction number as firmware-specific and verify it from the
+device framework after any Thor OS update. The strict tool allows 0.01 normalized tolerance for
+firmware rounding and color/brightness synchronization but still rejects a panel left at a
+materially different level.
 
 ## Upstream Release Checklist
 

@@ -110,6 +110,15 @@
   setting was 255. Full-scale brightness is not a sensible hidden constant near a 6 W total-device
   ceiling: select and record a repeatable lower manual brightness for the unplugged acceptance
   matrix, without silently changing the user's setting during development.
+  On this firmware `settings put system screen_brightness` changes only display 0; display 4 stays
+  at its prior value, and writing `dual_screen_brightness_level` alone does not actuate it. The
+  installed Dual Screen Assistant and the device's own `framework.jar` show that Android 13 hidden
+  `DisplayManager.setBrightness(displayId,float)` is the real secondary-panel path. Transaction 35
+  was verified as that method on this exact build, and `service call display 35 i32 4 f 0.18503937`
+  set display 4 to the same normalized value produced by primary brightness 48 (about 95 nits from
+  the device display curve). Re-derive the transaction after firmware changes. A fixed-brightness
+  gate must reject a primary-only dimming change; both physical displays must match the normalized
+  expected value and be restored after experiments.
 - Treat internal resolution as a forest-level GPU-load control before accepting more sub-percent
   source tuning. In the fixed 7th Dragon title scene, changing only `resolution_factor` from 3x to
   2x reduced mean KGSL busy from 8.374% to 5.488% (34.46%) and 1x reduced it to 3.933% (53.04%),

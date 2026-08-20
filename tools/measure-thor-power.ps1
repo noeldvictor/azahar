@@ -38,10 +38,13 @@ param(
     [int]$MaxAudioUnderruns = 0,
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
+    [ValidateRange(-1, 255)]
     [int]$ExpectedBrightness = -1,
     [int]$ExpectedBrightnessMode = 0,
     [ValidateRange(1, 8)]
     [int]$ExpectedActiveDisplayCount = 2,
+    [ValidateRange(0.000001, 0.1)]
+    [double]$DisplayBrightnessTolerance = 0.01,
     [string]$ExpectedVersionName = 'bc25ea052-vanilla-thor',
     [string]$ExpectedVulkanDriverName = 'Mesa Turnip driver v26.0.0 - R8',
     [string]$ExpectedVulkanDriverVersion = 'Vulkan 1.4.335',
@@ -412,6 +415,21 @@ function ConvertFrom-DisplayStateDump {
     }
 }
 
+function ConvertFrom-AndroidBrightnessInt {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateRange(0, 255)]
+        [int]$Value
+    )
+
+    # Android 13 BrightnessSynchronizer maps the persisted 1..255 setting onto 0.0..1.0.
+    # Treat the legacy/off value 0 as minimum rather than extrapolating below zero.
+    if ($Value -le 1) {
+        return 0.0
+    }
+    return ([double]$Value - 1.0) / 254.0
+}
+
 function Assert-DisplayStateSnapshot {
     param(
         [Parameter(Mandatory)]
@@ -433,6 +451,21 @@ function Assert-DisplayStateSnapshot {
             throw "${Phase}: display $($display.Id) returned an invalid brightness."
         }
     }
+    if ($ExpectedBrightness -ge 0) {
+        $expectedNormalizedBrightness = ConvertFrom-AndroidBrightnessInt `
+            -Value $ExpectedBrightness
+        foreach ($display in $Snapshot.Displays) {
+            if ([Math]::Abs($display.Brightness - $expectedNormalizedBrightness) -gt
+                    $DisplayBrightnessTolerance -or
+                [Math]::Abs($display.SdrBrightness - $expectedNormalizedBrightness) -gt
+                    $DisplayBrightnessTolerance) {
+                throw ('{0}: display {1} brightness is {2}/{3}; expected {4} from Android ' +
+                    'brightness {5}. Set both Thor panels explicitly.') -f
+                    $Phase, $display.Id, $display.Brightness, $display.SdrBrightness,
+                    $expectedNormalizedBrightness, $ExpectedBrightness
+            }
+        }
+    }
 
     if ($null -eq $Reference) {
         return
@@ -443,8 +476,10 @@ function Assert-DisplayStateSnapshot {
             throw "${Phase}: display $($referenceDisplay.Id) from preflight is missing or duplicated."
         }
         if ($current[0].State -ne $referenceDisplay.State -or
-            [Math]::Abs($current[0].Brightness - $referenceDisplay.Brightness) -gt 0.000001 -or
-            [Math]::Abs($current[0].SdrBrightness - $referenceDisplay.SdrBrightness) -gt 0.000001) {
+            [Math]::Abs($current[0].Brightness - $referenceDisplay.Brightness) -gt
+                $DisplayBrightnessTolerance -or
+            [Math]::Abs($current[0].SdrBrightness - $referenceDisplay.SdrBrightness) -gt
+                $DisplayBrightnessTolerance) {
             throw "${Phase}: display $($referenceDisplay.Id) state or brightness changed from preflight."
         }
     }
@@ -490,6 +525,12 @@ Display Adapters: size=4
     if ($displayState.Count -ne 2 -or $displayState.Displays[1].Id -ne 4 -or
         $displayState.Displays[0].Brightness -ne 0.38188976) {
         throw 'Display-state parser self-test failed.'
+    }
+    if ([Math]::Abs((ConvertFrom-AndroidBrightnessInt -Value 48) - 0.18503937007874016) `
+            -gt 0.0000000001 -or
+        (ConvertFrom-AndroidBrightnessInt -Value 1) -ne 0.0 -or
+        (ConvertFrom-AndroidBrightnessInt -Value 255) -ne 1.0) {
+        throw 'Android brightness conversion self-test failed.'
     }
     $changedDisplayState = ConvertFrom-DisplayStateDump -Text (
         $displayFixture.Replace('Display Brightness=0.38188976', 'Display Brightness=0.503937')
@@ -998,6 +1039,11 @@ $performanceMode = [int](Get-RemoteSetting -Name 'performance_mode')
 $fanMode = [int](Get-RemoteSetting -Name 'fan_mode')
 $brightness = [int](Get-RemoteSetting -Name 'screen_brightness')
 $brightnessMode = [int](Get-RemoteSetting -Name 'screen_brightness_mode')
+$expectedNormalizedDisplayBrightness = $null
+if ($ExpectedBrightness -ge 0) {
+    $expectedNormalizedDisplayBrightness = ConvertFrom-AndroidBrightnessInt `
+        -Value $ExpectedBrightness
+}
 if ($performanceMode -ne $ExpectedPerformanceMode) {
     throw "Performance mode is $performanceMode; expected $ExpectedPerformanceMode. Change it outside Azahar and retry."
 }
@@ -1168,7 +1214,9 @@ $summary = [pscustomobject]@{
         ExpectedVulkanDriverVersion = $ExpectedVulkanDriverVersion
         ExpectedVulkanDriverLibraryName = $ExpectedVulkanDriverLibraryName
         ExpectedBrightnessMode = $ExpectedBrightnessMode
+        ExpectedNormalizedDisplayBrightness = $expectedNormalizedDisplayBrightness
         ExpectedActiveDisplayCount = $ExpectedActiveDisplayCount
+        DisplayBrightnessTolerance = $DisplayBrightnessTolerance
         PowerPassed = $powerPassed
         WorkloadPassed = $workloadPassed
         PacingPassed = $pacingPassed
