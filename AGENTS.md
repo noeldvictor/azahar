@@ -156,6 +156,14 @@
   instructions also regressed 0.510%, 0.532%, and 0.883%. The implementation was fully reverted;
   retain cancellation when a ready thread is selected unless new whole-app evidence proves a net
   reduction without changing early-wakeup or timeout semantics.
+- Do not delete `ready_queue.remove()` from `ThreadManager::SwitchContext` unconditionally. The
+  selected thread is normally popped by `PopNextReadyThread`, but its no-better-thread branch
+  returns the current running thread without popping it. `SwitchContext` then requeues that thread
+  before loading its context, so it must remove the self-selected thread again. The unconditional
+  deletion passed 439,504 of 439,505 assertions in the broad ARM64 `[core]` suite (the sole failure
+  was the Android harness-only missing `get_build_flavor` function) yet crashed 7th Dragon within
+  one second with `Thread must be ready to become running`. Preserve the self-switch removal even
+  if ordinary cross-thread switches are given a narrower fast path.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

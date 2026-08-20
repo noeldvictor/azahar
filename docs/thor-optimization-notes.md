@@ -681,6 +681,20 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   0.24% and `ThreadWakeupCallback` from 0.16% to 0.22%; the measured cost was moved rather than
   removed. No source or test change remains and this is not entry 157. Thor was still AC-powered at
   80%, 4.264 V, and 25.0 C, so no battery-watt conclusion is drawn from the rejected experiment.
+- A third scheduler experiment removed `ready_queue.remove()` from `ThreadManager::SwitchContext`
+  after observing that the queue's ordinary selection helpers pop their result. A clean ARM64
+  RelWithDebInfo build succeeded, and the broad on-device `[core]` run passed 61 of 62 test cases
+  and 439,504 of 439,505 assertions; its only test failure was the Android test harness lacking the
+  unrelated `get_build_flavor` function. Those tests did not exercise the scheduler's self-switch
+  path, and the candidate crashed 7th Dragon within one second of launch with SIGTRAP at
+  `SwitchContext+964`: `Thread must be ready to become running`.
+- The failed invariant was isolated before profiling. When no higher-priority thread is available,
+  `PopNextReadyThread` returns the current running thread without popping it. `SwitchContext` first
+  pushes that same previous thread onto the ready queue, and the removed operation is what takes it
+  back out before marking it running. Leaving it queued causes a later reschedule to select a
+  running, rather than ready, thread. The unconditional deletion was fully reverted and is not
+  entry 157; any refined fast path must retain removal when `new_thread == previous_thread` and
+  repeat the real game-launch gate that exposed the missing unit-test coverage.
 - Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
