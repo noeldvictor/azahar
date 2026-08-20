@@ -172,7 +172,7 @@
     <string name="button_start" translatable="false">START</string>
     <string name="button_home">HOME</string>
     <string name="button_swap">Swap Screens</string>
-    <string name="button_turbo">Turbo</string>
+    <string name="button_turbo">Fast-Forward</string>
     <string name="button_combo">Combo Button</string>
     <string name="button_x" translatable="false">X</string>
     <string name="button_y" translatable="false">Y</string>
@@ -182,9 +182,9 @@
     <string name="button_zr" translatable="false">ZR</string>
     <string name="input_message_analog_only">This control must be bound to a gamepad analog stick or D-pad axis!</string>
     <string name="input_message_button_only">This control must be bound to a gamepad button!</string>
-    <string name="turbo_limit_hotkey">Turbo Speed</string>
-    <string name="turbo_enabled_toast">Turbo Speed Enabled</string>
-    <string name="turbo_disabled_toast">Turbo Speed Disabled</string>
+    <string name="turbo_limit_hotkey">Fast-Forward</string>
+    <string name="turbo_enabled_toast">Fast-forward enabled</string>
+    <string name="turbo_disabled_toast">Fast-forward disabled: normal speed</string>
     <string name="combo_button_settings">Configure Combo Button</string>
     <string name="combo_button_settings_description">Select which buttons are triggered by the Combo Button.</string>
 
@@ -307,8 +307,8 @@
     <string name="frame_limit_slider_description">Specifies the percentage to limit emulation speed. With the default of 100% emulation will be limited to normal speed. Values higher or lower will increase or decrease the speed limit.</string>
     <string name="android_hide_images">Hide 3DS Images from Android</string>
     <string name="android_hide_images_description">Prevent 3DS camera, screenshot, and custom texture images from being indexed by Android and displayed in the gallery. Your device may need to be rebooted after changing this setting to take effect.</string>
-    <string name="turbo_limit">Turbo Speed Limit</string>
-    <string name="turbo_limit_description">Emulation speed limit used while the turbo hotkey is active.</string>
+    <string name="turbo_limit">Fast-Forward Speed</string>
+    <string name="turbo_limit_description">Speed used while the fast-forward hotkey is active. 200% is 2× speed; higher values require more CPU and GPU power.</string>
     <string name="eco_turbo">Eco Turbo</string>
     <string name="eco_turbo_description">Save GPU power during fast-forward or uncapped emulation by displaying at most 60 frames per second while emulation keeps running at the selected speed. Disable for smoother fast-forward on high-refresh displays.</string>
     <string name="expand_to_cutout_area">Expand to Cutout Area</string>

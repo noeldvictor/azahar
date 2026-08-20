@@ -4,7 +4,10 @@
 
 package org.citra.citra_emu.utils
 
+import android.widget.Toast
+import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.R
 import org.citra.citra_emu.features.settings.model.IntSetting
 
 object TurboHelper {
@@ -12,11 +15,21 @@ object TurboHelper {
 
     fun isTurboSpeedEnabled(): Boolean = turboSpeedEnabled
 
-    fun reloadTurbo(@Suppress("UNUSED_PARAMETER") showToast: Boolean) {
+    fun reloadTurbo(showToast: Boolean) {
+        val context = CitraApplication.appContext
+        val toastMessage: String
+
         if (turboSpeedEnabled) {
-            NativeLibrary.setTemporaryFrameLimit(IntSetting.TURBO_LIMIT.int.toDouble())
+            val speedPercent = IntSetting.TURBO_LIMIT.int
+            NativeLibrary.setTemporaryFrameLimit(speedPercent.toDouble())
+            toastMessage = "${context.getString(R.string.turbo_enabled_toast)}: $speedPercent%"
         } else {
             NativeLibrary.disableTemporaryFrameLimit()
+            toastMessage = context.getString(R.string.turbo_disabled_toast)
+        }
+
+        if (showToast) {
+            Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
         }
     }
 
