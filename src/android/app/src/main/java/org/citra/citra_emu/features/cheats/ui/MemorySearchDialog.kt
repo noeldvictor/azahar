@@ -14,7 +14,6 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,7 +31,7 @@ class MemorySearchDialog(
 
     fun show() {
         when (val status = CheatEngine.getMemorySearchStatus()) {
-            SEARCH_NO_SESSION, SEARCH_TITLE_CHANGED -> showValueSizePicker()
+            SEARCH_NO_SESSION, SEARCH_TITLE_CHANGED -> showStartDialog()
             SEARCH_NO_GAME -> showError(R.string.memory_search_error_no_game)
             SEARCH_ONLINE_BLOCKED -> showError(R.string.memory_search_error_online)
             SEARCH_NOT_PAUSED -> showError(R.string.memory_search_error_not_paused)
@@ -44,11 +43,14 @@ class MemorySearchDialog(
         }
     }
 
-    private fun showValueSizePicker() {
+    private fun showStartDialog() {
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.memory_search_start)
             .setMessage(R.string.memory_search_offline_warning)
-            .setPositiveButton(R.string.memory_search_continue) { _, _ -> showValueSizeChoices() }
+            .setPositiveButton(R.string.memory_search_continue) { _, _ ->
+                promptSearchValue(DEFAULT_VALUE_SIZE, true)
+            }
+            .setNeutralButton(R.string.memory_search_advanced) { _, _ -> showValueSizeChoices() }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
@@ -61,7 +63,7 @@ class MemorySearchDialog(
         )
         val sizes = intArrayOf(1, 2, 4)
         MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.memory_search_start)
+            .setTitle(R.string.memory_search_choose_size)
             .setItems(labels) { _, which -> promptSearchValue(sizes[which], true) }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
@@ -84,7 +86,7 @@ class MemorySearchDialog(
         }
         actions += Action(R.string.memory_search_new) {
             CheatEngine.resetMemorySearch()
-            showValueSizePicker()
+            showStartDialog()
         }
 
         MaterialAlertDialogBuilder(context)
@@ -92,6 +94,7 @@ class MemorySearchDialog(
             .setItems(actions.map { context.getString(it.label) }.toTypedArray()) { _, which ->
                 actions[which].run()
             }
+            .setPositiveButton(R.string.memory_search_back_to_game) { _, _ -> returnToGame() }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
@@ -150,20 +153,19 @@ class MemorySearchDialog(
         }
         val size = valueSize()
         val labels = Array(values.size / 2) { index ->
-            val address = values[index * 2]
             val value = values[index * 2 + 1]
-            formatResult(address, value, size)
+            context.getString(R.string.memory_search_match, index + 1, value)
         }
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.memory_search_results)
             .setItems(labels) { _, which ->
-                showResultActions(values[which * 2], values[which * 2 + 1], size)
+                showResultActions(which + 1, values[which * 2], values[which * 2 + 1], size)
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun showResultActions(address: Long, currentValue: Long, size: Int) {
+    private fun showResultActions(match: Int, address: Long, currentValue: Long, size: Int) {
         val actions = mutableListOf<Action>()
         if (CheatEngine.canUndoMemorySearchWrite()) {
             actions += Action(R.string.memory_search_undo_write) { undoWrite() }
@@ -176,12 +178,12 @@ class MemorySearchDialog(
         }
         actions += Action(R.string.memory_search_create_cheat) {
             promptValue(R.string.memory_search_cheat_value, size, currentValue) { value ->
-                promptCheatName(address, value, size)
+                promptCheatName(match, address, value, size)
             }
         }
 
         MaterialAlertDialogBuilder(context)
-            .setTitle(formatResult(address, currentValue, size))
+            .setTitle(context.getString(R.string.memory_search_match, match, currentValue))
             .setItems(actions.map { context.getString(it.label) }.toTypedArray()) { _, which ->
                 actions[which].run()
             }
@@ -198,7 +200,10 @@ class MemorySearchDialog(
                 MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.memory_search_write_verified)
                     .setMessage(R.string.memory_search_write_verified_message)
-                    .setPositiveButton(android.R.string.ok, null)
+                    .setPositiveButton(R.string.memory_search_back_to_game) { _, _ ->
+                        returnToGame()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
                     .show()
             } else {
                 showError(R.string.memory_search_write_failed)
@@ -216,8 +221,8 @@ class MemorySearchDialog(
         }
     }
 
-    private fun promptCheatName(address: Long, value: Long, size: Int) {
-        val defaultName = context.getString(R.string.memory_search_default_cheat_name, address)
+    private fun promptCheatName(match: Int, address: Long, value: Long, size: Int) {
+        val defaultName = context.getString(R.string.memory_search_default_cheat_name, match)
         val (inputLayout, input) = makeInput(R.string.cheats_name, defaultName)
         val dialog = MaterialAlertDialogBuilder(context)
             .setTitle(R.string.memory_search_create_cheat)
@@ -232,7 +237,7 @@ class MemorySearchDialog(
                     inputLayout.error = context.getString(R.string.cheats_error_no_name)
                     return@setOnClickListener
                 }
-                val code = gatewayCode(address, value, size)
+                val code = memorySearchGatewayCode(address, value, size)
                 check(Cheat.isValidGatewayCode(code) == 0)
                 cheatsViewModel.startAddingCheat()
                 cheatsViewModel.finishAddingCheat(
@@ -268,11 +273,11 @@ class MemorySearchDialog(
             .create()
         dialog.setOnShowListener {
             dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                val value = parseValue(input.text?.toString().orEmpty(), size)
+                val value = parseMemorySearchValue(input.text?.toString().orEmpty(), size)
                 if (value == null) {
                     inputLayout.error = context.getString(
                         R.string.memory_search_value_range,
-                        valueMask(size)
+                        memorySearchValueMask(size)
                     )
                     return@setOnClickListener
                 }
@@ -334,42 +339,8 @@ class MemorySearchDialog(
 
     private fun valueSize(): Int = CheatEngine.getMemorySearchValueSize()
 
-    private fun parseValue(text: String, size: Int): Long? {
-        val cleaned = text.trim().replace("_", "")
-        val value = if (cleaned.startsWith("0x", ignoreCase = true)) {
-            cleaned.drop(2).toLongOrNull(16)
-        } else {
-            cleaned.toLongOrNull()
-        }
-        return value?.takeIf { it >= 0 && it <= valueMask(size) }
-    }
-
-    private fun valueMask(size: Int): Long = when (size) {
-        1 -> 0xFF
-        2 -> 0xFFFF
-        4 -> 0xFFFFFFFFL
-        else -> -1
-    }
-
-    private fun formatResult(address: Long, value: Long, size: Int): String {
-        val valueWidth = size * 2
-        return String.format(
-            Locale.ROOT,
-            "0x%08X = %d (0x%0${valueWidth}X)",
-            address,
-            value,
-            value
-        )
-    }
-
-    private fun gatewayCode(address: Long, value: Long, size: Int): String {
-        val gatewayAddress = address and 0x0FFFFFFF
-        return when (size) {
-            1 -> String.format(Locale.ROOT, "2%07X 000000%02X", gatewayAddress, value)
-            2 -> String.format(Locale.ROOT, "1%07X 0000%04X", gatewayAddress, value)
-            4 -> String.format(Locale.ROOT, "%08X %08X", gatewayAddress, value)
-            else -> error("Unsupported memory-search value size")
-        }
+    private fun returnToGame() {
+        fragment.requireActivity().onBackPressedDispatcher.onBackPressed()
     }
 
     private fun dp(value: Int): Int = (value * context.resources.displayMetrics.density).toInt()
@@ -390,6 +361,7 @@ class MemorySearchDialog(
         private const val COMPARISON_UNCHANGED = 2
         private const val COMPARISON_INCREASED = 3
         private const val COMPARISON_DECREASED = 4
+        private const val DEFAULT_VALUE_SIZE = 4
         private const val RESULT_LIMIT = 50
     }
 }
