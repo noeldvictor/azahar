@@ -918,6 +918,21 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 160 are
   measured recurring presentation, scheduler, audio, Android wakeup, and overlay-work reductions,
   not additive percentages.
+- A post-entry-160 forest-level audit rejected treating the remaining Vulkan present cost as
+  removable duplicate work. A separate profiler-enabled debug APK (32,439,187 bytes, SHA-256
+  `419EA866DEF7976BD0F84DC48B732590B67603338C8A65366F142C511C41D998`) reproduced the exact 7th
+  Dragon screenshot SHA-256 `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`
+  and stayed alive without a fatal/assertion/device-lost match. Two consecutive steady 5.014-second
+  windows each reported `swaps=300`, `presented=300`, `direct=300`, and
+  `duplicate_prepare_skipped=150`; presentation copies and blits remained zero. Android's live
+  display inventory showed physical display 0 at 1080x1920 and display 4 at 1080x1240, both on and
+  active at 60 Hz, while SurfaceFlinger listed two Azahar `SurfaceView`/BLAST pairs. Source tracing
+  confirms that a new guest frame is sent to the main and secondary windows before
+  `game_frames_updated` is cleared. The combined 300 presents therefore account for 150 new
+  30-FPS guest frames on each of two physical panels, rather than a redundant 60-FPS present route
+  on either panel. No source optimization was accepted from this audit. The device was still
+  AC-powered at 80%, 4.266 V, and 23.0 C in performance/fan modes 2/4, so the under-6-W battery
+  gate remains open.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

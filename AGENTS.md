@@ -641,6 +641,15 @@
   direct screenshots had the identical SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. A profiler route-count
   win and a pixel-identical frame prove removal and correctness, not FPS or battery watts.
+- Treat Android `PresentFrames` as a combined all-window counter, not per-panel FPS. A post-entry-160
+  Thor audit reproduced two steady 5.014-second 7th Dragon windows with `swaps=300`,
+  `presented=300`, `direct=300`, and `duplicate_prepare_skipped=150`. Live Android state showed two
+  active physical displays (IDs 0 and 4) at 60 Hz and two Azahar `SurfaceView`/BLAST pairs. The
+  Vulkan path presents each of the 150 new 30-FPS guest frames to both the main and secondary
+  windows before clearing `game_frames_updated`; the combined 300 presents are therefore required
+  dual-panel output, not an unskipped duplicate. Do not suppress one window or divide the renderer
+  cadence based on the combined count. Re-evaluate only with per-window counters, both-panel pixel
+  checks, and an exact live display/surface inventory.
 - Preserve the follow-up cache-path attribution from profiler commit `ca82a5fc3`. In the same
   steady 7th Dragon window, all 150 texture copies / 129.600 MPix came from accelerated guest PICA
   texture-copy commands, all 300 blits / 233.280 MPix came from accelerated guest PICA display-
