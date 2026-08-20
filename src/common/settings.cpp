@@ -270,7 +270,10 @@ void RestoreGlobalState(bool is_powered_on) {
 Settings::GraphicsAPI GetWorkingGraphicsAPI() {
     auto graphics_api = Settings::values.graphics_api.GetValue();
 #if defined(ANDROID) && !defined(HAVE_LIBRETRO)
-    if (AndroidUtils::IsUsingAngleForOpenGL()) {
+    // The Java-side OpenGL renderer string is fixed for the lifetime of the process. Avoid a JNI
+    // call every time render and cache code query the effective API.
+    static const bool is_using_angle_for_opengl = AndroidUtils::IsUsingAngleForOpenGL();
+    if (is_using_angle_for_opengl) {
         graphics_api = Settings::GraphicsAPI::Vulkan;
     }
 #endif
