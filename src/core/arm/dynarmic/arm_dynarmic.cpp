@@ -323,6 +323,12 @@ std::shared_ptr<Memory::PageTable> ARM_Dynarmic::GetPageTable() const {
 }
 
 void ARM_Dynarmic::SetPageTable(const std::shared_ptr<Memory::PageTable>& page_table) {
+    // The scheduler commonly reselects a core whose JIT already targets this exact process.
+    // Saving and restoring the same JIT state in that case only copies register banks.
+    if (jit && current_page_table == page_table) {
+        return;
+    }
+
     current_page_table = page_table;
     ThreadContext ctx{};
     if (jit) {
