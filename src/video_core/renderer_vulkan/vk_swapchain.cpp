@@ -6,6 +6,7 @@
 #include "common/logging/log.h"
 #include "common/microprofile.h"
 #include "common/settings.h"
+#include "video_core/renderer_base.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_swapchain.h"
 
@@ -17,14 +18,15 @@ namespace {
 
 constexpr bool NeedsNonFifoPresentMode(double frame_limit, bool low_refresh_rate,
                                        bool eco_turbo_caps_present) noexcept {
-    return low_refresh_rate || frame_limit == 0 ||
-           (frame_limit > 100 && !eco_turbo_caps_present);
+    const bool accelerated = frame_limit == 0 || frame_limit > 100;
+    return low_refresh_rate || (accelerated && !eco_turbo_caps_present);
 }
 
 static_assert(!NeedsNonFifoPresentMode(100, false, false));
 static_assert(!NeedsNonFifoPresentMode(200, false, true));
 static_assert(NeedsNonFifoPresentMode(200, false, false));
-static_assert(NeedsNonFifoPresentMode(0, false, true));
+static_assert(!NeedsNonFifoPresentMode(0, false, true));
+static_assert(NeedsNonFifoPresentMode(0, false, false));
 static_assert(NeedsNonFifoPresentMode(100, true, true));
 
 // Do not block forever while the caller externally synchronizes host access to the swapchain.
@@ -241,7 +243,8 @@ void Swapchain::SetPresentMode() {
     // Eco Turbo already caps host composition to 60 FPS. Keep FIFO's mobile-friendly back-pressure
     // instead of allowing MAILBOX to keep replacing undisplayed frames with extra CPU/GPU work.
     const bool eco_turbo_caps_present =
-        Settings::values.eco_turbo.GetValue() && frame_limit > 100;
+        VideoCore::EcoPresentationCapActive(frame_limit,
+                                            Settings::values.eco_turbo.GetValue());
 #else
     constexpr bool eco_turbo_caps_present = false;
 #endif

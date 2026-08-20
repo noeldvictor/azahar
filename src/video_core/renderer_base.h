@@ -53,6 +53,17 @@ static_assert(!NeedsFramePreparation(false, false, true, true));
 static_assert(NeedsFramePreparation(false, false, true, false));
 static_assert(!NeedsFramePreparation(false, false, false, false));
 
+/// Returns whether Eco Turbo should cap Android host presentation. A zero limit means fully
+/// uncapped emulation and needs the same protection as an explicit turbo limit above normal speed.
+constexpr bool EcoPresentationCapActive(double frame_limit, bool eco_turbo) noexcept {
+    return eco_turbo && (frame_limit == 0.0 || frame_limit > 100.0);
+}
+
+static_assert(!EcoPresentationCapActive(100.0, true));
+static_assert(EcoPresentationCapActive(200.0, true));
+static_assert(EcoPresentationCapActive(0.0, true));
+static_assert(!EcoPresentationCapActive(0.0, false));
+
 struct RendererSettings {
     // Screenshot
     std::atomic_bool screenshot_requested{false};

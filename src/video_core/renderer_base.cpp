@@ -54,11 +54,10 @@ void RendererBase::EndFrame() {
 
 bool RendererBase::ShouldPresentFrame() {
 #ifdef ANDROID
-    constexpr double normal_speed = 100.0;
     constexpr double normal_refresh_rate = 60.0;
     const auto now = std::chrono::steady_clock::now();
     const double frame_limit = Settings::GetFrameLimit();
-    if (!Settings::values.eco_turbo.GetValue() || frame_limit <= normal_speed) {
+    if (!EcoPresentationCapActive(frame_limit, Settings::values.eco_turbo.GetValue())) {
         eco_turbo_budget_update = now;
         eco_turbo_present_budget = 1.0;
         return true;
