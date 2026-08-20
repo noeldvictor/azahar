@@ -27,6 +27,17 @@
   two `LD2`, four `SMULL`/`SMLAL`, two shifts, two vector adds, and one loop branch per eight stereo
   frames before the `ADDV` reduction. Re-run the 16/256/1024-frame differential coverage after
   changing the correlation math or compiler hints.
+- Preserve the Android AArch64 SoundTouch full-search batch from commit `ac8037b39`. For stereo
+  integer NEON builds, `seekBestOverlapPositionFull()` evaluates four adjacent offsets together so
+  they share the compare load and contiguous input loads; its four rolling normalizer deltas must
+  remain sequential and bit-exact with the scalar search. Keep the current Android/AArch64/NEON,
+  non-OpenMP, unaligned-safe, two-channel gates and the ordinary loop for every other build or tail.
+  Do not replace full search with `quickseek`, which trades minor audio quality for speed. Retain
+  the independent 8/44.1/48 kHz full-search reference test and the five-case, 3,776-assertion ARM64
+  SoundTouch gate. Final `calcCrossCorrBatch4` linked size should remain 568 bytes, not the rejected
+  3,328-byte general-loop expansion. Same-session profiling reduced correlation self share from
+  1.30% to 0.87% and full SoundTouch processing from 1.66% to 1.01%, while a six-versus-six process
+  bracket was neutral. Treat this as a recurring-hotspot reduction, not an FPS or battery-watt win.
 - Azahar's `TimeStretcher` is a pure-tempo SoundTouch client: pitch and rate remain exact unity, so
   it must enable `SETTING_BYPASS_RATE_TRANSPOSER_AT_UNITY` before any samples enter the pipeline.
   Keep the setting default-off for generic SoundTouch clients, reject explicit mid-stream changes,

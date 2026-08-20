@@ -34,11 +34,11 @@ the exact pixels and the same 30 FPS frame pacing as High Performance while lowe
 Adreno clock from 615 to 401 MHz. That is the strongest current under-6-W operating candidate, not
 yet a battery-watt result because the device was still AC-powered during the comparison.
 
-The Thor evidence ledger currently has **157 numbered entries, 156 of them active**. Entry 157
-skips a complete scheduler context handoff when runnable selection returns the exact thread already
-running, entry 156 gates detailed frame-breakdown timing when that overlay is hidden, and entry 155
-caches Android's process-lifetime ANGLE renderer result instead of crossing JNI on recurring render
-and cache lookups. The earlier ARM64
+The Thor evidence ledger currently has **158 numbered entries, 157 of them active**. Entry 158
+batches four adjacent exact SoundTouch full-search correlations on Android AArch64, entry 157 skips
+a complete scheduler context handoff when runnable selection returns the exact thread already
+running, and entry 156 gates detailed frame-breakdown timing when that overlay is hidden. The
+earlier ARM64
 absolute-offset page-table entry was withdrawn after it caused reproducible game-start crashes on
 the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
@@ -198,6 +198,11 @@ This fork has moved away from stock Azahar in visible ways:
 - SoundTouch WSOLA correlation now keeps its designed 32-bit accumulator and normalizer on
   Android's LP64 ABI. A spill-free AArch64 NEON loop cuts the repeatedly used correlation body by
   20% versus the prior linked code while preserving the rolling-normalizer arithmetic.
+- Android AArch64 stereo full search now evaluates four adjacent SoundTouch WSOLA offsets together,
+  sharing compare/input loads and batching exact sequential normalizer deltas. A same-session Thor
+  profile reduced correlation self share from 1.30% to 0.87% and the complete SoundTouch processing
+  share from 1.66% to 1.01%; matched whole-process counters were neutral, so this is a measured
+  recurring-hotspot reduction rather than a whole-game speed or power claim.
 - Azahar's pure-tempo SoundTouch stream bypasses the inactive unity-rate resampler, removing a
   needless 64-tap anti-alias FIR, scalar interpolator, and intermediate FIFO traffic from every
   time-stretched audio block. Generic SoundTouch rate/pitch crossover behavior remains opt-in-safe.

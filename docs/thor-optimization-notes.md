@@ -734,6 +734,47 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 157 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
+- Entry 158 addresses the highest exact actionable function in the new 7th Dragon profile without
+  weakening SoundTouch's audio-quality policy. Android AArch64 integer-NEON stereo full search now
+  calculates four adjacent WSOLA correlations together: one compare load is shared, two contiguous
+  input loads form all four candidates with `EXT`, and the paired multiply, arithmetic shift,
+  32-bit accumulation, heuristic, and best-offset order remain unchanged. Four normalizer deltas
+  are derived from contiguous removed/added samples and applied sequentially. Non-AArch64,
+  non-NEON, OpenMP, alignment-avoidance, non-stereo, and scalar-tail cases retain the prior path;
+  `quickseek` remains disabled because its documented speed trade also accepts minor quality loss.
+- The first correct helper expanded to 3,328 bytes because Clang replicated four general
+  channel-count normalizer loops. The accepted implementation batches the stereo deltas explicitly
+  and links as a spill-free 568-byte `calcCrossCorrBatch4`, an 82.9% helper-size reduction. The
+  pinned JDK 17 / NDK 27.3 ARM64 RelWithDebInfo build passed, and its binary ran directly on Thor:
+  all five focused SoundTouch cases passed with 3,776 assertions. The new independent scalar full
+  search covers 8 kHz/2 ms, 44.1 kHz/8 ms, and 48 kHz/30 ms overlap configurations rather than
+  comparing the optimized function to itself.
+- Exact-scene correctness held for both real titles. 7th Dragon reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`; Art Academy reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`. Both processes remained
+  alive with no fatal, assertion, fastmem, page-fault, profiler, or Vulkan device-lost match. The
+  refined candidate debug APK was 32,439,999 bytes with SHA-256
+  `89B111A9E5C5CDFB836FB1576BB453D89FE65E54CFED257000B2363530B9E741`; the same-session legacy
+  control was 32,436,899 bytes with SHA-256
+  `E7CAF6FFC732B3DAE7B394BB98D0EE72B008423AE95209054643F17B61006631`.
+- In 30-second, zero-lost-sample profiles from that same device session, the control recorded
+  `calcCrossCorrAccumulate` at 1.30% self, `seekBestOverlapPositionFull` at 1.59% inclusive, and
+  complete SoundTouch processing at 1.66% inclusive. The candidate recorded its four-way helper at
+  0.87% self, full search at 0.96% inclusive, and complete processing at 1.01% inclusive. That is a
+  33.1% reduction in targeted correlation self share and a 39.2% reduction in the complete
+  SoundTouch share. These are recurring-hotspot measurements, not additive whole-app percentages.
+- A separate six-versus-six exact-scene counter bracket kept the whole application neutral. The
+  candidate averaged 3,883.210 ms task-clock, 7.585033 billion cycles, 2.433118 billion retired
+  instructions, and 1.920746 GHz; the legacy control averaged 3,885.211 ms, 7.581736 billion,
+  2.434348 billion, and 1.920302 GHz. Candidate deltas were -0.052%, +0.044%, -0.051%, and +0.023%,
+  respectively, all noise-scale. Accept entry 158 strictly as removal of a measured recurring
+  audio hotspot, with no FPS claim and no whole-app speed claim. Thor was still AC-powered at 80%,
+  about 4.264 V and 25.0 C, so the under-6-W gate remains open and no battery-power claim is made.
+  Source and independent coverage were committed and pushed as `ac8037b39`.
+- Entry 158 raises the ledger to 158 numbered entries and 157 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 158 are
+  measured recurring presentation, scheduler, and audio-work reductions, not additive percentages.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
