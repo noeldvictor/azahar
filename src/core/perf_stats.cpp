@@ -31,6 +31,12 @@ namespace Core {
 
 bool PerfStats::game_frames_updated = true;
 
+#ifdef ANDROID
+std::atomic_bool PerfStats::detailed_timing_enabled{false};
+#else
+std::atomic_bool PerfStats::detailed_timing_enabled{true};
+#endif
+
 PerfStats::PerfStats(u64 title_id) : title_id(title_id) {}
 
 PerfStats::~PerfStats() {
@@ -51,35 +57,65 @@ PerfStats::~PerfStats() {
 }
 
 void PerfStats::BeginSVCProcessing() {
-    start_svc_time = Clock::now();
+    svc_timing_active = detailed_timing_enabled.load(std::memory_order_relaxed);
+    if (svc_timing_active) {
+        start_svc_time = Clock::now();
+    }
 }
 
 void PerfStats::EndSVCProcessing() {
-    accumulated_svc_time += (Clock::now() - start_svc_time);
+    if (svc_timing_active) {
+        accumulated_svc_time += (Clock::now() - start_svc_time);
+        svc_timing_active = false;
+    }
 }
 
 void PerfStats::BeginIPCProcessing() {
-    start_ipc_time = Clock::now();
+    // IPC timing is subtracted from SVC timing, so never start it without its parent scope.
+    ipc_timing_active = svc_timing_active;
+    if (ipc_timing_active) {
+        start_ipc_time = Clock::now();
+    }
 }
 
 void PerfStats::EndIPCProcessing() {
-    accumulated_ipc_time += (Clock::now() - start_ipc_time);
+    if (ipc_timing_active) {
+        accumulated_ipc_time += (Clock::now() - start_ipc_time);
+        ipc_timing_active = false;
+    }
 }
 
 void PerfStats::BeginGPUProcessing() {
-    start_gpu_time = Clock::now();
+    // GPU timing is subtracted from IPC timing, so preserve the same nesting invariant.
+    gpu_timing_active = ipc_timing_active;
+    if (gpu_timing_active) {
+        start_gpu_time = Clock::now();
+    }
 }
 
 void PerfStats::EndGPUProcessing() {
-    accumulated_gpu_time += (Clock::now() - start_gpu_time);
+    if (gpu_timing_active) {
+        accumulated_gpu_time += (Clock::now() - start_gpu_time);
+        gpu_timing_active = false;
+    }
 }
 
 void PerfStats::StartSwap() {
-    start_swap_time = Clock::now();
+    swap_timing_active = detailed_timing_enabled.load(std::memory_order_relaxed);
+    if (swap_timing_active) {
+        start_swap_time = Clock::now();
+    }
 }
 
 void PerfStats::EndSwap() {
-    accumulated_swap_time += (Clock::now() - start_swap_time);
+    if (swap_timing_active) {
+        accumulated_swap_time += (Clock::now() - start_swap_time);
+        swap_timing_active = false;
+    }
+}
+
+void PerfStats::SetDetailedTimingEnabled(bool enabled) {
+    detailed_timing_enabled.store(enabled, std::memory_order_relaxed);
 }
 
 void PerfStats::BeginSystemFrame() {

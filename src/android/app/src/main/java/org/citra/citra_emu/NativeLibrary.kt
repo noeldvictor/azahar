@@ -213,6 +213,8 @@ object NativeLibrary {
      */
     external fun getPerfStats(): DoubleArray
 
+    external fun setDetailedPerfStats(enabled: Boolean)
+
     /**
      * Notifies the core emulation that the layout should be updated
      */

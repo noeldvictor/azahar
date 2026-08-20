@@ -1044,6 +1044,11 @@ jdoubleArray Java_org_citra_citra_1emu_NativeLibrary_getPerfStats(JNIEnv* env,
     return j_stats;
 }
 
+void Java_org_citra_citra_1emu_NativeLibrary_setDetailedPerfStats(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jobject obj, jboolean enabled) {
+    Core::PerfStats::SetDetailedTimingEnabled(enabled == JNI_TRUE);
+}
+
 void Java_org_citra_citra_1emu_NativeLibrary_run__Ljava_lang_String_2(JNIEnv* env,
                                                                       [[maybe_unused]] jobject obj,
                                                                       jstring j_path) {

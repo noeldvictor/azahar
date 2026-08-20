@@ -544,6 +544,7 @@ class EmulationFragment :
             // If the overlay is enabled, we need to update the position if changed
             val position = IntSetting.PERFORMANCE_OVERLAY_POSITION.int
             updateStatsPosition(position)
+            updateDetailedPerfStatsState()
 
             binding.inGameMenu.menu.findItem(R.id.menu_emulation_pause)?.let { menuItem ->
                 menuItem.title = resources.getString(R.string.pause_emulation)
@@ -1494,7 +1495,10 @@ class EmulationFragment :
             perfStatsUpdateHandler.removeCallbacks(perfStatsUpdater!!)
         }
 
-        if (BooleanSetting.PERF_OVERLAY_ENABLE.boolean) {
+        val performanceOverlayEnabled = BooleanSetting.PERF_OVERLAY_ENABLE.boolean
+        updateDetailedPerfStatsState()
+
+        if (performanceOverlayEnabled) {
             @Suppress("UnusedVariable")
             val systemFps = 0
             val fps = 1
@@ -1584,6 +1588,13 @@ class EmulationFragment :
         } else {
             binding.performanceOverlayShowText.visibility = View.GONE
         }
+    }
+
+    private fun updateDetailedPerfStatsState() {
+        NativeLibrary.setDetailedPerfStats(
+            BooleanSetting.PERF_OVERLAY_ENABLE.boolean &&
+                BooleanSetting.PERF_OVERLAY_SHOW_FRAMETIME.boolean
+        )
     }
 
     private fun updateStatsPosition(position: Int) {

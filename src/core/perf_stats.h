@@ -87,6 +87,10 @@ public:
     void EndSystemFrame();
     void EndGameFrame();
 
+    /// Enables the high-frequency SVC/IPC/GPU/swap timing needed by the detailed frame-time
+    /// breakdown. Android leaves this disabled unless that overlay field is visible.
+    static void SetDetailedTimingEnabled(bool enabled);
+
     Results GetAndResetStats(std::chrono::microseconds current_system_time_us);
 
     Results GetLastStats();
@@ -163,15 +167,21 @@ private:
 
     Clock::time_point start_svc_time = reset_point;
     Clock::duration accumulated_svc_time = Clock::duration::zero();
+    bool svc_timing_active = false;
 
     Clock::time_point start_ipc_time = reset_point;
     Clock::duration accumulated_ipc_time = Clock::duration::zero();
+    bool ipc_timing_active = false;
 
     Clock::time_point start_gpu_time = reset_point;
     Clock::duration accumulated_gpu_time = Clock::duration::zero();
+    bool gpu_timing_active = false;
 
     Clock::time_point start_swap_time = reset_point;
     Clock::duration accumulated_swap_time = Clock::duration::zero();
+    bool swap_timing_active = false;
+
+    static std::atomic_bool detailed_timing_enabled;
 
     /// Last recorded performance statistics.
     Results last_stats;
