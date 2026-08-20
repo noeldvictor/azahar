@@ -67,22 +67,29 @@ std::shared_ptr<Process> KernelSystem::GetCurrentProcess() const {
     return current_process;
 }
 
-void KernelSystem::SetCurrentProcess(std::shared_ptr<Process> process) {
-    current_process = process;
+void KernelSystem::SetCurrentProcess(const std::shared_ptr<Process>& process) {
+    if (current_process != process) {
+        current_process = process;
+    }
     SetCurrentMemoryPageTable(process->vm_manager.page_table);
 }
 
-void KernelSystem::SetCurrentProcessForCPU(std::shared_ptr<Process> process, u32 core_id) {
+void KernelSystem::SetCurrentProcessForCPU(const std::shared_ptr<Process>& process, u32 core_id) {
     if (current_cpu->GetID() == core_id) {
-        current_process = process;
+        if (current_process != process) {
+            current_process = process;
+        }
         SetCurrentMemoryPageTable(process->vm_manager.page_table);
     } else {
-        stored_processes[core_id] = process;
+        if (stored_processes[core_id] != process) {
+            stored_processes[core_id] = process;
+        }
         thread_managers[core_id]->cpu->SetPageTable(process->vm_manager.page_table);
     }
 }
 
-void KernelSystem::SetCurrentMemoryPageTable(std::shared_ptr<Memory::PageTable> page_table) {
+void KernelSystem::SetCurrentMemoryPageTable(
+    const std::shared_ptr<Memory::PageTable>& page_table) {
     memory.SetCurrentPageTable(page_table);
     if (current_cpu != nullptr) {
         current_cpu->SetPageTable(page_table);
@@ -98,7 +105,10 @@ void KernelSystem::SetCPUs(std::vector<std::shared_ptr<Core::ARM_Interface>> cpu
 
 void KernelSystem::SetRunningCPU(Core::ARM_Interface* cpu) {
     if (current_process) {
-        stored_processes[current_cpu->GetID()] = current_process;
+        auto& stored_process = stored_processes[current_cpu->GetID()];
+        if (stored_process != current_process) {
+            stored_process = current_process;
+        }
     }
     current_cpu = cpu;
     timing.SetCurrentTimer(cpu->GetID());
