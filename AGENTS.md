@@ -142,6 +142,12 @@
   without new attribution. A three-run 7th Dragon total looked about 0.5% lower, but the function's
   own sampled share rose from 1.03% to 1.12%; the dirty map was not the ranked self-cost and the
   apparent total was noise. Required dirty-surface downloads and interval ownership remain intact.
+- Do not add a maintained 64-bit nonempty-priority mask to `ThreadQueueList` based on the 2026-08-20
+  scheduler profile. Although it replaced historical-empty-queue scans with AArch64 `RBIT`/`CLZ`,
+  its enqueue/dequeue maintenance increased mean 7th Dragon task-clock 1.051%, cycles 1.156%, and
+  instructions 1.836%; `PopNextReadyThread` also rose from 0.65% to 0.73% of sampled cycles. The
+  implementation, tests, and object-layout change were reverted. Reconsider only with a different
+  representation and matched evidence that reduces both the target and whole-app work.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

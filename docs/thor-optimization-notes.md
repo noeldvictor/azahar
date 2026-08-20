@@ -651,6 +651,18 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Audio decode was also rejected as the next target: `DecodePCM16` was only 0.14% inclusive and
   `DequeueBuffer` 0.20% in the ranked profile. Replacing its buffer container would add churn and
   risk for less measured cost than the accepted timing gate, so the audio path remains unchanged.
+- A follow-up scheduler experiment was rejected and fully reverted. `PopNextReadyThread` was 0.65%
+  self in the accepted profile, and `ThreadQueueList` walked priorities that had once been used even
+  after their deques emptied. A candidate maintained a 64-bit nonempty-priority mask, rebuilt it
+  after savestate loads, and selected the first live priority with AArch64 `RBIT`/`CLZ`. Its focused
+  ARM64 tests passed 18 assertions covering ordering, reuse, move/clear, and binary save/load, but
+  linked `PopNextReadyThread` grew from 1,240 to 1,284 bytes.
+- Three candidate runs averaged 3,928.017 ms task-clock, 7.674068 billion cycles, 2.493656 billion
+  retired instructions, and 1.921900 GHz. Against the immediately preceding hidden-overlay means,
+  those are regressions of 1.051%, 1.156%, and 1.836%, with frequency only 0.110% higher. A new
+  30-second profile also raised `PopNextReadyThread` itself from 0.65% to 0.73%. Maintaining the mask
+  on every queue mutation cost more than eliminating the scan in this title, so no scheduler code
+  or test from the experiment remains and this is not entry 157.
 - Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
