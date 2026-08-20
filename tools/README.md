@@ -64,6 +64,14 @@ than 2,048 frames or 150 ms reported latency, and zero underruns. This prevents 
 configuration from passing power and frame-pacing checks while introducing crackle or input-to-audio
 delay.
 
+The strict default also requires production version `bc25ea052-vanilla-thor` and the app's one-time
+JSON driver record to identify `Mesa Turnip driver v26.0.0 - R8`, `Vulkan 1.4.335`, and
+`vulkan.ad07xx.so`. Generic and forced-Sysmem R8 have the same Mesa runtime banner, so that banner is
+not accepted as package identity. The tool records parsed driver metadata in `summary.json` and
+fails before sampling if the structured record is absent or mismatched. Override
+`-ExpectedVulkanDriverName`, `-ExpectedVulkanDriverVersion`, and
+`-ExpectedVulkanDriverLibraryName` only as part of an explicit matched driver experiment.
+
 The built-in config and screenshot expectations intentionally describe the accepted 3x scene. For
 an explicit 3x/2x/1x resolution matrix, override `-ExpectedConfigSha256` and
 `-ExpectedScreenshotSha256` together for each row, and keep every other scene, build, renderer,

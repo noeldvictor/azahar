@@ -71,7 +71,8 @@
   experiments, and do not silently make privileged system-setting changes from Azahar.
 - Use `tools/measure-thor-power.ps1` for the under-6-W acceptance gate. Its default gate requires
   the production ARM64 package, the accepted config hash, Standard performance mode 0, fan mode 4,
-  Wi-Fi ADB, a real discharging battery, and both mean and nearest-rank P95 power at or below 6 W.
+  generic Turnip R8 by exact logged metadata, Wi-Fi ADB, a real discharging battery, and both mean
+  and nearest-rank P95 power at or below 6 W.
   Pass the fixed scene's expected screenshot hash and brightness for a publishable run. The script
   must continue to reject Android's simulated/stopped battery state, every dumpsys external-power
   flag, and the Thor's USB, wireless, or UCSI charger-online sysfs flag before/during/post run.
@@ -88,6 +89,11 @@
   timestamp stream is the strict evidence available without a profiler APK. Require the same active
   AudioFlinger track before/after as well: 32,728 Hz, at most 2,048 frames, at most 150 ms reported
   latency, and zero underruns. A power/FPS win with audio breakup or a restarted track is a failure.
+  The production package must emit the one-time JSON `Active Vulkan driver metadata` log. Do not
+  substitute Mesa's runtime banner: generic and forced-Sysmem R8 expose the same banner despite
+  measurably different work. The current strict default is package `bc25ea052-vanilla-thor`, driver
+  name `Mesa Turnip driver v26.0.0 - R8`, version `Vulkan 1.4.335`, and library
+  `vulkan.ad07xx.so`; explicitly override all affected expectations for another accepted artifact.
 - Treat internal resolution as a forest-level GPU-load control before accepting more sub-percent
   source tuning. In the fixed 7th Dragon title scene, changing only `resolution_factor` from 3x to
   2x reduced mean KGSL busy from 8.374% to 5.488% (34.46%) and 1x reduced it to 3.933% (53.04%),

@@ -1041,6 +1041,31 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   also exposes a measurement requirement: a config and frame hash can match across materially
   different driver paths, so the strict power gate must record and validate active Vulkan-driver
   identity.
+- Source commit `bc25ea052` adds that missing evidence without adding steady-state work. Android
+  reads the already-installed driver metadata once during startup, logs its name, version, and
+  library name as one JSON object, then passes the same cached library name to AdrenoTools. The
+  vanilla RelWithDebInfo Kotlin compile passed, followed by the full ARM64-only production Lite
+  build in 1 minute 23 seconds. The APK is 29,010,132 bytes with SHA-256
+  `C9376EE04D3E0C12D305536E0D45432BE76070B2E1EC0C5FCB2C563982F22038`, reports version
+  `bc25ea052-vanilla-thor`, has no manifest debuggable flag, uses APK Signature Scheme v2, and keeps
+  signer-certificate SHA-256
+  `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+- Wi-Fi ADB installed that artifact without changing the exact config hash. The fixed 7th Dragon
+  scene reproduced the accepted screenshot, logged generic R8 metadata as
+  `{"name":"Mesa Turnip driver v26.0.0 - R8","version":"Vulkan 1.4.335","libraryName":"vulkan.ad07xx.so"}`,
+  and kept PID 19705 alive. Live audio was 32,728 Hz, 1,962 frames, 123.40 ms, and zero underruns.
+  SurfaceFlinger exposed both required BLAST layers; the measurable layer had 127 frames / 126
+  intervals, 29.895 FPS mean, 34.327 ms P95, and zero intervals over 50 ms. A final 20-sample window
+  measured 8.245% mean KGSL busy at 615 MHz and 21.546 process CPU ticks/second, inside the earlier
+  generic-R8 control range and with no recurring logging path.
+- `tools/measure-thor-power.ps1` now parses the latest JSON record for the current PID, defaults to
+  the exact generic-R8 name/version/library above, stores the identity in `summary.json`, and fails
+  before sampling on a mismatch or missing structured record. Its expanded deterministic self-test
+  passes both latest-record selection and missing-record rejection. On the live package, the correct
+  expectation advanced to the genuine AC-power rejection, while an explicit Sysmem expectation
+  failed on driver identity; neither negative test created a result directory. This measurement
+  hardening and one-time log are not optimization entry 161, and AC power still prevents a watt
+  result.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
