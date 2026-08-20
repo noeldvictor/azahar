@@ -567,15 +567,17 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and Art Academy SHA-256
   `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and emitted no fatal log.
   AC remained connected at 80%, so these observations do not prove lower battery watts.
-- The final profiling-off Lite APK from pushed documentation/source head `a0076ab28` is ARM64-only,
-  29,010,952 bytes, and SHA-256
-  `FE37FAAA3B255FA4447DC29DE87AE1C6E6E0153189A9D5D15061054E1BF5415E`. The installed package is
-  version `a0076ab28-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
+- The final profiling-off Lite APK from pushed documentation/source head `d48fdce02` is ARM64-only,
+  29,010,488 bytes, and SHA-256
+  `F427B6571C059AA7037170A82C99D3D59AE5F16C6A71B857B120D2B68947AB98`. The installed package is
+  version `d48fdce02-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
   library contains no `ThorFrameProfile` string. Wi-Fi ADB installation succeeded, the final Lite
   run reproduced 7th Dragon SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and its log contained no
   fatal, profiler, page-table, fastmem, or Vulkan device-lost evidence. The user's High Performance
-  and smart-fan modes remained restored at values 2 and 4.
+  and smart-fan modes remained restored at values 2 and 4. AC remained connected at 80%, 4.264 V,
+  and 25.0 C, so the final run remains correctness/stability evidence rather than battery-watt
+  evidence.
 - Call-stack attribution rejected an atomic no-signal fast path before implementation. Although
   `RunLoop` appeared prominently in the flat profile, only about 0.05% of whole-app sampled cycles
   were attributable to its ordinary signal-mutex lock. That does not justify changing asynchronous
