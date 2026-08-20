@@ -69,6 +69,14 @@
   speed, then test Performance before High Performance. The current comparison was AC-powered, so
   it ranks the device policy but does not prove watts. Always restore the user's original mode after
   experiments, and do not silently make privileged system-setting changes from Azahar.
+- Do not extrapolate the capped 30-FPS policy result to demanding 60-FPS titles. At 2x in the Super
+  Mario 3D Land attract loop, High Performance/615 MHz measured 59.256 FPS and 20.673 ms P95;
+  Performance/550 MHz measured 58.397 FPS and 27.626 ms; Standard/401 MHz measured 57.935 FPS and
+  27.460 ms. All had zero intervals over 50 ms and clean audio, but neither lower mode was a free
+  speed-preserving swap. Keep Standard first for the <=6-W search, then test Performance and High
+  only when the fixed target misses its speed gate. Changing High Performance to Standard on this
+  firmware also reset fan mode 4 to 1; always read and restore both settings explicitly rather than
+  assuming one vendor toggle leaves the other unchanged.
 - Use `tools/measure-thor-power.ps1` for the under-6-W acceptance gate. Its default gate requires
   the production ARM64 package, the accepted config hash, Standard performance mode 0, fan mode 4,
   generic Turnip R8 by exact logged metadata, Wi-Fi ADB, a real discharging battery, and both mean

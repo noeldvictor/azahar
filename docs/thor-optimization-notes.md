@@ -1094,6 +1094,28 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21` was restored and the title
   relaunched afterward. AC power still prevents a watt claim, the user's default did not change,
   and this settings experiment is not optimization entry 161.
+- The same 2x Super Mario 3D Land loop then bracketed the Thor's three vendor performance policies
+  with fan mode 4 forced back to the matched value. This matters because changing High Performance
+  to Standard unexpectedly reset fan mode from 4 to 1 on the live firmware; the experiment caught
+  and corrected that coupling before launch.
+
+  | Thor policy | Fixed GPU clock | Mean KGSL busy | CPU ticks/s | Mean FPS / P95 | Audio |
+  | --- | ---: | ---: | ---: | --- | --- |
+  | High Performance (2) | 615 MHz | 13.11865% | 46.3974 | 59.2559 / 20.6730 ms | 32,728 Hz, 1,962 frames, 123.12 ms, 0 underruns |
+  | Performance (1) | 550 MHz | 13.81158% | 44.8352 | 58.3970 / 27.6261 ms | 32,728 Hz, 1,962 frames, 122.78 ms, 0 underruns |
+  | Standard (0) | 401 MHz | 17.70573% | 45.3293 | 57.9355 / 27.4599 ms | 32,728 Hz, 1,962 frames, 123.33 ms, 0 underruns |
+
+  Every policy kept two live BLAST layers, zero intervals over 50 ms, and a clean AudioTrack. KGSL
+  busy percentage rises as the same work occupies more time at a lower clock, so it is not a direct
+  energy ranking across policies. SurfaceFlinger shows that both lower policies gave up speed on
+  this demanding 60-FPS loop; Performance recovered only about 0.46 FPS over Standard, while High
+  Performance had the best pacing snapshot. A physical-battery run is still required to decide
+  whether either trade is worthwhile under the 6-W gate.
+- The policy/config cleanup force-stopped the experiment, restored the exact 3x config, explicitly
+  restored performance/fan modes 2/4, relaunched the generic-R8 production package, and reproduced
+  the accepted 7th Dragon screenshot SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. This policy matrix is not
+  optimization entry 161 and makes no AC-derived watt claim.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
