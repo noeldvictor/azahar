@@ -1489,6 +1489,17 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   Thor remained AC-powered at the 60-FPS cap; battery status during the rolling check was 80%,
   4.265 V, and 24.0 C. These counters are not watts, and the physical discharging-battery mean and
   nearest-rank P95 power at or below 6 W remain an open gate.
+- Final cleanup removed 36,294,298 logical bytes of bounded T30 host screenshots/archive staging,
+  the redundant private T30 archive and extracted library, and the two post-entry-164 Simpleperf
+  traces. The verified external T30 archive remains in Azahar's driver library as the requested
+  manual option. The production APK was restored from the retained profiling-off artifact: its
+  on-device base APK reproduced SHA-256
+  `FB110D6656C2B65D7D0317025533AA960F471C778869EF684652D22EC20A83D5` and version
+  `1e2c106bc-vanilla-thor`; the accepted configuration reproduced SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`. A cold title launch logged
+  active generic R8 metadata, Turnip Mesa 25.99.99 / Adreno 740, Vulkan 1.4.335, and exact program
+  ID `0004000000054000`, with no fatal, device-lost, or ANR match. Modes 2/4 and brightness 255 were
+  unchanged. Azahar was force-stopped and no PID remained.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
