@@ -969,6 +969,16 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   The restored AudioTrack returned to 1,962 frames, 117.56 ms live latency, and zero underruns, with
   no fatal, assertion, fastmem, page-fault, device-lost, or profiler log match. AC remained connected,
   so this is a rejection/correctness result, not battery-power evidence and not entry 161.
+- The battery gate now prevents a low-power/low-performance false positive with production-safe
+  SurfaceFlinger evidence. At both the end of warmup and after the measurement it requires exactly
+  two live Azahar `SurfaceView[…](BLAST)` layers, at least one layer with 60 presentation
+  intervals, at least 29 FPS mean, at most 40 ms P95, and zero intervals above 50 ms. On the
+  restored exact 7th Dragon scene the primary layer exposed 127 frames / 126 intervals at 29.892 FPS
+  mean, 33.454 ms mean interval, 34.431 ms P95, and zero intervals above 50 ms. The second physical
+  panel's BLAST layer was live but its Android 13 SurfaceFlinger latency history contained only zero
+  rows, so the gate requires its presence while using the primary layer's timestamps. The complete
+  parser and pass/fail paths are deterministic-self-tested. This strengthens measurement validity;
+  it is not optimization entry 161 and does not close the still-AC-powered 6 W gate.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

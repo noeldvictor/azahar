@@ -53,7 +53,12 @@ value explicitly when validating a newer accepted build; do not weaken the charg
 battery checks. It also rejects an idle or frozen fixed scene unless the run averages at least 10
 Azahar process CPU ticks per second and 1% KGSL GPU busy. Those deliberately loose defaults validate
 that the accepted 7th Dragon workload stayed active; explicitly recalibrate them for a materially
-different title or scene instead of treating them as speed targets.
+different title or scene instead of treating them as speed targets. At the end of warmup and again
+after sampling, the script also requires both Azahar BLAST layers to exist and at least one to expose
+60 presentation intervals with at least 29 FPS mean, no more than 40 ms P95, and no interval over
+50 ms. On this Thor firmware only the primary-display layer exposes SurfaceFlinger latency history;
+the second physical-panel layer is still required to be present. These defaults are specific to the
+fixed 30 FPS 7th Dragon scene and should be explicitly overridden for another target frame rate.
 
 ## Upstream Release Checklist
 
