@@ -34,11 +34,11 @@ the exact pixels and the same 30 FPS frame pacing as High Performance while lowe
 Adreno clock from 615 to 401 MHz. That is the strongest current under-6-W operating candidate, not
 yet a battery-watt result because the device was still AC-powered during the comparison.
 
-The Thor evidence ledger currently has **155 numbered entries, 154 of them active**. Entry 155
+The Thor evidence ledger currently has **157 numbered entries, 156 of them active**. Entry 157
+skips a complete scheduler context handoff when runnable selection returns the exact thread already
+running, entry 156 gates detailed frame-breakdown timing when that overlay is hidden, and entry 155
 caches Android's process-lifetime ANGLE renderer result instead of crossing JNI on recurring render
-and cache lookups, entry 154 avoids redundant scheduler `shared_ptr` ownership churn while
-preserving every CPU/page-table/timer handoff, and entry 153 skips redundant Dynarmic context
-reloads when the live JIT already targets the exact same page table. The earlier ARM64
+and cache lookups. The earlier ARM64
 absolute-offset page-table entry was withdrawn after it caused reproducible game-start crashes on
 the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are

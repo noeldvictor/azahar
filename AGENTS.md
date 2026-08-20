@@ -164,6 +164,17 @@
   was the Android harness-only missing `get_build_flavor` function) yet crashed 7th Dragon within
   one second with `Thread must be ready to become running`. Preserve the self-switch removal even
   if ordinary cross-thread switches are given a narrower fast path.
+- Preserve the scheduler self-switch fast path from commit `7d31114d6`. `Reschedule()` must call
+  `PopNextReadyThread()` first so core-1 CPU limiting and runnable selection still occur, but when
+  its result is the exact current thread there is no context handoff: return before `SwitchContext`
+  instead of saving/loading the same CPU state, requeueing/removing the same thread, cancelling its
+  nonexistent wakeup timeout, and repeating process/TLS setup. Do not weaken the equality check or
+  skip real thread/null transitions. Three matched 7th Dragon samples reduced mean task-clock,
+  cycles, and retired instructions 1.188%, 1.143%, and 0.833% at only 0.101% higher sampled
+  frequency; `SwitchContext` inclusive profile share fell from 1.75% to 1.32% and
+  `UnscheduleEvent` self share from 0.33% to 0.16%. Preserve exact 7th Dragon and Art Academy
+  screenshot/no-fatal gates after scheduler changes. This is recurring-work evidence, not a watt
+  claim while the Thor remains AC-powered.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

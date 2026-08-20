@@ -695,8 +695,32 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   running, rather than ready, thread. The unconditional deletion was fully reverted and is not
   entry 157; any refined fast path must retain removal when `new_thread == previous_thread` and
   repeat the real game-launch gate that exposed the missing unit-test coverage.
-- Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
+- Entry 157 takes the safe scheduler fast path one level higher. After
+  `PopNextReadyThread()` performs runnable selection and core-1 CPU-limit handling, `Reschedule()`
+  now returns immediately when the result is the exact current thread. In that case there is no
+  context handoff to perform; the old path saved and loaded the same CPU context, temporarily
+  requeued and removed the same thread, cancelled a nonexistent running-thread timeout, and
+  repeated process/TLS checks. Real thread changes and thread-to/from-idle transitions still run
+  the complete `SwitchContext` path, including the required ready-queue removal.
+- The accepted ARM64 RelWithDebInfo APK was 32,436,895 bytes with SHA-256
+  `CB4D0D201B9534F6958FBE98D26882D8AA58E5B790E59B0BAAFC37384FDA05F8`. Its linked 450 MB native
+  test binary ran directly on Thor and repeated the broad result: 61 of 62 `[core]` cases and
+  439,504 of 439,505 assertions passed, with only the Android harness-only missing
+  `get_build_flavor` failure. Unlike the rejected deletion, the refined build launched and held
+  both real scenes: 7th Dragon reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and Art Academy reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, with no fatal, assertion,
+  page-fault, fastmem, profiler, or Vulkan device-lost log match.
+- Three separate 15-second 7th Dragon samples averaged 3,840.967 ms task-clock, 7.499688 billion
+  cycles, 2.428297 billion retired instructions, and 1.921733 GHz. Against the accepted
+  hidden-overlay baseline, those are reductions of 1.188%, 1.143%, and 0.833%, while sampled
+  frequency was only 0.101% higher. A new 30-second, 7,582-sample call-graph profile lost zero
+  samples and supported the intended mechanism: `SwitchContext` inclusive share fell from 1.75%
+  to 1.32%, while `UnscheduleEvent` self share fell from 0.33% to 0.16%. This is measured recurring
+  CPU-work removal, not a demonstrated FPS or battery-watt improvement. Thor was still AC-powered
+  at 80%, 4.265 V, 25.0 C, `performance_mode=2`, and `fan_mode=4`.
+- Entry 157 raises the ledger to 157 numbered entries and 156 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 157 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
