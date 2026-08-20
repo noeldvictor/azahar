@@ -142,7 +142,11 @@ protected:
 
     virtual double calcCrossCorr(const SAMPLETYPE *mixingPos, const SAMPLETYPE *compare, double &norm);
     virtual double calcCrossCorrAccumulate(const SAMPLETYPE *mixingPos, const SAMPLETYPE *compare, double &norm);
-
+#if defined(SOUNDTOUCH_INTEGER_SAMPLES) && defined(SOUNDTOUCH_USE_NEON) && \
+    defined(__aarch64__) && defined(ANDROID)
+    void calcCrossCorrBatch4(const SAMPLETYPE *mixingPos, const SAMPLETYPE *compare, double &norm,
+                             double *correlations);
+#endif
     virtual int seekBestOverlapPositionFull(const SAMPLETYPE *refPos);
     virtual int seekBestOverlapPositionQuick(const SAMPLETYPE *refPos);
     virtual int seekBestOverlapPosition(const SAMPLETYPE *refPos);

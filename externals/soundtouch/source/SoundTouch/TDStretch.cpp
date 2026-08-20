@@ -292,8 +292,37 @@ int TDStretch::seekBestOverlapPositionFull(const SAMPLETYPE *refPos)
     bestCorr = calcCrossCorr(refPos, pMidBuffer, norm);
     bestCorr = (bestCorr + 0.1) * 0.75;
 
+#if defined(SOUNDTOUCH_INTEGER_SAMPLES) && defined(SOUNDTOUCH_USE_NEON) && \
+    defined(__aarch64__) && defined(ANDROID) && !defined(_OPENMP) && \
+    !defined(ST_SIMD_AVOID_UNALIGNED)
+    i = 1;
+    if (channels == 2)
+    {
+        for (; i + 3 < seekLength; i += 4)
+        {
+            double correlations[4];
+            calcCrossCorrBatch4(refPos + channels * i, pMidBuffer, norm, correlations);
+
+            for (int lane = 0; lane < 4; lane ++)
+            {
+                const int offset = i + lane;
+                double corr = correlations[lane];
+                double tmp = (double)(2 * offset - seekLength) / (double)seekLength;
+                corr = ((corr + 0.1) * (1.0 - 0.25 * tmp * tmp));
+                if (corr > bestCorr)
+                {
+                    bestCorr = corr;
+                    bestOffs = offset;
+                }
+            }
+        }
+    }
+
+    for (; i < seekLength; i ++)
+#else
     #pragma omp parallel for
     for (i = 1; i < seekLength; i ++)
+#endif
     {
         double corr;
         // Calculates correlation value for the mixing position corresponding to 'i'
@@ -999,6 +1028,70 @@ double TDStretch::calcCrossCorrAccumulate(const short *mixingPos, const short *c
     // done using floating point operation
     return (double)corr / sqrt((norm < 1e-9) ? 1.0 : norm);
 }
+
+#if defined(SOUNDTOUCH_USE_NEON) && defined(__aarch64__) && defined(ANDROID)
+/// Calculate four adjacent stereo correlations together. This preserves the exact full-search
+/// arithmetic while sharing compare loads and batching the rolling normalizer updates.
+void TDStretch::calcCrossCorrBatch4(const short *mixingPos, const short *compare, double &norm,
+    double correlations[4])
+{
+    assert(channels == 2);
+    const int ilength = (channels * overlapLength) & -8;
+    const int32x4_t shift = vdupq_n_s32(-overlapDividerBitsNorm);
+    int32x4_t accumulators[4] = {
+        vdupq_n_s32(0), vdupq_n_s32(0), vdupq_n_s32(0), vdupq_n_s32(0)
+    };
+
+    for (int i = 0; i < ilength; i += 8)
+    {
+        const int16x8_t compareValues = vld1q_s16(compare + i);
+        const int16x8_t input0 = vld1q_s16(mixingPos + i);
+        const int16x8_t inputNext = vld1q_s16(mixingPos + i + 8);
+        const int16x8_t inputs[4] = {
+            input0,
+            vextq_s16(input0, inputNext, 2),
+            vextq_s16(input0, inputNext, 4),
+            vextq_s16(input0, inputNext, 6),
+        };
+        for (int lane = 0; lane < 4; lane ++)
+        {
+            const int32x4_t productsLow =
+                vmull_s16(vget_low_s16(inputs[lane]), vget_low_s16(compareValues));
+            const int32x4_t productsHigh = vmull_high_s16(inputs[lane], compareValues);
+            const int32x4_t pairs = vpaddq_s32(productsLow, productsHigh);
+            accumulators[lane] =
+                vaddq_s32(accumulators[lane], vshlq_s32(pairs, shift));
+        }
+    }
+
+    // Each adjacent stereo candidate drops one frame and adds one frame. Calculate all four
+    // normalizer deltas from the two contiguous eight-sample ranges instead of repeating the
+    // general channel-count loops in calcCrossCorrAccumulate.
+    const int16x8_t removed = vld1q_s16(mixingPos - 2);
+    const int16x8_t added = vld1q_s16(mixingPos + ilength - 2);
+    const int32x4_t removedLow =
+        vshlq_s32(vmull_s16(vget_low_s16(removed), vget_low_s16(removed)), shift);
+    const int32x4_t removedHigh = vshlq_s32(vmull_high_s16(removed, removed), shift);
+    const int32x4_t addedLow =
+        vshlq_s32(vmull_s16(vget_low_s16(added), vget_low_s16(added)), shift);
+    const int32x4_t addedHigh = vshlq_s32(vmull_high_s16(added, added), shift);
+    const int32x4_t normalizerDeltas =
+        vsubq_s32(vpaddq_s32(addedLow, addedHigh), vpaddq_s32(removedLow, removedHigh));
+    int32_t deltas[4];
+    vst1q_s32(deltas, normalizerDeltas);
+
+    for (int lane = 0; lane < 4; lane ++)
+    {
+        norm += (double)deltas[lane];
+        if (norm > maxnorm)
+        {
+            maxnorm = static_cast<uint32_t>(norm);
+        }
+        correlations[lane] =
+            (double)vaddvq_s32(accumulators[lane]) / sqrt((norm < 1e-9) ? 1.0 : norm);
+    }
+}
+#endif
 
 #endif // SOUNDTOUCH_INTEGER_SAMPLES
 

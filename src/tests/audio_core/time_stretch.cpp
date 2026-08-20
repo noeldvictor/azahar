@@ -69,6 +69,10 @@ public:
         return overlapDividerBitsNorm;
     }
 
+    int SeekLength() const {
+        return seekLength;
+    }
+
     std::uint32_t MaxNorm() const {
         return maxnorm;
     }
@@ -79,6 +83,10 @@ public:
 
     double CrossCorrAccumulate(const short* mixing, const short* compare, double& norm) {
         return calcCrossCorrAccumulate(mixing, compare, norm);
+    }
+
+    int SeekFull(const short* mixing) {
+        return seekBestOverlapPositionFull(mixing);
     }
 
     std::uint32_t InputSamples() const {
@@ -305,6 +313,69 @@ TEST_CASE("SoundTouch WSOLA correlation matches bounded 32-bit scalar arithmetic
             REQUIRE(running_norm == static_cast<double>(expected_running_norm));
             REQUIRE(actual == expected_value);
         }
+    }
+}
+
+TEST_CASE("SoundTouch WSOLA full search matches an independent scalar reference",
+          "[audio_core][soundtouch]") {
+    constexpr std::array<std::array<int, 2>, 3> configurations{{
+        {8000, 2},
+        {44100, 8},
+        {48000, 30},
+    }};
+    constexpr int prefix_samples = 2;
+
+    for (const auto [sample_rate, overlap_ms] : configurations) {
+        TDStretchHarness stretch;
+        const int overlap_length = stretch.Prepare(sample_rate, overlap_ms);
+        const int sample_count = 2 * overlap_length;
+        const int seek_length = stretch.SeekLength();
+        const int divider_bits = stretch.DividerBits();
+        CAPTURE(sample_rate, overlap_ms, overlap_length, seek_length, divider_bits);
+
+        std::vector<short> mixing(
+            static_cast<std::size_t>(prefix_samples + sample_count + 2 * seek_length));
+        std::vector<short> compare(static_cast<std::size_t>(sample_count));
+        for (std::size_t i = 0; i < mixing.size(); ++i) {
+            mixing[i] = static_cast<short>((i * 4051 + i * i * 29 + 7919) % 32001 - 16000);
+        }
+        for (std::size_t i = 0; i < compare.size(); ++i) {
+            compare[i] = static_cast<short>((i * 3253 + i * i * 17 + 1237) % 32001 - 16000);
+        }
+
+        const short* const first = mixing.data() + prefix_samples;
+        const auto initial =
+            CalculateCorrelationReference(first, compare.data(), sample_count, divider_bits);
+        std::int64_t running_norm = static_cast<std::int64_t>(initial.norm);
+        double best_correlation =
+            (static_cast<double>(initial.correlation) /
+                 std::sqrt(static_cast<double>(std::max<std::int64_t>(running_norm, 1))) +
+             0.1) *
+            0.75;
+        int expected_offset = 0;
+
+        for (int offset = 1; offset < seek_length; ++offset) {
+            const short* const position = first + 2 * offset;
+            const auto expected =
+                CalculateCorrelationReference(position, compare.data(), sample_count, divider_bits);
+            running_norm += CalculateNormalizerDelta(position, sample_count, divider_bits);
+            REQUIRE(running_norm >= 0);
+            REQUIRE(running_norm <= std::numeric_limits<std::uint32_t>::max());
+
+            double correlation =
+                static_cast<double>(expected.correlation) /
+                std::sqrt(static_cast<double>(std::max<std::int64_t>(running_norm, 1)));
+            const double distance =
+                static_cast<double>(2 * offset - seek_length) / static_cast<double>(seek_length);
+            correlation = (correlation + 0.1) * (1.0 - 0.25 * distance * distance);
+            if (correlation > best_correlation) {
+                best_correlation = correlation;
+                expected_offset = offset;
+            }
+        }
+
+        stretch.SetMidBuffer(compare);
+        REQUIRE(stretch.SeekFull(first) == expected_offset);
     }
 }
 
