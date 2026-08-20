@@ -64,6 +64,12 @@ than 2,048 frames or 150 ms reported latency, and zero underruns. This prevents 
 configuration from passing power and frame-pacing checks while introducing crackle or input-to-audio
 delay.
 
+The built-in config and screenshot expectations intentionally describe the accepted 3x scene. For
+an explicit 3x/2x/1x resolution matrix, override `-ExpectedConfigSha256` and
+`-ExpectedScreenshotSha256` together for each row, and keep every other scene, build, renderer,
+driver, device-mode, fan, brightness, and display-layout variable fixed. Never compare a row against
+another resolution's hash or treat an AC-powered KGSL-busy reduction as a battery-watt result.
+
 ## Upstream Release Checklist
 
 The upstream release checklist was removed from this fork-facing README because it is obsolete for Azahar Thor Experiment. This fork does not publish Google Play, Flathub, Internet Archive, compatibility-list, translation, or RetroArch releases.

@@ -88,6 +88,17 @@
   timestamp stream is the strict evidence available without a profiler APK. Require the same active
   AudioFlinger track before/after as well: 32,728 Hz, at most 2,048 frames, at most 150 ms reported
   latency, and zero underruns. A power/FPS win with audio breakup or a restarted track is a failure.
+- Treat internal resolution as a forest-level GPU-load control before accepting more sub-percent
+  source tuning. In the fixed 7th Dragon title scene, changing only `resolution_factor` from 3x to
+  2x reduced mean KGSL busy from 8.374% to 5.488% (34.46%) and 1x reduced it to 3.933% (53.04%),
+  while both alternatives retained about 29.91 FPS, sub-34.31-ms P95 pacing, zero intervals over
+  50 ms, and a clean 1,962-frame AudioTrack. This comparison was AC-powered at a fixed 615 MHz, so
+  it proves less GPU work but not fewer watts. Preserve 3x as the accepted configuration and never
+  silently change a user's resolution. A publishable resolution/power matrix must keep title,
+  scene, build, renderer, driver, performance/fan modes, brightness, and display layout fixed; pass
+  the matching config and screenshot hashes to the power tool for each row. The mostly-2D title
+  screen does not establish representative 3D quality, so require a stable 3D scene before calling
+  2x a general quality/performance balance or 1x acceptable.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.

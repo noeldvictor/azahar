@@ -986,6 +986,37 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   zero. The deterministic control fixture is the restored 1,962-frame / 117.56 ms / zero-underrun
   production row; the rejected 4,096-frame / 271.84 ms / 989-underrun row fails. This is another
   correctness guard for the future physical-battery run, not optimization entry 161.
+- A matched internal-resolution sweep then tested a larger, forest-level control on the accepted
+  production APK. The fixed 7th Dragon title scene, Vulkan renderer, Turnip driver, dual-display
+  layout, High Performance mode 2, fan mode 4, and AC power remained fixed; only the 412-byte
+  `resolution_factor` configuration field changed. Twenty-sample KGSL/process windows and strict
+  SurfaceFlinger/AudioFlinger checks produced:
+
+  | Internal resolution | Mean KGSL busy | Change from 3x | Process CPU ticks/s | Mean FPS / P95 interval | Audio |
+  | --- | ---: | ---: | ---: | --- | --- |
+  | 3x accepted control | 8.37423% | control | 21.2938 | control workload | accepted production track |
+  | 2x | 5.48828% | -34.46% | 21.1700 | 29.9069 / 34.2943 ms | 32,728 Hz, 1,962 frames, 121.87 ms, 0 underruns |
+  | 1x | 3.93265% | -53.04% | 21.3567 | 29.9125 / 34.3012 ms | 32,728 Hz, 1,962 frames, 120.85 ms, 0 underruns |
+
+  All three windows held the Adreno clock at 615 MHz. Both alternatives had zero presentation
+  intervals over 50 ms. Their exact config SHA-256 values were
+  `2634CCBD55F25961886DFC53B98BFE15A2C229E479595D60256AAD88CC8C712E` for 2x and
+  `A0B9B5544DAE6A7E53EA8EA554E4F10BD12427878B029795153450A409C83E18` for 1x; screenshots were
+  `A940E8486BD0179D0BE022BF395C8FC863DD0032F56471D6BFAFC6873C5C1233` and
+  `31C4C2605D6D34F8173277890B62809405FCCB527502837165A07C864FD243E8` respectively.
+- Static-region comparison against the accepted exact 3x screenshot sampled 288,100 pixels. The 2x
+  capture had 71.37% exact samples and 40.37 dB PSNR; 1x had 72.50% and 48.05 dB. The surprising
+  ordering is plausible for a mostly-2D source under different raster/resampling alignments and is
+  why these numbers must not be generalized into 3D image-quality claims. Visually both title
+  screens remained close, but a stable representative 3D scene is still required before choosing
+  a lower resolution as a general profile.
+- This sweep establishes internal resolution as a materially larger GPU-work lever than the
+  remaining profiled micro-hotspots. It does not establish battery watts because the Thor remained
+  on AC, and it does not change the user's 3x default. The exact original config SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21` was restored, production
+  relaunched, and the accepted 3x screenshot hash reproduced. A physical-battery 3x/2x/1x matrix in
+  Standard mode, with matching config and screenshot expectations per row, is the next decision
+  gate. This experiment is not optimization entry 161.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
