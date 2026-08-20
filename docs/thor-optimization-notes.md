@@ -719,6 +719,17 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   to 1.32%, while `UnscheduleEvent` self share fell from 0.33% to 0.16%. This is measured recurring
   CPU-work removal, not a demonstrated FPS or battery-watt improvement. Thor was still AC-powered
   at 80%, 4.265 V, 25.0 C, `performance_mode=2`, and `fan_mode=4`.
+- After source and evidence commits `7d31114d6` and `919279705` were pushed, the required JDK 17
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build passed in 1 minute 14
+  seconds. The final ARM64-only, v2-signed APK is 29,008,524 bytes with SHA-256
+  `1DCF223144A8310D92E73D5C88A8EF04AEDFA1D755AA827776ED50BEB7B4FC2E`; signer-certificate SHA-256
+  remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. It reports package
+  `org.azahar_emu.azahar.debug`, version `919279705-vanilla-thor`, minimum SDK 29, and target SDK 37.
+  The native cache records `ENABLE_THOR_FRAME_PROFILING=OFF`, the linked library has zero profiler
+  marker strings, and the installed package flags contain no `DEBUGGABLE` bit. Wi-Fi ADB installed
+  this exact artifact; its final 7th Dragon run again reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` with no fatal, assertion,
+  page-fault, fastmem, profiler, or Vulkan device-lost log match.
 - Entry 157 raises the ledger to 157 numbered entries and 156 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 157 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
