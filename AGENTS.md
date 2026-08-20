@@ -148,6 +148,15 @@
   require a representative 3D/shader-stutter case plus battery evidence before changing the generic
   R8 recommendation. Driver identity is part of every performance/power matrix, not metadata to
   omit because config and screenshot hashes happen to match.
+- MrPurple T30 is a compatible manual option on the Thor, not the accepted performance default.
+  The official 2026-08-17 `turnip_mrpurple_T30-toasted.adpkg.zip` archive has SHA-256
+  `F65B2D3353FD4AA7190BB5426B94468E99FFEA7A58A830BC0C4651DB89353227` and reports PurpleVK
+  26.2.99 / Vulkan 1.4.359 on Adreno 740. In three phase-locked 20-second Super Mario 3D Land runs
+  after 45-second cold-launch warmups, T30 used 1.440694% more instructions and 2.021561% more CPU
+  cycles than generic R8; the instruction ranges did not overlap, while cycles were noisy. Both
+  rendered cleanly at the 60-FPS cap. Keep generic R8 active, leave T30 available for manual
+  per-title experiments, and never infer that a newer driver is faster without a matched hardware
+  bracket. This AC-powered comparison contains no battery-watt evidence.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.

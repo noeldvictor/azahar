@@ -1452,6 +1452,44 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   results and does not prove higher capped FPS or lower battery watts. Testing remained AC-powered,
   so the physical discharging-battery mean and nearest-rank P95 power at or below 6 W remain open.
 
+## MrPurple T30 Driver Compatibility and Rejection Bracket (2026-08-20)
+
+- Entry 165 tests the latest official MrPurple package instead of treating release enthusiasm as
+  performance evidence. GitHub release `vturnip_mrpurple_T30-toasted.adpkg`, published 2026-08-17,
+  supplied `turnip_mrpurple_T30-toasted.adpkg.zip`: 3,713,730 bytes with SHA-256
+  `F65B2D3353FD4AA7190BB5426B94468E99FFEA7A58A830BC0C4651DB89353227`, exactly matching the
+  publisher's digest. Its metadata names `Turnip Adreno Driver T30 (@Mr_Purple_666)`, version
+  `26.3.0-T30-1.4.359`, minimum API 30, and `vulkan.purple.so`. The extracted metadata and library
+  SHA-256 values are `BF6C432FFD05A254A9531920F6EC826ABB2BCF91C52A0C5467167A0EE1940F73` and
+  `1D80DFA019659B008E4669311DB5B1E4A02AF59FF1D5458A98E2F5FE18ED013B`.
+- Wi-Fi ADB placed the verified archive in the user-facing Azahar driver library at
+  `/sdcard/Azaharuser/gpu_drivers/turnip_mrpurple_T30-toasted.adpkg.zip`. A controlled private-driver
+  swap then proved this was the active renderer rather than a system-driver fallback: Azahar logged
+  PurpleVK public driver 26.2.99, PurpleVK-public Adreno 740 commit `62ac221a33`, Vulkan 1.4.359, and
+  exact Super Mario 3D Land program ID `0004000000054000`. Both physical displays rendered cleanly,
+  including the attract loop and title prompt, and the primary held the 60-FPS cap.
+- The fixed comparison used the byte-identical accepted configuration, modes 2/4, brightness 255,
+  exact title and direct launch intent. Every replica started cold, warmed for 45 seconds, and then
+  recorded an exact 20-second process `simpleperf stat` interval. Three independent replicas per
+  driver produced:
+
+  | Driver | CPU cycles, three replicas | Mean cycles | Instructions, three replicas | Mean instructions |
+  | --- | --- | ---: | --- | ---: |
+  | MrPurple T30 | 13,120,406,125 / 14,174,994,770 / 14,479,132,655 | 13,924,844,516.667 | 9,046,952,833 / 9,080,200,309 / 9,043,685,074 | 9,056,946,072.000 |
+  | generic Turnip R8 | 13,804,906,416 / 14,258,355,535 / 12,883,507,646 | 13,648,923,199.000 | 8,966,501,796 / 8,864,318,830 / 8,954,128,552 | 8,928,316,392.667 |
+
+- T30 therefore consumed 2.021561% more CPU cycles and 1.440694% more instructions than R8. The
+  cycle counter was noisy at about 5.1% coefficient of variation for each driver, but instruction
+  variation was only 0.2231% for T30 and 0.6246% for R8, and the two instruction ranges did not
+  overlap. Equivalently, R8 saved 1.981504% cycles and 1.420232% instructions relative to T30.
+  T30 is compatible and may still help a different title, but it supplied no speed or CPU-energy
+  gain in this representative 3D bracket. Generic R8 was restored byte-identically and remains the
+  accepted default; T30 remains available for explicit per-title experiments.
+- This is a rejected candidate, so Entry 165 does not raise the active accepted-entry count. The
+  Thor remained AC-powered at the 60-FPS cap; battery status during the rolling check was 80%,
+  4.265 V, and 24.0 C. These counters are not watts, and the physical discharging-battery mean and
+  nearest-rank P95 power at or below 6 W remain an open gate.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
