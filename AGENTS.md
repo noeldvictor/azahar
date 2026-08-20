@@ -485,6 +485,15 @@
   fixed-time Super Mario 3D Land traces per APK twin must remain the acceptance evidence: aggregate
   `SetupVertexArray` cycles fell 22.94%, and its share of `AccelerateDrawBatch` fell from 21.56% to
   16.38% while parent work rose 1.42%. Keep that result path-local; it is not an FPS or watt claim.
+- Do not enable the blending subset of `VK_EXT_extended_dynamic_state3` merely because Turnip R8
+  advertises it. The physical Thor confirmed all four required logic-op-enable, blend-enable,
+  blend-equation, and color-write-mask features and rendered the exact Super Mario 3D Land loop
+  correctly, but a profiling-off control/candidate bracket left Turnip's `tu_CmdBindPipeline` self
+  share effectively unchanged at 1.25297% versus 1.25021% (0.22% relative, noise scale). Azahar's
+  own `PipelineCache::BindPipeline` self share rose 9.17% relative while the animated scene's
+  descriptor shares also varied upward. The candidate was fully reverted. Reconsider only when a
+  ranked title proves frequent blend-only pipeline-key churn and a matched bracket shows less
+  recurring driver work; extension availability is not optimization evidence.
 - The vertex shader's packed 64-bit attribute-to-input-register map and active attribute count are
   also invariant for a CPU-fallback draw. Keep `ShaderInputMap` constructed once in
   `PicaCore::LoadVertices()` and make each recurring `ShaderUnit::LoadInput()` mask and shift its

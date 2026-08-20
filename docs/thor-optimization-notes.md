@@ -1260,6 +1260,38 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   whole-game FPS or energy. The Thor remained AC-powered at 80%, so physical discharging-battery
   mean and nearest-rank P95 power at or below 6 W remain an open gate.
 
+## Rejected extended-dynamic-state-3 blending experiment (2026-08-20)
+
+- The fresh post-entry-162 profile ranked Turnip's `tu_CmdBindPipeline` at 1.24-1.25% self and
+  showed that about 43% of Vulkan-worker `memcpy` samples originated below it. Khronos documents
+  `VK_EXT_extended_dynamic_state3` as separate feature bits rather than an all-or-nothing feature;
+  the attempted candidate therefore required and enabled only dynamic logic-op enable, color-blend
+  enable, color-blend equation, and color-write mask. It removed only the corresponding blend
+  fields from Azahar's optimized pipeline hash and retained the logic-op value as static state.
+  Unsupported, ARM-proprietary, and Qualcomm-proprietary drivers would have kept the old route.
+  See the official [extension proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_extended_dynamic_state3.html)
+  and [dynamic-state map](https://docs.vulkan.org/guide/latest/dynamic_state_map.html).
+- The ARM64 debuggable candidate built successfully. On the physical Thor, the selected custom
+  driver explicitly enabled `VK_EXT_extended_dynamic_state3`; the exact test title logged program
+  ID `0004000000054000` and both candidate/control captures remained visually clean at 60 FPS.
+  The control APK was 32,439,351 bytes with SHA-256
+  `C5444E11FA1BCA9B809B1E8B4644C614AA5C190BBAB73111267D9287D5937B69`; the candidate was
+  32,441,535 bytes with SHA-256
+  `69719FAE330A108B9A1175A7ABEFD23CB72D72D16A896BAD1D4541D593F1540A`.
+- After at least 60 seconds of warmup per install, the 30-second 4-kHz user-cycle captures recorded
+  47,914 control samples and 42,342 candidate samples with zero lost. Control/candidate total
+  cycles were 17,355,249,544/16,326,911,286. Turnip pipeline-bind self cycles were
+  217,456,180/204,120,969, or 1.25297%/1.25021% of their process totals: only a 0.22% relative share
+  reduction, well inside animated-scene noise. Azahar pipeline-bind self cycles were
+  27,312,814/28,049,824, increasing from 0.15737% to 0.17180% of process work (9.17% relative).
+  Unrelated descriptor-update/bind shares also moved upward, reinforcing that the pair established
+  no whole-frame win rather than a blend-state reduction.
+- The entire source candidate was reverted; entry counts remain unchanged. The result closes this
+  route for the current representative workload without claiming the extension is universally
+  harmful. Reopen it only for a title with measured blend-only pipeline-key churn and require fewer
+  actual driver pipeline binds plus matched whole-frame evidence. Capability support by itself is
+  not a speed or power result, and this AC-powered experiment says nothing about the <=6 W gate.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
