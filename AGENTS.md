@@ -71,8 +71,11 @@
   flag, and the Thor's USB, wireless, or UCSI charger-online sysfs flag before/during/post run.
   Never use `dumpsys battery unplug`, AC `power_now`, a debuggable/profiler APK, a mismatched scene,
   or a mean-only result to close the gate. Retain raw CSV, JSON summary, frame hashes, temperature
-  range, and thermal slope; `thor-power-results/` is intentionally ignored unless evidence is
-  explicitly selected for publication.
+  range, thermal slope, charge-counter cross-check, process CPU-tick rate, and KGSL busy/clock
+  statistics; `thor-power-results/` is intentionally ignored unless evidence is explicitly selected
+  for publication. Keep the default anti-idle floors at least 10 process CPU ticks/second and 1%
+  mean GPU busy for the fixed 7th Dragon scene. These are loose validity checks, not optimization
+  metrics; calibrate and explicitly override them for a materially different title or scene.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.

@@ -39,15 +39,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\measure-thor-power
 
 Defaults provide a 60-second warmup followed by 180 seconds of one-second samples. The gate passes
 only when both mean and nearest-rank P95 battery power are at most 6 W. It records raw current,
-voltage, direct and averaged power nodes, battery temperature/capacity, charger flags, package and
-device metadata, config hash, and before/after screenshot hashes under `thor-power-results/`.
+voltage, direct and averaged power nodes, charge counter, battery temperature/capacity, charger
+flags, Azahar process CPU ticks, KGSL GPU busy/clock data, package and device metadata, config hash,
+and before/after screenshot hashes under `thor-power-results/`. The JSON summary includes a
+charge-counter-derived average as an independent coarse cross-check; `power_now` remains the gate's
+per-sample source when that node is plausible.
 
 The script deliberately fails instead of producing a watt claim if the battery is simulated, any
 external-power flag is present, a charger appears during sampling, the app exits, hardware is not an
 AYN Thor, ADB is not using a host:port endpoint, the package is debuggable/non-ARM64, or the expected
 version, config, performance mode, fan mode, brightness, or frame hash differs. Override an expected
 value explicitly when validating a newer accepted build; do not weaken the charger or simulated-
-battery checks.
+battery checks. It also rejects an idle or frozen fixed scene unless the run averages at least 10
+Azahar process CPU ticks per second and 1% KGSL GPU busy. Those deliberately loose defaults validate
+that the accepted 7th Dragon workload stayed active; explicitly recalibrate them for a materially
+different title or scene instead of treating them as speed targets.
 
 ## Upstream Release Checklist
 
