@@ -898,6 +898,22 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   (+0.176%). The Thor remained AC-powered at 80%, 4.262 V, and 23.0 C, so entry 160 proves recurring
   Android UI-work removal but not battery watts or the under-6-W requirement. Source commit
   `2b02f5cf5` was pushed directly to `origin/master`.
+- After evidence commit `37053eb9d` was pushed, the clean JDK 17
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build passed in 1 minute 9
+  seconds. The final ARM64-only, v2-signed APK is 29,009,852 bytes with SHA-256
+  `7EA1786E86C7B040D76E52FBFD5673E508C397D49A7E72C5982895931253AAEC`; signer-certificate SHA-256
+  remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. It reports package
+  `org.azahar_emu.azahar.debug`, version `37053eb9d-vanilla-thor`, minimum SDK 29, target SDK 37,
+  only `arm64-v8a`, no installed `DEBUGGABLE` flag, `ENABLE_THOR_FRAME_PROFILING=OFF`, and zero
+  `ThorFrameProfile` strings in the stripped native library.
+- Wi-Fi ADB installed that exact Lite artifact. 7th Dragon reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` on the next animated-title
+  capture, and Art Academy reproduced `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`
+  on its first capture. Both processes stayed alive with no fatal, assertion, fastmem, page-fault,
+  profiler, or Vulkan device-lost log match. The active 412-byte device configuration remained
+  byte-exact at SHA-256 `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`,
+  with Thor performance/fan modes still 2/4. The final power check remained AC-powered at 80%,
+  4.262 V, and 24.0 C, so production validation also leaves the under-6-W battery gate open.
 - Entry 160 raises the ledger to 160 numbered entries and 159 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 160 are
   measured recurring presentation, scheduler, audio, Android wakeup, and overlay-work reductions,
