@@ -69,7 +69,7 @@ public:
             const SubmissionSemaphores semaphores = prepare(cmdbuf);
             ExecuteSubmission(cmdbuf, semaphores.signal, semaphores.wait, semaphores.wait_stage,
                               signal_value);
-            post_submit(cmdbuf);
+            post_submit(cmdbuf, signal_value);
         });
         DispatchSubmission(signal_value);
     }

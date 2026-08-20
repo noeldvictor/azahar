@@ -17,8 +17,13 @@ class Scheduler;
 struct AcquiredSwapchainImage {
     u32 index{};
     vk::Image image{};
-    vk::Semaphore image_acquired{};
     vk::Semaphore present_ready{};
+};
+
+enum class SwapchainAcquireResult {
+    Success,
+    Retry,
+    Recreate,
 };
 
 class Swapchain {
@@ -31,7 +36,8 @@ public:
     void Create(u32 width, u32 height, vk::SurfaceKHR surface, bool low_refresh_rate);
 
     /// Acquires the next image in the swapchain.
-    bool AcquireNextImage(AcquiredSwapchainImage& acquired_image);
+    SwapchainAcquireResult AcquireNextImage(vk::Semaphore acquire_semaphore,
+                                            AcquiredSwapchainImage& acquired_image);
 
     /// Presents a previously acquired image.
     void Present(u32 image_index);
@@ -58,6 +64,10 @@ public:
 
     u32 GetImageCount() const {
         return image_count;
+    }
+
+    bool NeedsRecreation() const {
+        return needs_recreation;
     }
 
     vk::Extent2D GetExtent() const {
@@ -93,12 +103,10 @@ private:
     vk::SurfaceTransformFlagBitsKHR transform;
     vk::CompositeAlphaFlagBitsKHR composite_alpha;
     std::vector<vk::Image> images;
-    std::vector<vk::Semaphore> image_acquired;
     std::vector<vk::Semaphore> present_ready;
     u32 width = 0;
     u32 height = 0;
     u32 image_count = 0;
-    u32 semaphore_index = 0;
     bool needs_recreation = true;
     bool low_refresh_rate;
 };

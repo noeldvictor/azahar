@@ -3,7 +3,6 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
-#include <limits>
 #include "common/logging/log.h"
 #include "common/microprofile.h"
 #include "common/settings.h"
@@ -27,6 +26,11 @@ static_assert(!NeedsNonFifoPresentMode(200, false, true));
 static_assert(NeedsNonFifoPresentMode(200, false, false));
 static_assert(NeedsNonFifoPresentMode(0, false, true));
 static_assert(NeedsNonFifoPresentMode(100, true, true));
+
+// Do not block forever while the caller externally synchronizes host access to the swapchain.
+// A finite wait lets a queued present take the lock and make forward progress on drivers that
+// expose every swapchain image as temporarily unavailable.
+constexpr u64 SWAPCHAIN_ACQUIRE_TIMEOUT_NS = 1'000'000;
 
 } // Anonymous namespace
 
@@ -105,45 +109,44 @@ void Swapchain::Create(u32 width_, u32 height_, vk::SurfaceKHR surface_, bool lo
     RefreshSemaphores();
 }
 
-bool Swapchain::AcquireNextImage(AcquiredSwapchainImage& acquired_image) {
+SwapchainAcquireResult Swapchain::AcquireNextImage(
+    vk::Semaphore acquire_semaphore, AcquiredSwapchainImage& acquired_image) {
     if (needs_recreation) {
-        return false;
+        return SwapchainAcquireResult::Recreate;
     }
 
     MICROPROFILE_SCOPE(Vulkan_Acquire);
     const vk::Device device = instance.GetDevice();
     u32 image_index{};
-    const vk::Semaphore acquire_semaphore = image_acquired[semaphore_index];
-    const vk::Result result =
-        device.acquireNextImageKHR(swapchain, std::numeric_limits<u64>::max(),
-                                   acquire_semaphore, VK_NULL_HANDLE, &image_index);
+    const vk::Result result = device.acquireNextImageKHR(
+        swapchain, SWAPCHAIN_ACQUIRE_TIMEOUT_NS, acquire_semaphore, VK_NULL_HANDLE, &image_index);
 
     switch (result) {
     case vk::Result::eSuccess:
         break;
     case vk::Result::eSuboptimalKHR:
+        // The returned image and signaled semaphore are valid. Consume both normally; Android
+        // surface replacement is driven by the explicit surface-change/out-of-date path.
+        break;
+    case vk::Result::eNotReady:
+    case vk::Result::eTimeout:
+        return SwapchainAcquireResult::Retry;
     case vk::Result::eErrorSurfaceLostKHR:
     case vk::Result::eErrorOutOfDateKHR:
         needs_recreation = true;
-        break;
+        return SwapchainAcquireResult::Recreate;
     default:
         LOG_CRITICAL(Render_Vulkan, "Swapchain acquire returned unknown result {}", result);
         UNREACHABLE();
-        break;
-    }
-
-    if (needs_recreation) {
-        return false;
+        return SwapchainAcquireResult::Recreate;
     }
 
     acquired_image = {
         .index = image_index,
         .image = images[image_index],
-        .image_acquired = acquire_semaphore,
         .present_ready = present_ready[image_index],
     };
-    semaphore_index = (semaphore_index + 1) % image_count;
-    return true;
+    return SwapchainAcquireResult::Success;
 }
 
 void Swapchain::Present(u32 image_index) {
@@ -157,7 +160,8 @@ void Swapchain::Present(u32 image_index) {
 
     MICROPROFILE_SCOPE(Vulkan_Present);
     try {
-        [[maybe_unused]] vk::Result result = instance.GetPresentQueue().presentKHR(present_info);
+        [[maybe_unused]] const vk::Result result =
+            instance.GetPresentQueue().presentKHR(present_info);
     } catch (vk::OutOfDateKHRError&) {
         needs_recreation = true;
         return;
@@ -300,30 +304,22 @@ void Swapchain::Destroy() {
         device.destroySwapchainKHR(swapchain);
         swapchain = VK_NULL_HANDLE;
     }
-    for (u32 i = 0; i < image_count; i++) {
-        device.destroySemaphore(image_acquired[i]);
-        device.destroySemaphore(present_ready[i]);
+    for (const vk::Semaphore semaphore : present_ready) {
+        device.destroySemaphore(semaphore);
     }
-    image_acquired.clear();
     present_ready.clear();
 }
 
 void Swapchain::RefreshSemaphores() {
     const vk::Device device = instance.GetDevice();
-    semaphore_index = 0;
-    image_acquired.resize(image_count);
     present_ready.resize(image_count);
 
-    for (vk::Semaphore& semaphore : image_acquired) {
-        semaphore = device.createSemaphore({});
-    }
     for (vk::Semaphore& semaphore : present_ready) {
         semaphore = device.createSemaphore({});
     }
 
     if (instance.HasDebuggingToolAttached()) {
         for (u32 i = 0; i < image_count; ++i) {
-            SetObjectName(device, image_acquired[i], "Swapchain Semaphore: image_acquired {}", i);
             SetObjectName(device, present_ready[i], "Swapchain Semaphore: present_ready {}", i);
         }
     }

@@ -2,6 +2,8 @@
 // Licensed under GPLv2 or any later version
 // Refer to the license.txt file included.
 
+#include <chrono>
+#include <thread>
 #include "common/microprofile.h"
 #include "common/settings.h"
 #include "common/thread.h"
@@ -122,8 +124,14 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
       last_render_surface{emu_window.GetWindowInfo().render_surface} {
 
     swap_chain.resize(swapchain.GetImageCount());
-    for (Frame& frame : swap_chain) {
+    const vk::Device device = instance.GetDevice();
+    for (u32 i = 0; i < swap_chain.size(); ++i) {
+        Frame& frame = swap_chain[i];
+        frame.image_acquired = device.createSemaphore({});
         free_queue.push(&frame);
+        if (instance.HasDebuggingToolAttached()) {
+            SetObjectName(device, frame.image_acquired, "Frame Semaphore: image_acquired {}", i);
+        }
     }
 
     if (use_present_thread) {
@@ -138,6 +146,7 @@ PresentWindow::~PresentWindow() {
     for (auto& frame : swap_chain) {
         device.destroyFramebuffer(frame.framebuffer);
         device.destroyImageView(frame.image_view);
+        device.destroySemaphore(frame.image_acquired);
         if (frame.image) {
             vmaDestroyImage(instance.GetAllocator(), frame.image, frame.allocation);
         }
@@ -252,6 +261,15 @@ Frame* PresentWindow::GetRenderFrame() {
     // future reuse on the same graphics queue by the post-copy image barrier.
     Frame* frame = free_queue.front();
     free_queue.pop();
+    lock.unlock();
+
+    // A frame's acquire semaphore cannot be signaled again until its previous queue wait has
+    // completed. The scheduler timeline is normally already past this tick by the time the frame
+    // returns from presentation, making this a cheap correctness check rather than a per-frame
+    // fence cycle.
+    if (frame->submit_tick != 0) {
+        scheduler.Wait(frame->submit_tick);
+    }
     return frame;
 }
 
@@ -267,7 +285,10 @@ void PresentWindow::Present(Frame* frame) {
     };
 
     if (!use_present_thread) {
-        scheduler.FlushWithDynamicSubmission(prepare, [](vk::CommandBuffer) {});
+        scheduler.FlushWithDynamicSubmission(
+            prepare, [frame](vk::CommandBuffer, u64 submit_tick) {
+                frame->submit_tick = submit_tick;
+            });
         scheduler.WaitWorker();
         std::scoped_lock lock{swapchain_mutex};
         FinishPresent(frame);
@@ -275,13 +296,17 @@ void PresentWindow::Present(Frame* frame) {
         return;
     }
 
-    scheduler.FlushWithDynamicSubmission(prepare, [this, frame](vk::CommandBuffer) {
-        {
-            std::scoped_lock lock{queue_mutex};
-            present_queue.push(frame);
-        }
-        frame_cv.notify_one();
-    });
+    scheduler.FlushWithDynamicSubmission(
+        prepare, [this, frame](vk::CommandBuffer, u64 submit_tick) {
+            // Publish the acquire-semaphore reuse tick before the frame becomes visible to the
+            // presentation thread. The queue mutex provides the cross-thread ordering.
+            frame->submit_tick = submit_tick;
+            {
+                std::scoped_lock lock{queue_mutex};
+                present_queue.push(frame);
+            }
+            frame_cv.notify_one();
+        });
 }
 
 void PresentWindow::WaitPresent() {
@@ -377,7 +402,7 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
                                vk::DependencyFlagBits::eByRegion, {}, {}, restore_barrier);
     };
 
-    std::scoped_lock swapchain_lock{swapchain_mutex};
+    std::unique_lock swapchain_lock{swapchain_mutex};
     frame->present_valid = false;
 
 #ifndef ANDROID
@@ -393,15 +418,28 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
 #endif
 
     AcquiredSwapchainImage acquired_image;
-    if (!swapchain.AcquireNextImage(acquired_image)) {
-        restore_frame();
-        return;
+    for (;;) {
+        switch (swapchain.AcquireNextImage(frame->image_acquired, acquired_image)) {
+        case SwapchainAcquireResult::Success:
+            frame->present_image = acquired_image.image;
+            frame->present_image_index = acquired_image.index;
+            frame->present_ready = acquired_image.present_ready;
+            frame->present_valid = true;
+            break;
+        case SwapchainAcquireResult::Recreate:
+            restore_frame();
+            return;
+        case SwapchainAcquireResult::Retry:
+            // A blocking acquire must not retain the host-synchronization lock needed by the
+            // present thread to return prior images. This slow recovery path sleeps after the
+            // finite Vulkan timeout rather than burning a CPU core in a zero-timeout spin.
+            swapchain_lock.unlock();
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            swapchain_lock.lock();
+            continue;
+        }
+        break;
     }
-
-    frame->present_image_index = acquired_image.index;
-    frame->image_acquired = acquired_image.image_acquired;
-    frame->present_ready = acquired_image.present_ready;
-    frame->present_valid = true;
 
     const vk::Extent2D extent = swapchain.GetExtent();
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentFrames);
@@ -431,7 +469,7 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
             .newLayout = vk::ImageLayout::eTransferDstOptimal,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = acquired_image.image,
+            .image = frame->present_image,
             .subresourceRange{
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .baseMipLevel = 0,
@@ -453,13 +491,13 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
     if (ShouldBlitToSwapchain(blit_supported, frame->width, frame->height, extent.width,
                               extent.height)) {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentBlits);
-        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, acquired_image.image,
+        cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, frame->present_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageBlit(frame->width, frame->height, extent.width, extent.height),
                          vk::Filter::eLinear);
     } else {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCopies);
-        cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, acquired_image.image,
+        cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, frame->present_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageCopy(frame->width, frame->height, extent.width, extent.height));
     }
@@ -488,7 +526,7 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
             .newLayout = vk::ImageLayout::ePresentSrcKHR,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = acquired_image.image,
+            .image = frame->present_image,
             .subresourceRange{
                 .aspectMask = vk::ImageAspectFlagBits::eColor,
                 .baseMipLevel = 0,
@@ -507,11 +545,14 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
 
 void PresentWindow::FinishPresent(Frame* frame) {
     if (!frame->present_valid) [[unlikely]] {
-        RecreateSwapchain(frame);
+        if (swapchain.NeedsRecreation()) {
+            RecreateSwapchain(frame);
+        }
         return;
     }
     std::scoped_lock submit_lock{scheduler.submit_mutex};
     swapchain.Present(frame->present_image_index);
+    frame->present_valid = false;
 }
 
 vk::RenderPass PresentWindow::CreateRenderpass() {

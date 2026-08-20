@@ -29,9 +29,11 @@ struct Frame {
     vk::Framebuffer framebuffer{};
     vk::Image image{};
     vk::ImageView image_view{};
+    vk::Image present_image{};
     u32 present_image_index{};
     vk::Semaphore image_acquired{};
     vk::Semaphore present_ready{};
+    u64 submit_tick{};
     bool present_valid{};
     // LibRetro owns its presentation command buffers and synchronization separately.
     vk::Semaphore render_ready{};
