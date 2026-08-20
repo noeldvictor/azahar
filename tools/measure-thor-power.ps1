@@ -16,6 +16,18 @@ param(
     [double]$MinProcessCpuTicksPerSecond = 10.0,
     [ValidateRange(0.0, 100.0)]
     [double]$MinMeanGpuBusyPercent = 1.0,
+    [ValidateRange(1, 8)]
+    [int]$ExpectedSurfaceLayerCount = 2,
+    [ValidateRange(1, 8)]
+    [int]$MinMeasuredSurfaceLayerCount = 1,
+    [ValidateRange(1, 126)]
+    [int]$MinPresentIntervalsPerMeasuredLayer = 60,
+    [ValidateRange(1.0, 240.0)]
+    [double]$MinMeanPresentedFps = 29.0,
+    [ValidateRange(1.0, 1000.0)]
+    [double]$MaxP95PresentIntervalMs = 40.0,
+    [ValidateRange(0, 10000)]
+    [int]$MaxPresentIntervalsOver50Ms = 0,
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
     [int]$ExpectedBrightness = -1,
@@ -162,6 +174,89 @@ function Test-WorkloadGate {
         $MeanGpuBusyPercent -ge $MinimumMeanGpuBusyPercent
 }
 
+function ConvertFrom-SurfaceFlingerLatency {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text,
+        [Parameter(Mandatory)]
+        [string]$Layer
+    )
+
+    $lines = @($Text -split "`r?`n")
+    if ($lines.Count -eq 0) {
+        throw "SurfaceFlinger returned no latency data for '$Layer'."
+    }
+    $refreshPeriodNanoseconds = ConvertTo-Int64Invariant -Text $lines[0] -Name 'refresh period'
+    $timestamps = [System.Collections.Generic.List[long]]::new()
+    foreach ($line in ($lines | Select-Object -Skip 1)) {
+        $match = [regex]::Match($line, '^\s*(\d+)\s+(\d+)\s+(\d+)\s*$')
+        if (-not $match.Success) {
+            continue
+        }
+        $timestamp = ConvertTo-Int64Invariant -Text $match.Groups[1].Value -Name 'present timestamp'
+        if ($timestamp -gt 0 -and $timestamp -lt [long]::MaxValue) {
+            $timestamps.Add($timestamp)
+        }
+    }
+
+    $intervals = [System.Collections.Generic.List[double]]::new()
+    for ($index = 1; $index -lt $timestamps.Count; $index++) {
+        $deltaNanoseconds = $timestamps[$index] - $timestamps[$index - 1]
+        if ($deltaNanoseconds -gt 0) {
+            $intervals.Add([double]$deltaNanoseconds / 1000000.0)
+        }
+    }
+
+    if ($intervals.Count -eq 0) {
+        return [pscustomobject]@{
+            Layer = $Layer
+            Measurable = $false
+            RefreshPeriodNanoseconds = $refreshPeriodNanoseconds
+            FrameCount = $timestamps.Count
+            IntervalCount = 0
+            MeanPresentedFps = 0.0
+            IntervalMilliseconds = $null
+            IntervalsOver50Ms = 0
+        }
+    }
+
+    $statistics = Get-SampleStatistics -Values ([double[]]$intervals.ToArray())
+    return [pscustomobject]@{
+        Layer = $Layer
+        Measurable = $true
+        RefreshPeriodNanoseconds = $refreshPeriodNanoseconds
+        FrameCount = $timestamps.Count
+        IntervalCount = $intervals.Count
+        MeanPresentedFps = 1000.0 / $statistics.Mean
+        IntervalMilliseconds = $statistics
+        IntervalsOver50Ms = @($intervals | Where-Object { $_ -gt 50.0 }).Count
+    }
+}
+
+function Test-SurfacePacingSnapshot {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Snapshot
+    )
+
+    if ($Snapshot.LayerCount -ne $ExpectedSurfaceLayerCount -or
+        $Snapshot.MeasuredLayerCount -lt $MinMeasuredSurfaceLayerCount) {
+        return $false
+    }
+    foreach ($layer in $Snapshot.Layers) {
+        if (-not $layer.Measurable) {
+            continue
+        }
+        if ($layer.IntervalCount -lt $MinPresentIntervalsPerMeasuredLayer -or
+            $layer.MeanPresentedFps -lt $MinMeanPresentedFps -or
+            $layer.IntervalMilliseconds.P95 -gt $MaxP95PresentIntervalMs -or
+            $layer.IntervalsOver50Ms -gt $MaxPresentIntervalsOver50Ms) {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Invoke-SelfTest {
     $values = [double[]](@(1..19 | ForEach-Object { 5.0 }) + 6.0)
     $statistics = Get-SampleStatistics -Values $values
@@ -183,6 +278,30 @@ function Invoke-SelfTest {
     if (Test-WorkloadGate -ProcessCpuTicksPerSecond 0.0 -MeanGpuBusyPercent 0.0 `
             -MinimumProcessCpuTicksPerSecond 10.0 -MinimumMeanGpuBusyPercent 1.0) {
         throw 'Failing workload-gate self-test failed.'
+    }
+    $pacingFixtureLines = [System.Collections.Generic.List[string]]::new()
+    $pacingFixtureLines.Add('16666666')
+    for ($index = 0; $index -le 64; $index++) {
+        $timestamp = 1000000000L + 33333333L * $index
+        $pacingFixtureLines.Add("$timestamp $($timestamp + 1000000) $($timestamp + 500000)")
+    }
+    $pacingFixture = $pacingFixtureLines -join "`n"
+    $pacingLayer = ConvertFrom-SurfaceFlingerLatency -Text $pacingFixture -Layer 'fixture'
+    $pacingSnapshot = [pscustomobject]@{
+        LayerCount = 2
+        MeasuredLayerCount = 1
+        Layers = @(
+            $pacingLayer,
+            [pscustomobject]@{ Layer = 'unmeasured'; Measurable = $false }
+        )
+    }
+    if (-not (Test-SurfacePacingSnapshot -Snapshot $pacingSnapshot) -or
+        [Math]::Abs($pacingLayer.MeanPresentedFps - 30.0) -gt 0.001) {
+        throw 'Passing SurfaceFlinger pacing self-test failed.'
+    }
+    $pacingLayer.IntervalMilliseconds.P95 = 100.0
+    if (Test-SurfacePacingSnapshot -Snapshot $pacingSnapshot) {
+        throw 'Failing SurfaceFlinger pacing self-test failed.'
     }
 
     $thermalSamples = @(
@@ -290,6 +409,47 @@ function Invoke-AdbText {
 function Get-DeviceBatteryState {
     $dump = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'dumpsys', 'battery')
     return ConvertFrom-BatteryDump -Text $dump
+}
+
+function Get-SurfacePacingSnapshot {
+    $layerList = Invoke-AdbText -Arguments @(
+        '-s', $Serial, 'shell', 'dumpsys', 'SurfaceFlinger', '--list'
+    )
+    $layerPattern = '^SurfaceView\[' + [regex]::Escape($Package) +
+        '/org\.citra\.citra_emu\.activities\.EmulationActivity\]\(BLAST\)#\d+$'
+    $layerNames = @($layerList -split "`r?`n" | Where-Object { $_ -match $layerPattern })
+    $layers = [System.Collections.Generic.List[object]]::new()
+    foreach ($layerName in $layerNames) {
+        # The strict layer-name regex excludes shell quotes and metacharacters other than the
+        # known SurfaceFlinger punctuation. Single quoting preserves its brackets and parentheses.
+        $remoteCommand = "dumpsys SurfaceFlinger --latency '$layerName'"
+        $latencyText = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', $remoteCommand)
+        $layers.Add((ConvertFrom-SurfaceFlingerLatency -Text $latencyText -Layer $layerName))
+    }
+    $measuredLayerCount = @($layers | Where-Object { $_.Measurable }).Count
+    $snapshot = [pscustomobject]@{
+        TimestampUtc = [DateTime]::UtcNow.ToString('o')
+        LayerCount = $layers.Count
+        MeasuredLayerCount = $measuredLayerCount
+        Layers = $layers.ToArray()
+    }
+    $snapshot | Add-Member -NotePropertyName Passed -NotePropertyValue (
+        Test-SurfacePacingSnapshot -Snapshot $snapshot
+    )
+    return $snapshot
+}
+
+function Assert-SurfacePacingSnapshot {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Snapshot,
+        [Parameter(Mandatory)]
+        [string]$Phase
+    )
+
+    if (-not $Snapshot.Passed) {
+        throw "${Phase}: SurfaceFlinger pacing failed. Expected $ExpectedSurfaceLayerCount layers, at least $MinMeasuredSurfaceLayerCount measurable layer(s), >= $MinPresentIntervalsPerMeasuredLayer intervals per measured layer, >= $MinMeanPresentedFps FPS, P95 <= $MaxP95PresentIntervalMs ms, and <= $MaxPresentIntervalsOver50Ms intervals over 50 ms."
+    }
 }
 
 function Assert-RealDischargeState {
@@ -588,6 +748,8 @@ if ([string]::IsNullOrWhiteSpace(
         (Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'pidof', $Package)))) {
     throw "$Package exited during warmup."
 }
+$pacingBefore = Get-SurfacePacingSnapshot
+Assert-SurfacePacingSnapshot -Snapshot $pacingBefore -Phase 'After warmup'
 
 $samples = [System.Collections.Generic.List[object]]::new()
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -616,6 +778,7 @@ if ([string]::IsNullOrWhiteSpace($postflightPid)) {
 if ($postflightPid -ne $devicePid) {
     throw "$Package restarted during measurement (PID $devicePid -> $postflightPid)."
 }
+$pacingAfter = Get-SurfacePacingSnapshot
 
 if ($shouldCapture) {
     $afterScreenshotHash = Save-DeviceScreenshot -Destination (
@@ -647,7 +810,8 @@ $workloadPassed = Test-WorkloadGate `
     -MeanGpuBusyPercent $gpuBusyStatistics.Mean `
     -MinimumProcessCpuTicksPerSecond $MinProcessCpuTicksPerSecond `
     -MinimumMeanGpuBusyPercent $MinMeanGpuBusyPercent
-$passed = $powerPassed -and $workloadPassed
+$pacingPassed = $pacingBefore.Passed -and $pacingAfter.Passed
+$passed = $powerPassed -and $workloadPassed -and $pacingPassed
 $chargeCounterDelta = [long]$samples[$samples.Count - 1].ChargeCounterMicroAmpHours -
     [long]$samples[0].ChargeCounterMicroAmpHours
 $meanVoltageMicroVolts = (
@@ -668,8 +832,15 @@ $summary = [pscustomobject]@{
         MaxP95Watts = $MaxP95Watts
         MinProcessCpuTicksPerSecond = $MinProcessCpuTicksPerSecond
         MinMeanGpuBusyPercent = $MinMeanGpuBusyPercent
+        ExpectedSurfaceLayerCount = $ExpectedSurfaceLayerCount
+        MinMeasuredSurfaceLayerCount = $MinMeasuredSurfaceLayerCount
+        MinPresentIntervalsPerMeasuredLayer = $MinPresentIntervalsPerMeasuredLayer
+        MinMeanPresentedFps = $MinMeanPresentedFps
+        MaxP95PresentIntervalMs = $MaxP95PresentIntervalMs
+        MaxPresentIntervalsOver50Ms = $MaxPresentIntervalsOver50Ms
         PowerPassed = $powerPassed
         WorkloadPassed = $workloadPassed
+        PacingPassed = $pacingPassed
     }
     Power = $powerStatistics
     Temperature = [pscustomobject]@{
@@ -684,6 +855,10 @@ $summary = [pscustomobject]@{
         ChargeCounterDeltaMicroAmpHours = $chargeCounterDelta
         ChargeDerivedWattHours = $chargeDerivedWattHours
         ChargeDerivedAverageWatts = $chargeDerivedAverageWatts
+    }
+    Pacing = [pscustomobject]@{
+        Before = $pacingBefore
+        After = $pacingAfter
     }
     Run = [pscustomobject]@{
         StartedUtc = $samples[0].TimestampUtc
@@ -711,14 +886,16 @@ $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $su
 $powerSummary = 'Power: mean={0:N3} W median={1:N3} W P95={2:N3} W max={3:N3} W' -f $powerStatistics.Mean, $powerStatistics.Median, $powerStatistics.P95, $powerStatistics.Maximum
 $temperatureSummary = 'Temperature: {0:N1}-{1:N1} C, slope={2:N3} C/min' -f $temperatureStatistics.Minimum, $temperatureStatistics.Maximum, $thermalSlope
 $workloadSummary = 'Workload: process={0:N2} CPU ticks/s, GPU busy mean={1:N2}%, GPU clock mean={2:N1} MHz' -f $processCpuTicksPerSecond, $gpuBusyStatistics.Mean, $gpuClockStatistics.Mean
+$pacingSummary = 'Pacing: start={0}/{1} measured layers, end={2}/{3}, passed={4}' -f $pacingBefore.MeasuredLayerCount, $pacingBefore.LayerCount, $pacingAfter.MeasuredLayerCount, $pacingAfter.LayerCount, $pacingPassed
 Write-Host $powerSummary
 Write-Host $temperatureSummary
 Write-Host $workloadSummary
+Write-Host $pacingSummary
 Write-Host "Raw samples: $samplesPath"
 Write-Host "Summary: $summaryPath"
 
 if (-not $passed) {
-    Write-Error "Thor acceptance gate failed: power must remain within its limits and the workload must remain active."
+    Write-Error "Thor acceptance gate failed: power must remain within limits, the workload must stay active, and frame pacing must hold."
     exit 2
 }
 
