@@ -1501,6 +1501,57 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   ID `0004000000054000`, with no fatal, device-lost, or ANR match. Modes 2/4 and brightness 255 were
   unchanged. Azahar was force-stopped and no PID remained.
 
+## 2026-08-20 Upstream Android Surface and Motion Safety Merge
+
+- Command-line Git fetched official `upstream/master` from `f6a3e3aa5` through `c0d923ba2`, seven
+  commits. The Android-relevant commits add native-window/surface lifetime guards
+  (`3c6a44017`) and serialize NDK motion queue/factory lifetime (`07ec274d4`); the remainder updates
+  macOS networking/UI, Qt 6.10.3, compatibility data, and translations. Merge `411e559ba` includes
+  the complete upstream tip and was pushed to `origin/master`.
+- Two conflicts were resolved semantically. `native.cpp` retains the Thor game/cache helpers and
+  adds upstream's recursive surface mutex, primary-surface condition variable, `System::Init()`
+  callback, and guarded primary/secondary replacement/destruction. `PresentWindow` retains the
+  Thor one-submission/direct-swapchain route and adds duplicate-native-window suppression plus
+  cleanup of an unconsumed `next_surface`. Upstream's obsolete `command_pool` destruction was not
+  copied because this fork deliberately removed that command pool, its second queue submission,
+  `render_ready`, and `present_done`.
+- The full profiling-off JDK 17 ARM64 native build passed after a clean broad CMake rebuild. The
+  debuggable APK is 32,447,459 bytes with SHA-256
+  `0DFD9D505A4E4226F5CEDAC618265B35F6B8FD42362725368D61F8D531E06F47` and version
+  `411e559ba-vanilla-debug`. The release-optimized Lite APK is 29,017,848 bytes with SHA-256
+  `C0E93E2CF489E7896250B8327AA41E8C7DDC91FC13B5CD3B453A9CC4445EA534` and version
+  `411e559ba-vanilla-thor`; it has no `DEBUGGABLE` package flag. APK Signature Scheme v2 verification
+  passed with signer-certificate SHA-256
+  `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`, and the active native cache
+  records `ENABLE_THOR_FRAME_PROFILING=OFF`.
+- Wi-Fi ADB installed the debug APK and cold-launched exact Super Mario 3D Land program ID
+  `0004000000054000` on generic Turnip R8 / Mesa 25.99.99 / Vulkan 1.4.335. Five consecutive
+  home/resume cycles retained PID 10014, destroyed/recreated the secondary surface each time, and
+  finished with both physical BLAST surfaces live. No native-window-in-use, fatal, device-lost,
+  Vulkan, or ANR error matched. The clean 60-FPS primary frame had SHA-256
+  `F6B2A4385EF9C86A3A2FC0D71EAF9909003267B24111679AF905ACACF74D7A9D`; the secondary frame had
+  SHA-256 `BC7BEFAF4185BBC0D32B8409220A3207307AAAB435210CC7E6E50B30EEFB84CC`.
+- The first production cold launch encountered one Turnip `VK_ERROR_DEVICE_LOST` after about nine
+  seconds and aborted from `MasterSemaphoreFence::WaitThread`; this failure is retained in the
+  record rather than hidden. It did not reproduce in two subsequent independent 30-second cold
+  launches. The second surviving production process retained PID 13043 across three additional
+  home/resume surface cycles, kept both BLAST surfaces live, and rendered a clean 60-FPS primary
+  frame with SHA-256 `A1A1EF458CBB7DDA7447CDF3DAD8997D0EF8158E85861EFD7B7F96A19F672EA1`.
+  This supports the surface-lock integration but does not prove that rare Turnip device loss is
+  eliminated; future long stability runs must continue to count every device loss.
+- The freshly linked 449,046,848-byte ARM64 test runner executed on the Thor: 171 of 177 cases
+  passed, three failed, and three skipped; 925,398 of 925,401 assertions passed. The only failures
+  were the established standalone-JNI missing `get_build_flavor` cases, and the only skips were the
+  established missing-DSP-firmware cases. No new failure appeared.
+- The installed production base APK reproduced SHA-256
+  `C0E93E2CF489E7896250B8327AA41E8C7DDC91FC13B5CD3B453A9CC4445EA534`; the configuration remained
+  byte-identical at SHA-256 `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`.
+  Generic R8 remains active, while the verified T30 archive remains available manually. Modes 2/4
+  and brightness 255 were unchanged. Cleanup removed 496,403,144 logical host bytes and 452,950,957
+  device bytes of bounded APK/library twins, test runner, and screenshots. Azahar was force-stopped
+  and no PID remained. This safety merge is not a performance entry and supplies no FPS gain or
+  battery-watt evidence; the discharging-battery mean/P95 <=6 W gate remains open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

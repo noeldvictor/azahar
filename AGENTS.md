@@ -156,7 +156,9 @@
   cycles than generic R8; the instruction ranges did not overlap, while cycles were noisy. Both
   rendered cleanly at the 60-FPS cap. Keep generic R8 active, leave T30 available for manual
   per-title experiments, and never infer that a newer driver is faster without a matched hardware
-  bracket. This AC-powered comparison contains no battery-watt evidence.
+  bracket. The stock Qualcomm Vulkan driver remains an unranked fallback, not a proven winner; it
+  still needs the same title/scene/caches/visual/stability bracket against R8. This AC-powered
+  comparison contains no battery-watt evidence.
 - Deeply audit x86- and x64-originated code before assuming the ARM64 port is efficient. Check compile-time architecture branches, scalar fallbacks, host feature detection, atomics/spin loops, cache maintenance, SIMD width and lane semantics, Dynarmic A64 codegen, shader/PICA translation, Vulkan synchronization, memory copies/conversions, and thread scheduling. Compare with current RPCS3 and sibling ARM emulator lessons, but port only techniques that match 3DS guest semantics and Azahar's host architecture.
 - Prefer runtime-gated AArch64/NEON hardware acceleration and fewer memory passes, barriers, wakeups, and format conversions. Do not enable global Cortex-X3/SVE flags, assume x86 memory ordering, replace PICA floating-point operations with non-equivalent host instructions, or add background worker threads without measured Thor evidence.
 - Every ARM64 optimization must have an explicit correctness argument, a native `arm64-v8a` build, and a repeatable Thor A/B plan. Do not claim lower watts or higher sustained speed until the same title, scene, caches, renderer, resolution, driver, performance mode, fan mode, brightness, and display layout have been compared on device.
@@ -774,6 +776,15 @@
   image set, and clear stale swapchain images/count on destruction. Keep the fallback framebuffer,
   render pass, copy/blit route, and restore-only recovery intact. Count successful direct renders
   only through the opt-in `PresentDirectRenders` Thor profiler event.
+- Preserve the upstream Android surface-lifetime guards integrated in merge `411e559ba` alongside
+  the Thor presentation superpath. `surface_mutex` must cover native-window replacement,
+  renderer/window construction, shutdown, and both primary/secondary destruction callbacks;
+  `System::Init()` must hold that recursive lock and wait for a live primary surface. Repeated
+  notifications for the same native window must not create another Vulkan surface, and an
+  unconsumed `next_surface` must be destroyed before replacement or `PresentWindow` teardown.
+  This fork has no presentation `command_pool`, `render_ready`, or `present_done`; do not restore
+  those removed objects while porting upstream cleanup. Keep the NDK motion factory/device lifetime
+  mutexes and sensor-queue mutex so pause/resume cannot race polling or destruction.
 - Preserve the entry-152 device acceptance result. On the animated 7th Dragon III title at the
   exact 1920x1080 layout, the old profiler build reported `presented=300`, `copies=300`, and
   `511.920` presentation MPix per steady 5.014-second window. The direct build reported
