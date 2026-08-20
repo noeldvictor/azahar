@@ -12,6 +12,10 @@ param(
     [double]$MaxAverageWatts = 6.0,
     [ValidateRange(0.1, 100.0)]
     [double]$MaxP95Watts = 6.0,
+    [ValidateRange(0.0, 100000.0)]
+    [double]$MinProcessCpuTicksPerSecond = 10.0,
+    [ValidateRange(0.0, 100.0)]
+    [double]$MinMeanGpuBusyPercent = 1.0,
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
     [int]$ExpectedBrightness = -1,
@@ -142,6 +146,22 @@ function Test-PowerGate {
     return $Statistics.Mean -le $MaximumMean -and $Statistics.P95 -le $MaximumP95
 }
 
+function Test-WorkloadGate {
+    param(
+        [Parameter(Mandatory)]
+        [double]$ProcessCpuTicksPerSecond,
+        [Parameter(Mandatory)]
+        [double]$MeanGpuBusyPercent,
+        [Parameter(Mandatory)]
+        [double]$MinimumProcessCpuTicksPerSecond,
+        [Parameter(Mandatory)]
+        [double]$MinimumMeanGpuBusyPercent
+    )
+
+    return $ProcessCpuTicksPerSecond -ge $MinimumProcessCpuTicksPerSecond -and
+        $MeanGpuBusyPercent -ge $MinimumMeanGpuBusyPercent
+}
+
 function Invoke-SelfTest {
     $values = [double[]](@(1..19 | ForEach-Object { 5.0 }) + 6.0)
     $statistics = Get-SampleStatistics -Values $values
@@ -155,6 +175,14 @@ function Invoke-SelfTest {
     }
     if (Test-PowerGate -Statistics $statistics -MaximumMean 5.0 -MaximumP95 5.1) {
         throw 'Failing power-gate self-test failed.'
+    }
+    if (-not (Test-WorkloadGate -ProcessCpuTicksPerSecond 22.7 -MeanGpuBusyPercent 8.2 `
+            -MinimumProcessCpuTicksPerSecond 10.0 -MinimumMeanGpuBusyPercent 1.0)) {
+        throw 'Passing workload-gate self-test failed.'
+    }
+    if (Test-WorkloadGate -ProcessCpuTicksPerSecond 0.0 -MeanGpuBusyPercent 0.0 `
+            -MinimumProcessCpuTicksPerSecond 10.0 -MinimumMeanGpuBusyPercent 1.0) {
+        throw 'Failing workload-gate self-test failed.'
     }
 
     $thermalSamples = @(
@@ -604,7 +632,7 @@ $temperatureStatistics = Get-SampleStatistics -Values (
     [double[]]@($samples | ForEach-Object { $_.TemperatureC })
 )
 $thermalSlope = Get-ThermalSlopePerMinute -Samples $samples.ToArray()
-$passed = Test-PowerGate -Statistics $powerStatistics -MaximumMean $MaxAverageWatts -MaximumP95 $MaxP95Watts
+$powerPassed = Test-PowerGate -Statistics $powerStatistics -MaximumMean $MaxAverageWatts -MaximumP95 $MaxP95Watts
 $gpuBusyStatistics = Get-SampleStatistics -Values (
     [double[]]@($samples | ForEach-Object { $_.GpuBusyPercent })
 )
@@ -614,6 +642,12 @@ $gpuClockStatistics = Get-SampleStatistics -Values (
 $processCpuTicks = [long]$samples[$samples.Count - 1].ProcessCpuTicks -
     [long]$samples[0].ProcessCpuTicks
 $processCpuTicksPerSecond = $processCpuTicks / [double]$timer.Elapsed.TotalSeconds
+$workloadPassed = Test-WorkloadGate `
+    -ProcessCpuTicksPerSecond $processCpuTicksPerSecond `
+    -MeanGpuBusyPercent $gpuBusyStatistics.Mean `
+    -MinimumProcessCpuTicksPerSecond $MinProcessCpuTicksPerSecond `
+    -MinimumMeanGpuBusyPercent $MinMeanGpuBusyPercent
+$passed = $powerPassed -and $workloadPassed
 $chargeCounterDelta = [long]$samples[$samples.Count - 1].ChargeCounterMicroAmpHours -
     [long]$samples[0].ChargeCounterMicroAmpHours
 $meanVoltageMicroVolts = (
@@ -632,6 +666,10 @@ $summary = [pscustomobject]@{
     Gate = [pscustomobject]@{
         MaxAverageWatts = $MaxAverageWatts
         MaxP95Watts = $MaxP95Watts
+        MinProcessCpuTicksPerSecond = $MinProcessCpuTicksPerSecond
+        MinMeanGpuBusyPercent = $MinMeanGpuBusyPercent
+        PowerPassed = $powerPassed
+        WorkloadPassed = $workloadPassed
     }
     Power = $powerStatistics
     Temperature = [pscustomobject]@{
@@ -672,13 +710,15 @@ $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -LiteralPath $su
 
 $powerSummary = 'Power: mean={0:N3} W median={1:N3} W P95={2:N3} W max={3:N3} W' -f $powerStatistics.Mean, $powerStatistics.Median, $powerStatistics.P95, $powerStatistics.Maximum
 $temperatureSummary = 'Temperature: {0:N1}-{1:N1} C, slope={2:N3} C/min' -f $temperatureStatistics.Minimum, $temperatureStatistics.Maximum, $thermalSlope
+$workloadSummary = 'Workload: process={0:N2} CPU ticks/s, GPU busy mean={1:N2}%, GPU clock mean={2:N1} MHz' -f $processCpuTicksPerSecond, $gpuBusyStatistics.Mean, $gpuClockStatistics.Mean
 Write-Host $powerSummary
 Write-Host $temperatureSummary
+Write-Host $workloadSummary
 Write-Host "Raw samples: $samplesPath"
 Write-Host "Summary: $summaryPath"
 
 if (-not $passed) {
-    Write-Error "Thor power gate failed: mean and P95 must remain within their configured limits."
+    Write-Error "Thor acceptance gate failed: power must remain within its limits and the workload must remain active."
     exit 2
 }
 
