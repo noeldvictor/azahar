@@ -596,7 +596,11 @@ route: the old build performed 300 presentation copies covering 511.920 MPix in 
 300-frame window; the new build performed 300 direct renders and zero presentation copies. Old,
 profiled-direct, and profiling-off direct screenshots were byte-identical, and the normal build
 held the title's visible 30 FPS. The Thor was still AC-powered, so this proves the eliminated work
-and matching output, not a battery-watt, thermal, or whole-game FPS improvement.
+and matching output, not a battery-watt, thermal, or whole-game FPS improvement. Follow-up
+profiler attribution found that every remaining internal copy/blit in the steady scene was an
+accelerated guest PICA texture-copy or display-transfer command; cache-validation transfers were
+zero. Those guest-visible operations are deliberately not being mislabeled as disposable host
+overhead.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus

@@ -514,6 +514,15 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   title and its steady windows reported `presented=300`, `direct=300`, `copies=0`, and the same
   `511.920` MPix. Thus every presented exact-size frame in this scene took the direct route and the
   measured full-frame copy count fell from one per presentation to zero.
+- Profiler-only follow-up commit `ca82a5fc3` attributes the next apparent whole-frame costs at the
+  rasterizer-cache call sites. In every steady 300-swap window, all 150 internal copies / 129.600
+  MPix were accelerated guest PICA texture-copy commands, all 300 internal blits / 233.280 MPix
+  were accelerated guest PICA display-transfer commands, and cache-validation copies and blits
+  were both zero. This matches one scaled 400x240 copy plus the scaled 400x240 and 320x240 display
+  transfers per 30 FPS guest frame. They are guest-visible framebuffer operations rather than a
+  second removable host presentation pass. The attribution counters compile out of ordinary
+  builds and are not a ledger entry; any attempt to alias or eliminate those transfers requires
+  exact PICA memory/coherency proof and broader title coverage.
 - Correctness was checked independently of counters. The old-copy screenshot, profiler-on direct
   screenshot, and profiling-off direct screenshot are byte-identical with SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. There were no fatal log

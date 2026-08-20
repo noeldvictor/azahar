@@ -51,7 +51,8 @@
   instruction-path candidates. Use the opt-in Thor profiler only through
   `-PthorFrameProfiling=true`; ordinary builds must compile its counters and timers out. Its
   `ThorFrameProfile` windows cover draw acceleration/fallback reasons, Vulkan submissions and
-  waits, render-pass reuse/churn, texture transfer volume, and presentation copies. A profiling
+  waits, render-pass reuse/churn, texture transfer volume and high-level cache-path provenance,
+  and presentation copies. A profiling
   APK perturbs timing and is not valid for FPS, power, or thermal A/B claims. Do not count profiler
   instrumentation as an optimization-ledger entry. `RenderPassImageBarriers` counts only barriers
   emitted while ending render passes, not every Vulkan image barrier in the emulator. Install or
@@ -517,6 +518,12 @@
   direct screenshots had the identical SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`. A profiler route-count
   win and a pixel-identical frame prove removal and correctness, not FPS or battery watts.
+- Preserve the follow-up cache-path attribution from profiler commit `ca82a5fc3`. In the same
+  steady 7th Dragon window, all 150 texture copies / 129.600 MPix came from accelerated guest PICA
+  texture-copy commands, all 300 blits / 233.280 MPix came from accelerated guest PICA display-
+  transfer commands, and surface-validation copies/blits were zero. These are guest-visible
+  framebuffer operations, not another host presentation layer. Do not remove or alias them without
+  exact PICA memory/coherency reasoning, multi-title pixel/state tests, and a new Thor capture.
 - Vulkan presentation frames use the swapchain's exact format. When the intermediate frame and
   acquired swapchain image also have identical extents, retain the direct `vkCmdCopyImage` route:
   it preserves every pixel bit-for-bit and avoids asking the transfer path to perform a filtered
