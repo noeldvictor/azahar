@@ -224,7 +224,8 @@ private:
     DirtyRegionMap dirty_regions;
     PageMap cached_pages;
     u32 resolution_scale_factor;
-    FramebufferParams fb_params;
+    FramebufferSurfaceCache framebuffer_surface_cache;
+    u64 surface_generation{};
     Settings::TextureFilter filter;
     bool dump_textures;
     bool use_custom_textures;

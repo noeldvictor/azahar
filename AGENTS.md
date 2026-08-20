@@ -494,6 +494,19 @@
   descriptor shares also varied upward. The candidate was fully reverted. Reconsider only when a
   ranked title proves frequent blend-only pipeline-key churn and a matched bracket shows less
   recurring driver work; extension availability is not optimization evidence.
+- Keep the rasterizer cache's last framebuffer-surface selection guarded by both the active color/
+  depth `SurfaceParams` and `surface_generation`. Compare resolution scale explicitly because
+  `SurfaceParams::operator==` intentionally omits it. Advance the generation for every registered
+  surface-set change, slot replacement, and surface scale change; if validation changes the
+  generation, do not publish the selection found before validation. A cache hit may skip only
+  `GetSurfaceSubRect()`/page-table selection: it must still reacquire the surface pointers and
+  levels, mark render-target use, call `ValidateSurface()`, construct/lookup the backend
+  framebuffer, and return the normal RAII helper so draw-region invalidation still occurs. Retain
+  focused tests for generation, active/inactive attachments, parameter changes, resolution scale,
+  and invalid entries. On the exact Turnip/Adreno 740 Super Mario 3D Land bracket, the aggregate
+  `GetFramebufferSurfaces()` share fell from 2.16438% to 1.49514% of sampled user cycles (30.92%
+  relative), while `GetSurfaceSubRect()` fell from 1.19870% to 0.47212% (60.61% relative) and
+  validation stayed neutral. Keep this as path-local CPU-work evidence, not an FPS or watt claim.
 - The vertex shader's packed 64-bit attribute-to-input-register map and active attribute count are
   also invariant for a CPU-fallback draw. Keep `ShaderInputMap` constructed once in
   `PicaCore::LoadVertices()` and make each recurring `ShaderUnit::LoadInput()` mask and shift its

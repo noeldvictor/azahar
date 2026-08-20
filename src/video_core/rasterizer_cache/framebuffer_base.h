@@ -53,6 +53,34 @@ struct FramebufferParams {
 static_assert(std::has_unique_object_representations_v<FramebufferParams>,
               "FramebufferParams is not suitable for hashing");
 
+// Caches the surface selection for consecutive draws using the same framebuffer configuration.
+// The generation is advanced whenever surface registration or geometry changes, so a matching
+// entry can safely skip the page-table search while still validating the selected surfaces.
+struct FramebufferSurfaceCache {
+    [[nodiscard]] bool Matches(const SurfaceParams& color, const SurfaceParams& depth,
+                               bool use_color, bool use_depth,
+                               u64 current_generation) const noexcept {
+        // SurfaceParams::operator== intentionally omits resolution scale, which matters here
+        // because the cached rectangle and selected surfaces are scale-specific.
+        const bool color_matches =
+            !use_color || (color_params == color && color_params.res_scale == color.res_scale);
+        const bool depth_matches =
+            !use_depth || (depth_params == depth && depth_params.res_scale == depth.res_scale);
+        return valid && generation == current_generation && using_color == use_color &&
+               using_depth == use_depth && color_matches && depth_matches;
+    }
+
+    SurfaceParams color_params;
+    SurfaceParams depth_params;
+    Common::Rectangle<u32> rect{};
+    SurfaceId color_id{};
+    SurfaceId depth_id{};
+    u64 generation{};
+    bool using_color{};
+    bool using_depth{};
+    bool valid{};
+};
+
 template <class T>
 class RasterizerCache;
 

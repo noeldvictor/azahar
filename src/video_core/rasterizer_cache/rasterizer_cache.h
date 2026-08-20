@@ -460,6 +460,7 @@ void RasterizerCache<T>::CopySurface(Surface& src_surface, Surface& dst_surface,
     const u32 dst_scale = dst_surface.res_scale;
     if (src_scale > dst_scale) {
         dst_surface.ScaleUp(src_scale);
+        ++surface_generation;
     }
 
     const auto src_rect = src_surface.GetScaledSubRect(subrect_params);
@@ -756,30 +757,44 @@ FramebufferHelper<T> RasterizerCache<T>::GetFramebufferSurfaces(bool using_color
     Common::Rectangle<u32> color_rect{};
     SurfaceId color_id{};
     u32 color_level{};
-    if (using_color_fb)
-        std::tie(color_id, color_rect) = GetSurfaceSubRect(color_params, ScaleMatch::Exact, false);
-
     Common::Rectangle<u32> depth_rect{};
     SurfaceId depth_id{};
     u32 depth_level{};
-    if (using_depth_fb)
-        std::tie(depth_id, depth_rect) = GetSurfaceSubRect(depth_params, ScaleMatch::Exact, false);
-
     Common::Rectangle<u32> fb_rect{};
-    if (color_id && depth_id) {
-        fb_rect = color_rect;
-        // Color and Depth surfaces must have the same dimensions and offsets
-        if (color_rect.bottom != depth_rect.bottom || color_rect.top != depth_rect.top ||
-            color_rect.left != depth_rect.left || color_rect.right != depth_rect.right) {
-            color_id = GetSurface(color_params, ScaleMatch::Exact, false);
-            depth_id = GetSurface(depth_params, ScaleMatch::Exact, false);
-            fb_rect = slot_surfaces[color_id].GetScaledRect();
+
+    const bool cache_hit = framebuffer_surface_cache.Matches(
+        color_params, depth_params, using_color_fb, using_depth_fb, surface_generation);
+    if (cache_hit) {
+        color_id = framebuffer_surface_cache.color_id;
+        depth_id = framebuffer_surface_cache.depth_id;
+        fb_rect = framebuffer_surface_cache.rect;
+    } else {
+        if (using_color_fb) {
+            std::tie(color_id, color_rect) =
+                GetSurfaceSubRect(color_params, ScaleMatch::Exact, false);
         }
-    } else if (color_id) {
-        fb_rect = color_rect;
-    } else if (depth_id) {
-        fb_rect = depth_rect;
+        if (using_depth_fb) {
+            std::tie(depth_id, depth_rect) =
+                GetSurfaceSubRect(depth_params, ScaleMatch::Exact, false);
+        }
+
+        if (color_id && depth_id) {
+            fb_rect = color_rect;
+            // Color and Depth surfaces must have the same dimensions and offsets
+            if (color_rect.bottom != depth_rect.bottom || color_rect.top != depth_rect.top ||
+                color_rect.left != depth_rect.left || color_rect.right != depth_rect.right) {
+                color_id = GetSurface(color_params, ScaleMatch::Exact, false);
+                depth_id = GetSurface(depth_params, ScaleMatch::Exact, false);
+                fb_rect = slot_surfaces[color_id].GetScaledRect();
+            }
+        } else if (color_id) {
+            fb_rect = color_rect;
+        } else if (depth_id) {
+            fb_rect = depth_rect;
+        }
     }
+
+    const u64 selection_generation = surface_generation;
 
     Surface* color_surface = color_id ? &slot_surfaces[color_id] : nullptr;
     Surface* depth_surface = depth_id ? &slot_surfaces[depth_id] : nullptr;
@@ -795,6 +810,20 @@ FramebufferHelper<T> RasterizerCache<T>::GetFramebufferSurfaces(bool using_color
         depth_surface->flags |= SurfaceFlagBits::RenderTarget;
         ValidateSurface(depth_id, boost::icl::first(depth_vp_interval),
                         boost::icl::length(depth_vp_interval));
+    }
+
+    if (!cache_hit && selection_generation == surface_generation) {
+        framebuffer_surface_cache = {
+            .color_params = color_params,
+            .depth_params = depth_params,
+            .rect = fb_rect,
+            .color_id = color_id,
+            .depth_id = depth_id,
+            .generation = surface_generation,
+            .using_color = using_color_fb,
+            .using_depth = using_depth_fb,
+            .valid = true,
+        };
     }
 
     const FramebufferParams fb_params = {
@@ -1136,6 +1165,7 @@ bool RasterizerCache<T>::UploadCustomSurface(SurfaceId surface_id, SurfaceInterv
                 slot_surfaces.swap_and_insert(surface_id, runtime, old_surface, material);
             slot_surfaces[old_id].flags &= ~SurfaceFlagBits::Registered;
             sentenced.emplace_back(old_id, runtime.GetResourceTick());
+            ++surface_generation;
         }
         Surface& surface = slot_surfaces[surface_id];
         surface.UploadCustom(material, level);
@@ -1210,6 +1240,7 @@ bool RasterizerCache<T>::ValidateByReinterpretation(Surface& surface, SurfacePar
         const u32 res_scale = src_surface.res_scale;
         if (res_scale > surface.res_scale) {
             surface.ScaleUp(res_scale);
+            ++surface_generation;
         }
         const PAddr addr = boost::icl::lower(interval);
         const SurfaceParams copy_params = surface.FromInterval(copy_interval);
@@ -1260,6 +1291,7 @@ void RasterizerCache<T>::ClearAll(bool flush) {
     cached_pages -= flush_interval;
     dirty_regions.clear();
     page_table.clear();
+    ++surface_generation;
 }
 
 template <class T>
@@ -1385,6 +1417,7 @@ SurfaceId RasterizerCache<T>::CreateSurface(const SurfaceParams& params,
     Surface& surface = slot_surfaces[surface_id];
     if (params.res_scale > surface.res_scale) {
         surface.ScaleUp(params.res_scale);
+        ++surface_generation;
     }
     surface.MarkInvalid(surface.GetInterval());
     return surface_id;
@@ -1397,6 +1430,7 @@ void RasterizerCache<T>::RegisterSurface(SurfaceId surface_id) {
                "Trying to register an already registered surface");
 
     surface.flags |= SurfaceFlagBits::Registered;
+    ++surface_generation;
     UpdatePagesCachedCount(surface.addr, surface.size, 1);
     ForEachPage(surface.addr, surface.size,
                 [this, surface_id](u64 page) { page_table[page].push_back(surface_id); });
@@ -1409,6 +1443,7 @@ void RasterizerCache<T>::UnregisterSurface(SurfaceId surface_id) {
                "Trying to unregister an already unregistered surface");
 
     surface.flags &= ~SurfaceFlagBits::Registered;
+    ++surface_generation;
     UpdatePagesCachedCount(surface.addr, surface.size, -1);
     ForEachPage(surface.addr, surface.size, [this, surface_id](u64 page) {
         const auto page_it = page_table.find(page);

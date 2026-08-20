@@ -1292,6 +1292,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   actual driver pipeline binds plus matched whole-frame evidence. Capability support by itself is
   not a speed or power result, and this AC-powered experiment says nothing about the <=6 W gate.
 
+## Generation-Guarded Framebuffer Surface Selection Cache (2026-08-20)
+
+- Entry 163 follows the next ranked whole-frame CPU subtree. In a fresh 30-second 4-kHz control,
+  `RasterizerCache<Vulkan::Traits>::GetFramebufferSurfaces()` consumed 2.16100% inclusive sampled
+  user cycles. `GetSurfaceSubRect()` alone consumed 1.15304%, including the page-table walk and
+  surface-match search. Surface creation, registration, and removal were much rarer than the
+  recurring selection work, making a generation-guarded last-selection cache a better target than
+  changing surface ownership or validation semantics.
+- Consecutive draws now reuse the selected color/depth surface IDs and scaled framebuffer rectangle
+  only when the active attachment parameters, active/inactive flags, resolution scale, and surface
+  topology generation all match. Registration, unregistration, surface replacement, and every
+  scale-up site advance the generation. A miss records its result only if validation did not change
+  that generation. Even on a hit, the path still reacquires surfaces and mip levels, marks render-
+  target use, validates both active viewport intervals, performs the normal backend framebuffer
+  lookup, and returns the same `FramebufferHelper`; its destructor therefore retains draw-region
+  invalidation. This deliberately removes only repeated selection work.
+- `SurfaceParams::operator==` omits resolution scale, so the cache checks it separately. The cache
+  record lives beside framebuffer parameters so permanent tests can exercise its contract without
+  constructing a renderer. The physical-Thor focused suite passed 18 assertions in four
+  `[video_core][rasterizer_cache]` cases, covering valid/invalid records, topology generations,
+  active-attachment changes, exact parameter changes, scale-only changes, and ignored inactive
+  attachment parameters. The JDK 21 ARM64 debuggable APK build linked those tests and
+  `libcitra-android.so` successfully in 1 minute 36 seconds.
+- The physical AYN Thor used Wi-Fi ADB at `192.168.1.33:5555`, Mesa Turnip 25.99.99 / Adreno 740,
+  exact program ID `0004000000054000`, the unchanged configuration, at least 60 seconds of warmup
+  per install, and 30-second 4-kHz user-cycle call-graph captures. Every trace lost zero samples.
+  The two control runs bracketed the three candidate runs, and the last candidate used the final
+  tested source layout. The final debuggable candidate APK is 32,440,095 bytes with SHA-256
+  `CD4B80BDE4D5FF70EDA0F8119CC8116B726BC1D6EAB03B22862B3164BA671F9B`.
+
+  | Run | Samples | Process cycles | `GetFramebufferSurfaces` cycles / share | `GetSurfaceSubRect` cycles / share | `ValidateSurface` cycles / share |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | Control 1 | 46,969 | 17,221,683,872 | 372,160,394 / 2.16100% | 198,572,776 / 1.15304% | 121,219,388 / 0.70388% |
+  | Candidate 1 | 45,907 | 17,249,708,754 | 272,562,655 / 1.58010% | 84,681,630 / 0.49092% | 116,948,623 / 0.67797% |
+  | Candidate 2 | 43,580 | 16,557,556,495 | 247,037,339 / 1.49199% | 76,757,436 / 0.46358% | 109,451,305 / 0.66104% |
+  | Control 2 | 45,290 | 16,618,872,734 | 360,279,063 / 2.16789% | 207,072,601 / 1.24601% | 110,175,425 / 0.66295% |
+  | Candidate 3 | 46,031 | 17,101,284,471 | 241,555,451 / 1.41250% | 78,910,687 / 0.46143% | 117,872,712 / 0.68926% |
+
+- Aggregating raw cycles on each side, framebuffer selection fell from 2.16438% to 1.49514% of
+  process work, a 30.92% relative reduction and 0.66924 process-percentage-point saving in this
+  workload. Subrect lookup fell from 1.19870% to 0.47212%, a 60.61% relative reduction. The cache
+  comparison/branch work increased the function's self share from 0.16884% to 0.28224%, but the
+  avoided search was much larger. `ValidateSurface()` stayed effectively neutral at 0.68378% versus
+  0.67626% (1.10% relative), confirming that the optimization did not merely skip required
+  validation. All inspected control and candidate frames were visibly clean; the animated title
+  sequence displayed 58-62 FPS.
+- Entry 163 raises the ledger to 163 numbered entries and 162 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. This bracket proves less CPU
+  work in one recurring rasterizer-cache path; it does not prove a whole-game FPS gain, cannot be
+  added to earlier overlapping wins, and is not a battery-power measurement. The Thor remained
+  AC-powered, so physical discharging-battery mean and nearest-rank P95 power at or below 6 W remain
+  an open gate.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
