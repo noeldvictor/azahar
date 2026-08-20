@@ -125,6 +125,15 @@
   not an FPS or watt claim. The baseline call tree entered Java CheckJNI below
   `GetResolutionScaleFactor`; the cached build's tree was self-only after startup, with exact 7th
   Dragon and Art Academy hashes and no fatal logs.
+- Preserve the Android detailed-frame-timing gate from commit `65e2f5a9f`. Normal FPS, emulation
+  speed, and system frametime reporting must remain available, but the high-frequency SVC, IPC,
+  GPU, and swap `steady_clock` scopes should run only while the detailed frametime overlay is
+  requested. Keep per-scope active state so a live setting change cannot mismatch nested starts and
+  ends, and refresh the native gate both during overlay updates and `EmulationFragment.onResume()`.
+  A same-binary three-by-three 7th Dragon A/B retired 1.091% fewer instructions with the breakdown
+  hidden; task-clock and cycles changed -0.214% and -0.278%. `__kernel_clock_gettime` self share
+  fell from 1.11% in the prior profile to 0.29%, and `steady_clock::now` fell from 0.86% to 0.02%.
+  Treat this as measured recurring-work removal, not an FPS or battery-watt claim.
 - Do not add an atomic fast path around `System::signal_mutex` based on the 2026-08-20 profile.
   Caller attribution found that the ordinary no-signal lock was only about 0.05% of whole-app
   sampled cycles; changing asynchronous reset/save/load/shutdown timing for that cost misses the

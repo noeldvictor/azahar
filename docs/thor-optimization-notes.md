@@ -626,8 +626,33 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `current_now=0`. Those are utilization observations only. No watt, thermal, battery-life, or
   whole-game FPS improvement is claimed until the charger is physically unplugged and a matched
   discharge capture confirms the required ceiling.
-- Entry 155 raises the ledger to 155 numbered entries and 154 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 155 are
+- Entry 156 removes detailed frame-breakdown timing from Android's normal hidden-overlay path.
+  SVC, IPC, GPU, and swap accounting each took high-frequency `steady_clock::now()` samples even
+  when only normal FPS/system frametime reporting was needed. Commit `65e2f5a9f` keeps those scopes
+  behind a native gate that follows `PERF_OVERLAY_ENABLE && PERF_OVERLAY_SHOW_FRAMETIME`; normal
+  FPS, emulation-speed, and system-frametime statistics remain active. Per-scope active booleans
+  preserve matched nesting across a live setting change, and the JNI state refreshes both during
+  overlay updates and when `EmulationFragment` resumes from Settings.
+- A same-binary three-run-by-three-run 15-second 7th Dragon comparison averaged 3,887.149 ms
+  task-clock, 7.586378 billion cycles, and 2.448694 billion retired instructions with the detailed
+  breakdown hidden, versus 3,895.499 ms, 7.607516 billion, and 2.475697 billion with it enabled.
+  Hiding the unused breakdown reduced task-clock 0.214%, cycles 0.278%, and retired instructions
+  1.091%; sampled frequency differed by only -0.030%. This is a reduction in recurring CPU work,
+  not a demonstrated FPS or watt reduction.
+- In the 30-second hidden-overlay profile, `__kernel_clock_gettime` self share was 0.29% and
+  `std::chrono::steady_clock::now` self share was 0.02%, down from 1.11% and 0.86% in the prior
+  baseline profile. Caller recovery found only required renderer, frame-limiter, and system timing;
+  the SVC, IPC, GPU, and swap detailed scopes were absent. On the same candidate, enabling the
+  detailed UI showed nonzero `CMD`, `SWP`, `IPC`, and `SVC` fields; returning from Settings then
+  immediately restored the FPS-only overlay. The full RelWithDebInfo build linked the production
+  native library and ARM64 native-test executable. The FPS-only run reproduced 7th Dragon SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` with no fatal, profiler,
+  page-table, fastmem, or Vulkan device-lost logs.
+- Audio decode was also rejected as the next target: `DecodePCM16` was only 0.14% inclusive and
+  `DequeueBuffer` 0.20% in the ranked profile. Replacing its buffer container would add churn and
+  risk for less measured cost than the accepted timing gate, so the audio path remains unchanged.
+- Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
