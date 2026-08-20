@@ -855,6 +855,20 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   from 1.921693 to 1.921866 GHz (+0.009%). The Thor remained AC-powered at 80%, 4.263 V, and 24.0 C,
   so this demonstrates recurring CPU/display-scheduling work removal but not battery watts or an
   under-6-W result. Source commit `b62eb36f2` was pushed directly to `origin/master`.
+- After evidence commit `ccf81a6b2` was pushed, the clean post-commit JDK 17
+  `:app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` build passed in 1 minute 8
+  seconds. The final ARM64-only, v2-signed APK is 29,009,796 bytes with SHA-256
+  `AC45D7C8A517580F308F59CDD5A0172F221C955382698555FB71C3008EC87515`; signer-certificate SHA-256
+  remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. It reports package
+  `org.azahar_emu.azahar.debug`, version `ccf81a6b2-vanilla-thor`, minimum SDK 29, target SDK 37,
+  only `arm64-v8a`, no installed `DEBUGGABLE` flag, `ENABLE_THOR_FRAME_PROFILING=OFF`, and zero
+  `ThorFrameProfile` strings in the stripped native library.
+- Wi-Fi ADB installed that exact Lite artifact. 7th Dragon reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and Art Academy reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, both on their first capture.
+  Both processes stayed alive with no fatal, assertion, fastmem, page-fault, profiler, or Vulkan
+  device-lost log match. The final device check was still AC-powered at 80%, 4.263 V, and 24.0 C,
+  so the production validation also leaves the under-6-W battery gate open.
 - Entry 159 raises the ledger to 159 numbered entries and 158 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 159 are
   measured recurring presentation, scheduler, audio, and Android wakeup reductions, not additive
