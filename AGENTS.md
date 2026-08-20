@@ -105,6 +105,15 @@
   the matching config and screenshot hashes to the power tool for each row. The mostly-2D title
   screen does not establish representative 3D quality, so require a stable 3D scene before calling
   2x a general quality/performance balance or 1x acceptable.
+- The follow-up Super Mario 3D Land 3D title/attract bracket supplies that representative check.
+  Opening/closing 3x controls measured 20.798%/20.856% mean KGSL busy (0.28% spread); 2x measured
+  13.119%, 37.01% below their mean, while 1x measured 8.651%, 58.46% below it. The 2x pacing snapshot
+  was best at 59.256 FPS / 20.673 ms P95 with no interval over 50 ms; 1x did not improve pacing and
+  was visibly softer. Treat 2x as the current efficiency candidate for demanding 60-FPS 3D titles
+  and 1x as an aggressive fallback, never an automatic quality default. The attract loop is animated,
+  so its non-repeatable screenshot hashes are not suitable for the strict watt gate; select a stable
+  gameplay/menu phase before a physical-battery matrix. The user's exact 3x config must remain
+  restored after experiments.
 - Keep generic Turnip R8 as the accepted driver for the fixed 7th Dragon scene unless a harder,
   matched workload proves otherwise. A live 20-sample bracket at 3x and 615 MHz measured generic
   R8 at 8.022% mean KGSL busy, forced-Sysmem R8 at 9.775% (21.86% more GPU time), and the older

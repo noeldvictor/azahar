@@ -1066,6 +1066,34 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   failed on driver identity; neither negative test created a result directory. This measurement
   hardening and one-time log are not optimization entry 161, and AC power still prevents a watt
   result.
+- A representative 60-FPS 3D follow-up used the owned Super Mario 3D Land title/attract loop
+  (`0004000000054000`) without entering gameplay or touching a save. Mario Kart 7 was considered
+  first but stopped at its existing no-Mii screen; no Mii or system data was created. Android's
+  unrelated microphone prompt was denied rather than granting a sensitive permission for the test.
+  Production `bc25ea052`, generic R8, Vulkan, dual displays, High Performance mode 2, fan mode 4,
+  AC power, and the 615 MHz GPU clock stayed fixed. Each resolution config was exactly 412 bytes and
+  differed from the restored file by the one `resolution_factor` byte only.
+
+  | Resolution | Mean KGSL busy | CPU ticks/s | SurfaceFlinger mean FPS / P95 | Audio |
+  | --- | ---: | ---: | --- | --- |
+  | 3x opening | 20.79792% | 45.0204 | 58.8238 / 21.3931 ms | 32,728 Hz, 1,962 frames, 123.47 ms, 0 underruns |
+  | 2x | 13.11865% | 46.3974 | 59.2559 / 20.6730 ms | 32,728 Hz, 1,962 frames, 123.12 ms, 0 underruns |
+  | 1x | 8.65131% | 46.0998 | 58.8475 / 27.6145 ms | 32,728 Hz, 1,962 frames, 122.14 ms, 0 underruns |
+  | 3x closing | 20.85599% | 43.3503 | 57.4434 / 28.4334 ms | 32,728 Hz, 1,962 frames, 119.25 ms, 0 underruns |
+
+  Every row used 20 KGSL samples over about 24.6-24.9 seconds and had two live Azahar BLAST layers
+  with zero presentation intervals over 50 ms. The two 3x GPU controls differ by only 0.28%, which
+  brackets the animated-loop phase variation. Against their 20.82696% mean, 2x removed 37.01% of
+  GPU busy and 1x removed 58.46%; 1x removed another 34.05% relative to 2x.
+- This 3D result confirms 2x as the current efficiency/quality candidate for demanding 60-FPS
+  titles: it materially reduced GPU work and had the best measured pacing row, while 1x added no
+  demonstrated pacing benefit and looked visibly softer on sharp 3D edges. The screenshots captured
+  different animation phases, so that quality observation is visual rather than a pixel-matched
+  metric. The loop's non-repeatable hashes also prevent using it unchanged as the strict battery
+  scene; a stable menu/gameplay phase is required first. The exact 3x config SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21` was restored and the title
+  relaunched afterward. AC power still prevents a watt claim, the user's default did not change,
+  and this settings experiment is not optimization entry 161.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
