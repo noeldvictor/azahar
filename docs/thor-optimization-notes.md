@@ -548,6 +548,25 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   without page-table, fastmem, fatal, or Vulkan device-lost logs. The measurements used a temporary
   debuggable package with native frame profiling disabled; the Lite package remains the acceptance
   and battery-power target.
+- Entry 154 follows the next measured scheduler costs without removing a scheduling action. The
+  pre-change 30-second profile attributed 1.07% of sampled cycles to `SetRunningCPU`, 0.90% to
+  `SetCurrentProcess`, and 0.30% to `std::__shared_weak_count::lock`. Commit `6b3c1b6d8` passes the
+  process/page-table `shared_ptr` values by const reference and avoids assigning retained ownership
+  when it already points at the same object. Memory page-table selection, the guarded live-JIT
+  selection, CPU/timer switching, and `owner_process.lock()` remain intact.
+- Three immediately preceding 15-second runs averaged 4,052.940 ms task-clock, 7.878676 billion
+  cycles, 2.602196 billion retired instructions, and 1.888335 GHz. Three candidate runs averaged
+  4,072.964 ms, 7.912913 billion cycles, 2.520637 billion instructions, and 1.888516 GHz. Thus
+  instructions fell 3.134%, while task-clock (+0.494%), cycles (+0.435%), and frequency (+0.010%)
+  remained within run noise. This is accepted as lower recurring CPU work at equal measured speed,
+  not as a frametime or power improvement.
+- In the post-change 30-second profile, `SetRunningCPU` fell to 0.73% and `SetCurrentProcess` fell
+  below the 0.20% reporting floor. The required weak-pointer lock remained 0.31%, effectively the
+  same as its 0.30% baseline. The temporary frame-profiler-disabled debug APK linked all native
+  tests, reproduced 7th Dragon SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and Art Academy SHA-256
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and emitted no fatal log.
+  AC remained connected at 80%, so these observations do not prove lower battery watts.
 - A device-policy follow-up checked the forest-level power control before selecting another small
   code path. The Thor Quick Settings UI identified `performance_mode=2` as High Performance. In the
   final profiling-off 7th Dragon title scene it pinned Adreno at 615 MHz, used 517 process CPU ticks
@@ -567,9 +586,9 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `current_now=0`. Those are utilization observations only. No watt, thermal, battery-life, or
   whole-game FPS improvement is claimed until the charger is physically unplugged and a matched
   discharge capture confirms the required ceiling.
-- Entry 153 raises the ledger to 153 numbered entries and 152 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 and 153 are measured
-  recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
+- Entry 154 raises the ledger to 154 numbered entries and 153 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 154 are
+  measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

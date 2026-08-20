@@ -108,6 +108,15 @@
   Simpleperf runs reduced mean task-clock 2.622%, cycles 2.656%, and retired instructions 5.350%,
   while the symbol's sampled share fell from 2.57% to 0.45%. Preserve the byte-identical 7th Dragon
   and Art Academy screenshots and multi-title no-fault device checks.
+- Preserve the scheduler ownership-churn guard from commit `6b3c1b6d8`. The process and page-table
+  setters take `shared_ptr` by const reference and refresh stored ownership only when the pointee
+  actually changes. Do not skip the existing memory-page-table, live-JIT, CPU, or timing handoff,
+  and do not remove the `owner_process.lock()` lifetime acquisition. On the steady 7th Dragon
+  title, three matched whole-app runs retired 3.134% fewer instructions while task-clock and cycles
+  remained within noise; `SetRunningCPU` fell from 1.07% to 0.73% of sampled cycles and
+  `SetCurrentProcess` fell from 0.90% to below the 0.20% reporting floor. This is a measured
+  recurring-work reduction, not a demonstrated FPS or watt reduction. Retain the exact 7th Dragon
+  and Art Academy screenshot/no-fatal checks after changing this handoff.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

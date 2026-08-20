@@ -34,12 +34,12 @@ the exact pixels and the same 30 FPS frame pacing as High Performance while lowe
 Adreno clock from 615 to 401 MHz. That is the strongest current under-6-W operating candidate, not
 yet a battery-watt result because the device was still AC-powered during the comparison.
 
-The Thor evidence ledger currently has **153 numbered entries, 152 of them active**. Entry 153
-skips redundant Dynarmic context reloads when the live JIT already targets the exact same page
-table, entry 152 lets exact-size Android Vulkan frames render their final composition directly into
-an acquired swapchain image, and entry 151 extends Eco Turbo's 60 FPS host-presentation cap to fully
-uncapped emulation. The earlier ARM64 absolute-offset page-table entry was withdrawn after it caused
-reproducible game-start crashes on the Thor. Smaller figures quoted
+The Thor evidence ledger currently has **154 numbered entries, 153 of them active**. Entry 154
+avoids redundant scheduler `shared_ptr` ownership churn while preserving every CPU/page-table/timer
+handoff, entry 153 skips redundant Dynarmic context reloads when the live JIT already targets the
+exact same page table, and entry 152 lets exact-size Android Vulkan frames render their final
+composition directly into an acquired swapchain image. The earlier ARM64 absolute-offset page-table
+entry was withdrawn after it caused reproducible game-start crashes on the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
 not additive percentages: many affect different paths, and whole-game FPS or battery watts still
 require a matched title/scene/device A/B.
@@ -617,6 +617,17 @@ to 0.45% of sampled cycles. The candidate ran at a slightly lower sampled freque
 Dragon and Art Academy reproduced their retained screenshot hashes with no page-table, fastmem,
 fatal, or Vulkan device-lost logs. The Thor remained AC-powered, so this is a CPU-work result rather
 than a battery-watt claim.
+
+Optimization 154 removes recurring scheduler ownership bookkeeping without weakening its handoff.
+Process and page-table setters now borrow their incoming `shared_ptr` and update retained ownership
+only when its pointee changes; memory page-table selection, live-JIT selection, CPU switching,
+timer switching, and the weak-owner lifetime lock still run exactly where required. Against the
+immediately preceding build in three whole-app 15-second 7th Dragon runs, retired instructions fell
+3.134%, while task-clock (+0.494%) and cycles (+0.435%) stayed within run noise. A 30-second profile
+reduced `SetRunningCPU` from 1.07% to 0.73% of sampled cycles and `SetCurrentProcess` from 0.90% to
+below the 0.20% report floor; the required weak-pointer lock stayed effectively unchanged. Both
+retained title hashes matched and no fatal log appeared. This establishes less recurring CPU work,
+not a speed, battery-life, or watt claim.
 
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
