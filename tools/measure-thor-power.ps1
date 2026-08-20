@@ -45,7 +45,7 @@ param(
     [int]$ExpectedActiveDisplayCount = 2,
     [ValidateRange(0.000001, 0.1)]
     [double]$DisplayBrightnessTolerance = 0.01,
-    [string]$ExpectedVersionName = 'bc25ea052-vanilla-thor',
+    [string]$ExpectedVersionName = 'd733724db-vanilla-thor',
     [string]$ExpectedVulkanDriverName = 'Mesa Turnip driver v26.0.0 - R8',
     [string]$ExpectedVulkanDriverVersion = 'Vulkan 1.4.335',
     [string]$ExpectedVulkanDriverLibraryName = 'vulkan.ad07xx.so',

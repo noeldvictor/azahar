@@ -1155,6 +1155,24 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   JNI `get_build_flavor` omissions, and the only three skips are the established missing-DSP-
   firmware cases. This is the expected one-case/one-pass increase over the pre-change 172/166
   result.
+- Source/test commit `d733724db` was pushed directly to `origin/master`. The post-commit JDK 17
+  `:app:assembleVanillaRelWithDebInfoLite -PthorFrameProfiling=false --no-configuration-cache`
+  build passed in 1 minute 45 seconds. The ARM64-only, v2-signed production APK is 29,010,744 bytes
+  with SHA-256 `1B77BC14D942609269D5E24D0386DC29B54293522EAFBB6FE934EE219EF9FC20`;
+  its signer certificate SHA-256 is
+  `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. It reports package
+  `org.azahar_emu.azahar.debug`, version `d733724db-vanilla-thor`, minimum SDK 29, target SDK 37,
+  ARM64 ABI, and no `DEBUGGABLE` flag. The build cache records profiling OFF and the unstripped
+  library contains zero `ThorFrameProfile` strings.
+- Wi-Fi ADB installed that exact APK: the on-device base APK reproduced SHA-256
+  `1B77BC14D942609269D5E24D0386DC29B54293522EAFBB6FE934EE219EF9FC20`. The unchanged 3x
+  configuration reproduced SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`; performance/fan modes
+  remained 2/4. Super Mario 3D Land reported program ID `0004000000054000`, Turnip Mesa 25.99.99,
+  and Adreno 740, while the rendered attract loop visibly held 60 FPS without corruption. Two
+  Azahar BLAST surfaces were live. The active AudioFlinger track was 32,728 Hz, 1,962 frames,
+  123.35 ms reported latency, and zero underruns. No profiler, fatal, device-lost, Vulkan-error,
+  ANR, or native-crash log matched.
 - Entry 161 raises the ledger to 161 numbered entries and 160 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. The measured 35.1% reduction in
   this function's inclusive sampled share and the allocator-share reductions are path-local CPU-

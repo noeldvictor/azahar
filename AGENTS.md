@@ -99,7 +99,7 @@
   latency, and zero underruns. A power/FPS win with audio breakup or a restarted track is a failure.
   The production package must emit the one-time JSON `Active Vulkan driver metadata` log. Do not
   substitute Mesa's runtime banner: generic and forced-Sysmem R8 expose the same banner despite
-  measurably different work. The current strict default is package `bc25ea052-vanilla-thor`, driver
+  measurably different work. The current strict default is package `d733724db-vanilla-thor`, driver
   name `Mesa Turnip driver v26.0.0 - R8`, version `Vulkan 1.4.335`, and library
   `vulkan.ad07xx.so`; explicitly override all affected expectations for another accepted artifact.
   It must also require manual brightness mode and two active physical displays, record each display
