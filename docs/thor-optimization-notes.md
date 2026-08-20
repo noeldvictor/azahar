@@ -576,6 +576,29 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and its log contained no
   fatal, profiler, page-table, fastmem, or Vulkan device-lost evidence. The user's High Performance
   and smart-fan modes remained restored at values 2 and 4.
+- Call-stack attribution rejected an atomic no-signal fast path before implementation. Although
+  `RunLoop` appeared prominently in the flat profile, only about 0.05% of whole-app sampled cycles
+  were attributable to its ordinary signal-mutex lock. That does not justify changing asynchronous
+  reset/save/load/shutdown observation timing, so the mutex contract remains unchanged.
+- Entry 155 instead removes a recurring cross-language call identified under renderer and cache
+  work. `GetResolutionScaleFactor()` calls `GetWorkingGraphicsAPI()` from final-screen drawing and
+  cache ticks. On Android, that function crossed JNI each time to ask whether the Java-side OpenGL
+  renderer string contained `ANGLE`, even though the string is fixed for the process lifetime.
+  Commit `d75d854d4` caches only that boolean once; mutable graphics settings and every prior
+  ANGLE-to-Vulkan result remain unchanged.
+- Three matched baseline runs averaged 4,035.343 ms task-clock, 7.839703 billion cycles,
+  2.515142 billion retired instructions, and 1.886438 GHz. Three candidate runs averaged
+  4,040.253 ms, 7.847734 billion cycles, 2.518091 billion instructions, and 1.886515 GHz:
+  differences of +0.122%, +0.102%, +0.117%, and +0.004%, respectively, all within run noise. No
+  whole-app speed result is claimed.
+- The baseline `GetResolutionScaleFactor` call tree entered Java CheckJNI below the native ANGLE
+  query. In a second 30-second capture after startup, the same function's recovered call tree was
+  self-only, proving the recurring JNI subtree was removed. The native test target linked, 7th
+  Dragon reproduced SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, Art Academy reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and no fatal log appeared.
+  Debug-app CheckJNI magnifies the boundary cost, so this is accepted only as exact recurring-work
+  elimination, not as a normal-Lite FPS or watt improvement.
 - A device-policy follow-up checked the forest-level power control before selecting another small
   code path. The Thor Quick Settings UI identified `performance_mode=2` as High Performance. In the
   final profiling-off 7th Dragon title scene it pinned Adreno at 615 MHz, used 517 process CPU ticks
@@ -595,8 +618,8 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `current_now=0`. Those are utilization observations only. No watt, thermal, battery-life, or
   whole-game FPS improvement is claimed until the charger is physically unplugged and a matched
   discharge capture confirms the required ceiling.
-- Entry 154 raises the ledger to 154 numbered entries and 153 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 154 are
+- Entry 155 raises the ledger to 155 numbered entries and 154 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 155 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review

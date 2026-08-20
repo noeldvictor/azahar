@@ -117,6 +117,18 @@
   `SetCurrentProcess` fell from 0.90% to below the 0.20% reporting floor. This is a measured
   recurring-work reduction, not a demonstrated FPS or watt reduction. Retain the exact 7th Dragon
   and Art Academy screenshot/no-fatal checks after changing this handoff.
+- Preserve the process-lifetime Android ANGLE query cache from commit `d75d854d4`.
+  `GraphicsUtil.openGLRendererString` is fixed until app restart, so `GetWorkingGraphicsAPI()` must
+  not cross JNI again on every resolution-scale lookup. Preserve the same ANGLE-to-Vulkan override
+  for every graphics setting; cache only the Java boolean, not mutable settings. A matched
+  whole-app A/B was neutral within 0.13%, so this is an eliminated per-draw/per-cache boundary call,
+  not an FPS or watt claim. The baseline call tree entered Java CheckJNI below
+  `GetResolutionScaleFactor`; the cached build's tree was self-only after startup, with exact 7th
+  Dragon and Art Academy hashes and no fatal logs.
+- Do not add an atomic fast path around `System::signal_mutex` based on the 2026-08-20 profile.
+  Caller attribution found that the ordinary no-signal lock was only about 0.05% of whole-app
+  sampled cycles; changing asynchronous reset/save/load/shutdown timing for that cost misses the
+  forest. Reconsider only with stronger normal-build evidence and explicit concurrency coverage.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target
