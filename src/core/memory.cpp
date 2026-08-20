@@ -950,6 +950,19 @@ u8* MemorySystem::GetPhysicalPointer(PAddr address) {
     return target_mem.backing_mem->get()->GetPtr() + offset_into_region;
 }
 
+std::span<u8> MemorySystem::GetPhysicalSpan(PAddr address) {
+    const auto& target_mem = GetPhysMemRegionInfo(address);
+
+    if (!target_mem.valid()) [[unlikely]] {
+        return {};
+    }
+
+    const u32 offset_into_region = address - target_mem.region_start;
+    BackingMem* const backing_mem = target_mem.backing_mem->get();
+    return {backing_mem->GetPtr() + offset_into_region,
+            backing_mem->GetSize() - offset_into_region};
+}
+
 MemoryRef MemorySystem::GetPhysicalRef(PAddr address) {
     const auto& target_mem = GetPhysMemRegionInfo(address);
 

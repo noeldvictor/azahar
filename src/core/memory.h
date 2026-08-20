@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <boost/serialization/array.hpp>
 #include <boost/serialization/vector.hpp>
@@ -665,6 +666,10 @@ public:
 
     /// Gets a pointer to the memory region beginning at the specified physical address.
     u8* GetPhysicalPointer(PAddr address);
+
+    /// Gets a borrowed view of the memory region beginning at the specified physical address.
+    /// The view must not outlive the current physical-memory backing.
+    std::span<u8> GetPhysicalSpan(PAddr address);
 
     /// Returns a reference to the memory region beginning at the specified physical address
     MemoryRef GetPhysicalRef(PAddr address);

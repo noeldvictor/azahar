@@ -26,6 +26,24 @@ TEST_CASE("PageTable keeps C++ and Dynarmic pointers consistent", "[core][memory
     CHECK(page_table->GetPointerArray()[page_index] == nullptr);
 }
 
+TEST_CASE("Physical spans borrow exact backing-memory bounds", "[core][memory]") {
+    Core::System system;
+    Memory::MemorySystem memory{system};
+
+    const auto fcram = memory.GetPhysicalSpan(Memory::FCRAM_PADDR);
+    REQUIRE(fcram.data() == memory.GetPhysicalPointer(Memory::FCRAM_PADDR));
+    REQUIRE(fcram.size() == Memory::FCRAM_N3DS_SIZE);
+
+    constexpr u32 Offset = 0x1234;
+    const auto tail = memory.GetPhysicalSpan(Memory::FCRAM_PADDR + Offset);
+    CHECK(tail.data() == fcram.data() + Offset);
+    CHECK(tail.size() == fcram.size() - Offset);
+
+    const auto end = memory.GetPhysicalSpan(Memory::FCRAM_N3DS_PADDR_END);
+    CHECK(end.data() == fcram.data() + fcram.size());
+    CHECK(end.empty());
+}
+
 TEST_CASE("memory.IsValidVirtualAddress", "[core][memory]") {
     Core::Timing timing(1, 100);
     Core::System system;

@@ -475,6 +475,16 @@
   attribute, and prove that guest writes after construction remain visible. Inspect final ThinLTO
   for direct pointer-plus-stride math and no physical lookup inside `LoadVertex()`. The measured
   1.95x-3.38x address/load loop result is path-local, not whole-game FPS or watts.
+- A `MemorySystem` physical span may borrow the current backing only for immediate, bounded hot-path
+  access that cannot outlive or replace that backing. Keep `MemoryRef` wherever retained ownership
+  is required; never store the borrowed span across a draw, reset, remap, or backing change. Check
+  its remaining size before use, and retain permanent base/offset/one-past-end coverage. Vulkan
+  vertex setup uses this narrow route to avoid copying a `shared_ptr` for each loader. Cortex-A510
+  guide page 51 identifies acquire/release atomics as multicycle issue entries that suppress
+  co-issue until their last cycle, but the manual is only candidate guidance. Two alternating,
+  fixed-time Super Mario 3D Land traces per APK twin must remain the acceptance evidence: aggregate
+  `SetupVertexArray` cycles fell 22.94%, and its share of `AccelerateDrawBatch` fell from 21.56% to
+  16.38% while parent work rose 1.42%. Keep that result path-local; it is not an FPS or watt claim.
 - The vertex shader's packed 64-bit attribute-to-input-register map and active attribute count are
   also invariant for a CPU-fallback draw. Keep `ShaderInputMap` constructed once in
   `PicaCore::LoadVertices()` and make each recurring `ShaderUnit::LoadInput()` mask and shift its

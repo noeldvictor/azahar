@@ -1180,6 +1180,66 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   The Thor remained AC-powered, so the physical discharging-battery mean/P95 <=6 W gate remains
   open.
 
+## Borrowed Vulkan Vertex Spans (2026-08-20)
+
+- Entry 162 follows the post-forest Super Mario 3D Land CPU profile rather than another isolated
+  instruction idea. In the fresh 30-second control, `RasterizerVulkan::SetupVertexArray()` consumed
+  3.80% inclusive CPU cycles. `__aarch64_ldadd8_acq_rel` consumed 1.49% self process-wide; 39.17%
+  of its sampled cycles originated in vertex setup, where it represented 30.65% of that call-tree
+  branch. The recurring source was `GetPhysicalRef()` copying a `shared_ptr` for each PICA attribute
+  loader even though setup copies the bytes immediately and the enclosing draw already guarantees
+  the physical backing lifetime.
+- `MemorySystem::GetPhysicalSpan()` now returns a non-owning view from the existing physical-region
+  descriptor without copying retained ownership. Vulkan vertex setup uses it only for the immediate
+  bounds check and stream-buffer copy. Retained or asynchronous users keep `MemoryRef`; the span
+  must not survive a draw, reset, remap, or backing replacement. Permanent coverage verifies the
+  exact FCRAM base pointer and size, an interior pointer and remaining size, and a valid one-past-end
+  empty view. An attempted invalid-region fixture check was rejected because error logging requires
+  a test CPU that this lightweight `MemorySystem` fixture does not initialize; it was not treated as
+  product behavior or hidden behind a crash waiver.
+- The local Cortex-A510 software optimization guide page 51 says atomic instructions with acquire
+  or release semantics are multicycle issue entries and that multicycle entries suppress co-issue
+  until their final cycle. That explains why removing the ownership atomics is a sound A510
+  candidate, but it is not acceptance evidence by itself. The physical Thor profile, source-level
+  lifetime proof, bounds tests, and final linked code control acceptance.
+- Profiling-off control and candidate APKs were built from the same source state with only the
+  `SetupVertexArray()` access route toggled. The 32,440,559-byte control APK SHA-256 was
+  `80592A94B1F185CFD81E89460627BCEDB85F6647A607C6F3D766B66A867A0E0F`; its unstripped library
+  SHA-256 was `4395335E4FB7F2BDFBBB5D7C0161AA5DFE3E453106A72CE28D79DC6A8AE26916`. The
+  32,439,343-byte candidate APK SHA-256 was
+  `C61B78746F5B0AC9C74304BF6B813CC0EDB6503A6E9272420943434FADEF643F`; its unstripped library
+  SHA-256 was `02B41CCD486060019F3CE9F51943BBD91BF47681ECFB215FB5DCB5CE90187E83`.
+  Every accepted run used program ID `0004000000054000`, Mesa Turnip 25.99.99, Adreno 740, the
+  unchanged configuration, a 60-second warmup, and a 30-second 4-kHz user-cycle call-graph capture.
+
+  | Alternating run | Samples / lost | Process cycles | `AccelerateDrawBatch` cycles | `SetupVertexArray` cycles | Setup / parent | Visible FPS |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Control 1 | 44,318 / 0 | 16,322,663,168 | 1,988,936,747 | 435,772,418 | 21.9098% | 60 |
+  | Candidate 1 | 47,582 / 0 | 17,893,940,456 | 2,168,089,834 | 358,331,016 | 16.5275% | 60 |
+  | Control 2 | 47,799 / 0 | 17,629,247,054 | 2,251,936,134 | 478,473,990 | 21.2472% | 59 |
+  | Candidate 2 | 48,387 / 0 | 17,655,572,436 | 2,132,998,108 | 346,189,388 | 16.2302% | 59 |
+
+  Aggregating each two-run side, candidate parent work was 1.42% higher, yet inclusive vertex-setup
+  cycles fell 22.94%, setup self cycles fell 30.66%, and setup's share of the parent fell from
+  21.56% to 16.38% (24.02% relative). Process totals varied with the animated attract scene, so no
+  whole-process speed claim is made. All four accepted screenshots were visually clean at 59-60
+  FPS. A wrong-card automation run was discarded before comparison because its logged program ID
+  was `0004000000086300`; the corrected launch used the left search rail and revalidated the exact
+  title ID.
+- The restored candidate rebuilt all four expected ARM64 actions successfully. Final ThinLTO makes
+  `SetupVertexArray()` 1,408 bytes (`0x580`), directly calls `GetPhysMemRegionInfo()`, and contains
+  no `LDADD`, `LDXR`/`STXR`, CAS, or `GetPhysicalRef()` route. The focused physical-A510 memory suite
+  passed all 22 assertions in three cases. The complete candidate-linked suite then ran 925,386
+  assertions in 174 cases: 168 cases and 925,383 assertions passed. The only three failures remain
+  the established standalone-JNI `get_build_flavor` omissions, and the only three skips remain the
+  established missing-DSP-firmware cases. This is one new passing case and six new passing
+  assertions over entry 161.
+- Entry 162 raises the ledger to 162 numbered entries and 161 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. The measured reduction is real
+  for the ranked Vulkan vertex-setup path but cannot be added to earlier entries or converted into
+  whole-game FPS or energy. The Thor remained AC-powered at 80%, so physical discharging-battery
+  mean and nearest-rank P95 power at or below 6 W remain an open gate.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
