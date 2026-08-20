@@ -23,6 +23,7 @@ import org.citra.citra_emu.utils.FileUtil.asDocumentFile
 import org.citra.citra_emu.utils.FileUtil.inputStream
 import org.citra.citra_emu.utils.FileUtil.outputStream
 import org.json.JSONArray
+import org.json.JSONObject
 
 object GpuDriverHelper {
     private const val META_JSON_FILENAME = "meta.json"
@@ -80,11 +81,18 @@ object GpuDriverHelper {
         // Initialize hook libraries directory.
         hookLibPath = CitraApplication.appContext.applicationInfo.nativeLibraryDir + "/"
 
+        val activeDriver = customDriverData
+        val activeDriverMetadata = JSONObject()
+            .put("name", activeDriver.name ?: "System GPU driver")
+            .put("version", activeDriver.version ?: "")
+            .put("libraryName", activeDriver.libraryName ?: "")
+        Log.info("[GpuDriverHelper] Active Vulkan driver metadata: $activeDriverMetadata")
+
         // Initialize GPU driver.
         NativeLibrary.initializeGpuDriver(
             hookLibPath,
             driverInstallationPath,
-            customDriverData.libraryName,
+            activeDriver.libraryName,
             fileRedirectionPath
         )
     }
