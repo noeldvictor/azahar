@@ -102,6 +102,14 @@
   measurably different work. The current strict default is package `bc25ea052-vanilla-thor`, driver
   name `Mesa Turnip driver v26.0.0 - R8`, version `Vulkan 1.4.335`, and library
   `vulkan.ad07xx.so`; explicitly override all affected expectations for another accepted artifact.
+  It must also require manual brightness mode and two active physical displays, record each display
+  service brightness before warmup, after warmup, and after sampling, and reject panel/state/
+  brightness drift. The Thor has separate `panel0-backlight` and `panel1-backlight` sysfs devices,
+  but both returned `actual_brightness=0` while visibly ON; do not treat those raw nodes as luminance
+  evidence. The live display service reported both panels ON at brightness 1.0 when Android's global
+  setting was 255. Full-scale brightness is not a sensible hidden constant near a 6 W total-device
+  ceiling: select and record a repeatable lower manual brightness for the unplugged acceptance
+  matrix, without silently changing the user's setting during development.
 - Treat internal resolution as a forest-level GPU-load control before accepting more sub-percent
   source tuning. In the fixed 7th Dragon title scene, changing only `resolution_factor` from 3x to
   2x reduced mean KGSL busy from 8.374% to 5.488% (34.46%) and 1x reduced it to 3.933% (53.04%),

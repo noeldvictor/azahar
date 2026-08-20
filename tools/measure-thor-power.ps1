@@ -39,6 +39,9 @@ param(
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
     [int]$ExpectedBrightness = -1,
+    [int]$ExpectedBrightnessMode = 0,
+    [ValidateRange(1, 8)]
+    [int]$ExpectedActiveDisplayCount = 2,
     [string]$ExpectedVersionName = 'bc25ea052-vanilla-thor',
     [string]$ExpectedVulkanDriverName = 'Mesa Turnip driver v26.0.0 - R8',
     [string]$ExpectedVulkanDriverVersion = 'Vulkan 1.4.335',
@@ -354,6 +357,99 @@ function ConvertFrom-VulkanDriverMetadataLog {
     }
 }
 
+function ConvertFrom-DisplayStateDump {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text
+    )
+
+    $sectionMatch = [regex]::Match(
+        $Text,
+        '(?ms)^Display States: size=(\d+)\s*$\s*(.*?)^Display Adapters:'
+    )
+    if (-not $sectionMatch.Success) {
+        throw 'Display States section was not found in dumpsys display output.'
+    }
+
+    $declaredCount = [int]$sectionMatch.Groups[1].Value
+    $displayMatches = [regex]::Matches(
+        $sectionMatch.Groups[2].Value,
+        '(?m)^\s*Display Id=(\d+)\s*\r?\n' +
+        '\s*Display State=(\S+)\s*\r?\n' +
+        '\s*Display Brightness=([^\s]+)\s*\r?\n' +
+        '\s*Display SdrBrightness=([^\s]+)\s*$'
+    )
+    $displays = [System.Collections.Generic.List[object]]::new()
+    foreach ($match in $displayMatches) {
+        $brightness = 0.0
+        $sdrBrightness = 0.0
+        foreach ($value in @(
+                [pscustomobject]@{ Text = $match.Groups[3].Value; Name = 'display brightness'; Target = [ref]$brightness },
+                [pscustomobject]@{ Text = $match.Groups[4].Value; Name = 'display SDR brightness'; Target = [ref]$sdrBrightness }
+            )) {
+            if (-not [double]::TryParse(
+                    $value.Text,
+                    [System.Globalization.NumberStyles]::Float,
+                    [System.Globalization.CultureInfo]::InvariantCulture,
+                    $value.Target)) {
+                throw "Invalid $($value.Name) in dumpsys display output: '$($value.Text)'"
+            }
+        }
+        $displays.Add([pscustomobject]@{
+            Id = [int]$match.Groups[1].Value
+            State = $match.Groups[2].Value
+            Brightness = $brightness
+            SdrBrightness = $sdrBrightness
+        })
+    }
+
+    if ($displays.Count -ne $declaredCount) {
+        throw "Parsed $($displays.Count) display states; dumpsys declared $declaredCount."
+    }
+    return [pscustomobject]@{
+        Count = $displays.Count
+        Displays = $displays.ToArray()
+    }
+}
+
+function Assert-DisplayStateSnapshot {
+    param(
+        [Parameter(Mandatory)]
+        [object]$Snapshot,
+        [Parameter(Mandatory)]
+        [string]$Phase,
+        [object]$Reference = $null
+    )
+
+    if ($Snapshot.Count -ne $ExpectedActiveDisplayCount) {
+        throw "${Phase}: found $($Snapshot.Count) displays; expected $ExpectedActiveDisplayCount."
+    }
+    foreach ($display in $Snapshot.Displays) {
+        if ($display.State -ne 'ON') {
+            throw "${Phase}: display $($display.Id) is $($display.State), not ON."
+        }
+        if ($display.Brightness -lt 0.0 -or $display.Brightness -gt 1.0 -or
+            $display.SdrBrightness -lt 0.0 -or $display.SdrBrightness -gt 1.0) {
+            throw "${Phase}: display $($display.Id) returned an invalid brightness."
+        }
+    }
+
+    if ($null -eq $Reference) {
+        return
+    }
+    foreach ($referenceDisplay in $Reference.Displays) {
+        $current = @($Snapshot.Displays | Where-Object { $_.Id -eq $referenceDisplay.Id })
+        if ($current.Count -ne 1) {
+            throw "${Phase}: display $($referenceDisplay.Id) from preflight is missing or duplicated."
+        }
+        if ($current[0].State -ne $referenceDisplay.State -or
+            [Math]::Abs($current[0].Brightness - $referenceDisplay.Brightness) -gt 0.000001 -or
+            [Math]::Abs($current[0].SdrBrightness - $referenceDisplay.SdrBrightness) -gt 0.000001) {
+            throw "${Phase}: display $($referenceDisplay.Id) state or brightness changed from preflight."
+        }
+    }
+}
+
 function Invoke-SelfTest {
     $values = [double[]](@(1..19 | ForEach-Object { 5.0 }) + 6.0)
     $statistics = Get-SampleStatistics -Values $values
@@ -375,6 +471,37 @@ function Invoke-SelfTest {
     if (Test-WorkloadGate -ProcessCpuTicksPerSecond 0.0 -MeanGpuBusyPercent 0.0 `
             -MinimumProcessCpuTicksPerSecond 10.0 -MinimumMeanGpuBusyPercent 1.0) {
         throw 'Failing workload-gate self-test failed.'
+    }
+    $displayFixture = @'
+Display States: size=2
+  Display Id=0
+  Display State=ON
+  Display Brightness=0.38188976
+  Display SdrBrightness=0.38188976
+  Display Id=4
+  Display State=ON
+  Display Brightness=0.38188976
+  Display SdrBrightness=0.38188976
+
+Display Adapters: size=4
+'@
+    $displayState = ConvertFrom-DisplayStateDump -Text $displayFixture
+    Assert-DisplayStateSnapshot -Snapshot $displayState -Phase 'Self-test'
+    if ($displayState.Count -ne 2 -or $displayState.Displays[1].Id -ne 4 -or
+        $displayState.Displays[0].Brightness -ne 0.38188976) {
+        throw 'Display-state parser self-test failed.'
+    }
+    $changedDisplayState = ConvertFrom-DisplayStateDump -Text (
+        $displayFixture.Replace('Display Brightness=0.38188976', 'Display Brightness=0.503937')
+    )
+    try {
+        Assert-DisplayStateSnapshot -Snapshot $changedDisplayState -Phase 'Self-test changed' `
+            -Reference $displayState
+        throw 'Display-state drift self-test failed.'
+    } catch {
+        if ($_.Exception.Message -notmatch 'changed from preflight') {
+            throw
+        }
     }
     $pacingFixtureLines = [System.Collections.Generic.List[string]]::new()
     $pacingFixtureLines.Add('16666666')
@@ -784,6 +911,15 @@ function Get-RemoteSetting {
     return (Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'settings', 'get', 'system', $Name)).Trim()
 }
 
+function Get-DisplayStateSnapshot {
+    $dump = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'dumpsys', 'display')
+    $snapshot = ConvertFrom-DisplayStateDump -Text $dump
+    $snapshot | Add-Member -NotePropertyName TimestampUtc -NotePropertyValue (
+        [DateTime]::UtcNow.ToString('o')
+    )
+    return $snapshot
+}
+
 function Save-DeviceScreenshot {
     param(
         [Parameter(Mandatory)]
@@ -861,6 +997,7 @@ if ($ExpectedVulkanDriverLibraryName -and
 $performanceMode = [int](Get-RemoteSetting -Name 'performance_mode')
 $fanMode = [int](Get-RemoteSetting -Name 'fan_mode')
 $brightness = [int](Get-RemoteSetting -Name 'screen_brightness')
+$brightnessMode = [int](Get-RemoteSetting -Name 'screen_brightness_mode')
 if ($performanceMode -ne $ExpectedPerformanceMode) {
     throw "Performance mode is $performanceMode; expected $ExpectedPerformanceMode. Change it outside Azahar and retry."
 }
@@ -870,6 +1007,11 @@ if ($fanMode -ne $ExpectedFanMode) {
 if ($ExpectedBrightness -ge 0 -and $brightness -ne $ExpectedBrightness) {
     throw "Brightness is $brightness; expected $ExpectedBrightness."
 }
+if ($brightnessMode -ne $ExpectedBrightnessMode) {
+    throw "Brightness mode is $brightnessMode; expected $ExpectedBrightnessMode (0 is manual)."
+}
+$displayStatePreflight = Get-DisplayStateSnapshot
+Assert-DisplayStateSnapshot -Snapshot $displayStatePreflight -Phase 'Preflight'
 
 $configHashLine = Invoke-AdbText -Arguments @(
     '-s', $Serial, 'shell', 'sha256sum', '/sdcard/Azaharuser/config/config.ini'
@@ -912,6 +1054,9 @@ while ($warmupTimer.Elapsed.TotalSeconds -lt $WarmupSeconds) {
 }
 $warmupTimer.Stop()
 Assert-RealDischargeState -State (Get-DeviceBatteryState) -Phase 'After warmup'
+$displayStateAfterWarmup = Get-DisplayStateSnapshot
+Assert-DisplayStateSnapshot -Snapshot $displayStateAfterWarmup -Phase 'After warmup' `
+    -Reference $displayStatePreflight
 if ([string]::IsNullOrWhiteSpace(
         (Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'pidof', $Package)))) {
     throw "$Package exited during warmup."
@@ -940,7 +1085,11 @@ if ($samples.Count -lt $minimumSamples) {
     throw "Only $($samples.Count) samples were captured; expected at least $minimumSamples."
 }
 
-Assert-RealDischargeState -State (Get-DeviceBatteryState) -Phase 'Postflight'
+$postflightBatteryState = Get-DeviceBatteryState
+Assert-RealDischargeState -State $postflightBatteryState -Phase 'Postflight'
+$displayStatePostflight = Get-DisplayStateSnapshot
+Assert-DisplayStateSnapshot -Snapshot $displayStatePostflight -Phase 'Postflight' `
+    -Reference $displayStatePreflight
 $postflightPid = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'pidof', $Package)
 if ([string]::IsNullOrWhiteSpace($postflightPid)) {
     throw "$Package exited during measurement."
@@ -1018,6 +1167,8 @@ $summary = [pscustomobject]@{
         ExpectedVulkanDriverName = $ExpectedVulkanDriverName
         ExpectedVulkanDriverVersion = $ExpectedVulkanDriverVersion
         ExpectedVulkanDriverLibraryName = $ExpectedVulkanDriverLibraryName
+        ExpectedBrightnessMode = $ExpectedBrightnessMode
+        ExpectedActiveDisplayCount = $ExpectedActiveDisplayCount
         PowerPassed = $powerPassed
         WorkloadPassed = $workloadPassed
         PacingPassed = $pacingPassed
@@ -1062,6 +1213,12 @@ $summary = [pscustomobject]@{
         PerformanceMode = $performanceMode
         FanMode = $fanMode
         Brightness = $brightness
+        BrightnessMode = $brightnessMode
+        Displays = [pscustomobject]@{
+            Preflight = $displayStatePreflight
+            AfterWarmup = $displayStateAfterWarmup
+            Postflight = $displayStatePostflight
+        }
         ConfigSha256 = $configHash
         BeforeScreenshotSha256 = $beforeScreenshotHash
         AfterScreenshotSha256 = $afterScreenshotHash

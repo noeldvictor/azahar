@@ -48,7 +48,10 @@ per-sample source when that node is plausible.
 The script deliberately fails instead of producing a watt claim if the battery is simulated, any
 external-power flag is present, a charger appears during sampling, the app exits, hardware is not an
 AYN Thor, ADB is not using a host:port endpoint, the package is debuggable/non-ARM64, or the expected
-version, config, performance mode, fan mode, brightness, or frame hash differs. Override an expected
+version, config, performance mode, fan mode, brightness, or frame hash differs. It requires manual
+brightness mode and exactly two active displays, records the display service's brightness for each
+physical panel, and rejects a panel disappearing, turning off, or changing brightness during warmup
+or sampling. Override an expected
 value explicitly when validating a newer accepted build; do not weaken the charger or simulated-
 battery checks. It also rejects an idle or frozen fixed scene unless the run averages at least 10
 Azahar process CPU ticks per second and 1% KGSL GPU busy. Those deliberately loose defaults validate
@@ -77,6 +80,13 @@ an explicit 3x/2x/1x resolution matrix, override `-ExpectedConfigSha256` and
 `-ExpectedScreenshotSha256` together for each row, and keep every other scene, build, renderer,
 driver, device-mode, fan, brightness, and display-layout variable fixed. Never compare a row against
 another resolution's hash or treat an AC-powered KGSL-busy reduction as a battery-watt result.
+
+The Thor exposes separate `panel0-backlight` and `panel1-backlight` sysfs devices, but this firmware
+reported `actual_brightness=0` for both while both panels were visibly ON. Do not use those raw nodes
+as luminance evidence. `dumpsys display` is the authoritative automation source observed here: at
+Android brightness 255 it reported both physical displays ON with brightness 1.0. Full-scale panel
+brightness is a major uncontrolled variable near a 6 W device budget, so use a repeatable lower
+manual brightness for the eventual unplugged matrix and pass its integer setting explicitly.
 
 ## Upstream Release Checklist
 
