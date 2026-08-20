@@ -510,6 +510,11 @@ void ThreadManager::Reschedule() {
     Thread* cur = GetCurrentThread();
     Thread* next = PopNextReadyThread();
 
+    // No context handoff is needed when the current thread remains the best runnable choice.
+    if (cur == next) {
+        return;
+    }
+
     if (cur && next) {
         LOG_TRACE(Kernel, "context switch {} -> {}", cur->GetObjectId(), next->GetObjectId());
     } else if (cur) {
