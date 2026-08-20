@@ -28,12 +28,12 @@ This is a personal Android fork of [Azahar](https://github.com/azahar-emu/azahar
 
 Optimization work assumes AYN Thor Base/Pro/Max hardware: Snapdragon 8 Gen 2, Adreno 740, active cooling, and LPDDR5X. AYN's product page and mirrored manual disagree about the UFS generation, so storage tuning does not assume either one until the physical device is verified. Thor Lite is a different Snapdragon 865 / Adreno 650 target and should not drive defaults unless explicitly called out.
 
-The Thor evidence ledger currently has **152 numbered entries, 151 of them active**. Entry 152
-lets exact-size Android Vulkan frames render their final composition directly into an acquired
-swapchain image, while entry 151 extends Eco Turbo's 60 FPS host-presentation cap to fully uncapped
-emulation and the earlier
-ARM64 absolute-offset page-table entry was withdrawn after it caused reproducible game-start
-crashes on the Thor. Smaller figures quoted
+The Thor evidence ledger currently has **153 numbered entries, 152 of them active**. Entry 153
+skips redundant Dynarmic context reloads when the live JIT already targets the exact same page
+table, entry 152 lets exact-size Android Vulkan frames render their final composition directly into
+an acquired swapchain image, and entry 151 extends Eco Turbo's 60 FPS host-presentation cap to fully
+uncapped emulation. The earlier ARM64 absolute-offset page-table entry was withdrawn after it caused
+reproducible game-start crashes on the Thor. Smaller figures quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
 not additive percentages: many affect different paths, and whole-game FPS or battery watts still
 require a matched title/scene/device A/B.
