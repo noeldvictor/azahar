@@ -148,6 +148,14 @@
   instructions 1.836%; `PopNextReadyThread` also rose from 0.65% to 0.73% of sampled cycles. The
   implementation, tests, and object-layout change were reverted. Reconsider only with a different
   representation and matched evidence that reduces both the target and whole-app work.
+- Do not move the thread-wakeup `UnscheduleEvent` scan from `ThreadManager::SwitchContext` into
+  `Thread::ResumeFromWait` based on the 2026-08-20 profile. The candidate passed all 85 assertions
+  in the four ARM64 `CoreTiming` tests and reduced `UnscheduleEvent` from 0.33% to 0.08% of sampled
+  cycles, but it merely moved cost: `ResumeFromWait` rose from 0.14% to 0.24% and
+  `ThreadWakeupCallback` from 0.16% to 0.22%. Mean 7th Dragon task-clock, cycles, and retired
+  instructions also regressed 0.510%, 0.532%, and 0.883%. The implementation was fully reverted;
+  retain cancellation when a ready thread is selected unless new whole-app evidence proves a net
+  reduction without changing early-wakeup or timeout semantics.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

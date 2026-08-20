@@ -665,6 +665,22 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   or test from the experiment remains and this is not entry 157. The clean rebuild restored the
   linked function to 1,240 bytes, and the final Lite device checks above were repeated after that
   rebuild.
+- A second scheduler experiment was also rejected and fully reverted. The accepted profile placed
+  `Core::Timing::UnscheduleEvent` at 0.33% self because `SwitchContext` cancelled a possible thread
+  timeout whenever a ready thread was selected. A candidate instead skipped cancellation for the
+  timeout callback, whose event had already left the heap, and cancelled early-wakeup timeouts once
+  in `ResumeFromWait`. The ARM64 binary linked successfully and all 85 assertions in the four
+  `CoreTiming` test cases passed directly on Thor. The candidate reproduced the exact 7th Dragon
+  SHA-256 `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and produced no fatal,
+  profiler, fastmem, page-fault, or Vulkan device-lost log evidence.
+- The relocation did not reduce whole-app work. Three 15-second candidate samples averaged
+  3,906.960 ms task-clock, 7.626750 billion cycles, 2.470328 billion retired instructions, and
+  1.920094 GHz. Against the accepted hidden-overlay means, task-clock, cycles, and instructions
+  regressed 0.510%, 0.532%, and 0.883%, while frequency differed by only +0.016%. A new 30-second
+  profile reduced `UnscheduleEvent` from 0.33% to 0.08%, but `ResumeFromWait` rose from 0.14% to
+  0.24% and `ThreadWakeupCallback` from 0.16% to 0.22%; the measured cost was moved rather than
+  removed. No source or test change remains and this is not entry 157. Thor was still AC-powered at
+  80%, 4.264 V, and 25.0 C, so no battery-watt conclusion is drawn from the rejected experiment.
 - Entry 156 raises the ledger to 156 numbered entries and 155 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 156 are
   measured recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
