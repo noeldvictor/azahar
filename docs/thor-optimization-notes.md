@@ -567,6 +567,15 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and Art Academy SHA-256
   `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and emitted no fatal log.
   AC remained connected at 80%, so these observations do not prove lower battery watts.
+- The final profiling-off Lite APK from pushed documentation/source head `90d34a32b` is ARM64-only,
+  29,011,364 bytes, and SHA-256
+  `CD74267C5AB3407F10CCCA3B3AB080DCF6288B1368AE49F666B2D81FE44E35D9`. The installed package is
+  version `90d34a32b-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
+  library contains no `ThorFrameProfile` string. Wi-Fi ADB installation succeeded, the final Lite
+  run reproduced 7th Dragon SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and its log contained no
+  fatal, profiler, page-table, fastmem, or Vulkan device-lost evidence. The user's High Performance
+  and smart-fan modes remained restored at values 2 and 4.
 - A device-policy follow-up checked the forest-level power control before selecting another small
   code path. The Thor Quick Settings UI identified `performance_mode=2` as High Performance. In the
   final profiling-off 7th Dragon title scene it pinned Adreno at 615 MHz, used 517 process CPU ticks

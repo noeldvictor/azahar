@@ -39,7 +39,8 @@ avoids redundant scheduler `shared_ptr` ownership churn while preserving every C
 handoff, entry 153 skips redundant Dynarmic context reloads when the live JIT already targets the
 exact same page table, and entry 152 lets exact-size Android Vulkan frames render their final
 composition directly into an acquired swapchain image. The earlier ARM64 absolute-offset page-table
-entry was withdrawn after it caused reproducible game-start crashes on the Thor. Smaller figures quoted
+entry was withdrawn after it caused reproducible game-start crashes on the Thor. Smaller figures
+quoted
 for a recent time window or code slice are subsets, not the project total. The active entries are
 not additive percentages: many affect different paths, and whole-game FPS or battery watts still
 require a matched title/scene/device A/B.
