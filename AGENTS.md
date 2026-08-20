@@ -496,6 +496,13 @@
   fixed-time Super Mario 3D Land traces per APK twin must remain the acceptance evidence: aggregate
   `SetupVertexArray` cycles fell 22.94%, and its share of `AccelerateDrawBatch` fell from 21.56% to
   16.38% while parent work rose 1.42%. Keep that result path-local; it is not an FPS or watt claim.
+- Do not combine Vulkan vertex and fixed/default-attribute uploads into one `StreamBuffer`
+  reservation merely to remove a `Map()`/`Commit()` pair. The exact implementation preserved the
+  contiguous bytes, offsets, bindings, and watch lifetime and reduced aggregate `Map`/`Commit`
+  cycles by 18.64%/15.27%, yet three alternating Super Mario 3D Land traces measured a 2.41%
+  aggregate `SetupVertexArray()` regression; its process-normalized share rose 3.55%. Keep the two
+  reservations until a materially different implementation beats the complete recurring path, not
+  just its helper-call count.
 - Do not enable the blending subset of `VK_EXT_extended_dynamic_state3` merely because Turnip R8
   advertises it. The physical Thor confirmed all four required logic-op-enable, blend-enable,
   blend-equation, and color-write-mask features and rendered the exact Super Mario 3D Land loop

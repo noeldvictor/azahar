@@ -1552,6 +1552,66 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and no PID remained. This safety merge is not a performance entry and supplies no FPS gain or
   battery-watt evidence; the discharging-battery mean/P95 <=6 W gate remains open.
 
+## Combined Vulkan Vertex/Fixed Stream Reservation Rejection (2026-08-20)
+
+- Entry 166 tested the next ranked post-entry-164 CPU candidate rather than accepting a source-level
+  operation count. `RasterizerVulkan::SetupVertexArray()` was still about 3% inclusive in the fresh
+  Super Mario 3D Land profile. The candidate reserved vertex bytes plus the existing 256-byte
+  fixed/default-attribute upper bound in one `StreamBuffer::Map()`, filled the same contiguous byte
+  layout, and committed the used combined size once. The prior path mapped and committed the vertex
+  region, then immediately mapped and committed its contiguous fixed/default tail. This removed one
+  `Map()` and one `Commit()` from every accelerated draw without changing bindings, offsets, data,
+  or the reservation/watch lifetime.
+- Both profiling-off APKs completed the full ARM64 build. The 32,447,459-byte control APK has
+  SHA-256 `0DFD9D505A4E4226F5CEDAC618265B35F6B8FD42362725368D61F8D531E06F47`;
+  its 459,200,920-byte unstripped library has SHA-256
+  `D4D683C4766E4A283F0A501A11FC2DFDBB01026B0D49CED1CD96141ED30C6A99`. The
+  32,448,507-byte candidate APK has SHA-256
+  `7A45CB8D9F59AD9BB4A824422CFD58F18E7776BD47AC88820E290F470B110673`;
+  its 459,200,936-byte library has SHA-256
+  `A7B46E0F46885A65C7D12207EA12287771CD20850AFD02D3642C2FA78294D16E`.
+  Final linked code confirmed two total `Map()`/`Commit()` calls across the control pair of
+  functions and one of each across the candidate pair; their combined linked size fell 32 bytes,
+  from `0x93c` to `0x91c`.
+- The physical AYN Thor bracket used Wi-Fi ADB, exact program ID `0004000000054000`, accepted generic
+  Turnip R8 metadata and Mesa 25.99.99 runtime, the byte-identical accepted configuration, modes
+  2/4, brightness 255, a 45-second cold-launch warmup, and a 30-second 4-kHz user-cycle call-graph
+  capture. Each side ran three times in alternating control/candidate order. All six traces lost
+  zero samples and all six logs had the exact title and driver with no fatal, device-lost, or ANR
+  match.
+
+  | Alternating run | Samples | Process cycles | `AccelerateDrawBatch` cycles | `SetupVertexArray` cycles | Aggregate `Map` cycles | Aggregate `Commit` cycles |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Control 1 | 47,372 | 17,531,110,726 | 2,020,582,157 | 329,793,991 | 125,781,314 | 30,602,578 |
+  | Candidate 1 | 44,771 | 16,858,370,665 | 1,992,156,860 | 335,620,105 | 112,376,610 | 27,115,199 |
+  | Control 2 | 47,935 | 17,670,779,067 | 2,021,843,633 | 360,410,684 | 147,050,665 | 32,885,268 |
+  | Candidate 2 | 48,093 | 17,618,078,367 | 1,998,606,210 | 356,220,104 | 105,221,524 | 30,479,773 |
+  | Control 3 | 46,039 | 17,045,068,200 | 1,996,380,409 | 333,374,758 | 129,586,273 | 29,593,443 |
+  | Candidate 3 | 46,457 | 17,197,181,417 | 1,961,062,322 | 356,424,327 | 109,810,608 | 21,276,090 |
+
+- Aggregated raw `Map()` and `Commit()` cycles did fall 18.639689% and 15.266470%, respectively,
+  but the complete target path did not improve. `SetupVertexArray()` rose from 1,023,579,433 to
+  1,048,264,536 cycles, a 2.411645% regression; normalized process share rose from 1.959118% to
+  2.028626%, and its share of `AccelerateDrawBatch()` rose from 16.950030% to 17.612488%. The three
+  paired path deltas were +1.766592%, -1.162724%, and +6.914011%. Control 3 and Candidate 3 captured
+  the exact same clean 60-FPS primary frame, SHA-256
+  `FC32F121D33BA1FDE4C5A003D47AE42438BE6319983F5618A94DCAAAFBF63BE4`, making the strongest
+  regression pair visually and phase matched. Fewer helper calls were not a forest-level win when
+  the full recurring path became slower.
+- The candidate was fully reverted with no source delta left, so Entry 166 does not raise the 163
+  active accepted-entry count. The exact signed production APK was restored and reproduced
+  on-device SHA-256 `C0E93E2CF489E7896250B8327AA41E8C7DDC91FC13B5CD3B453A9CC4445EA534`,
+  version `411e559ba-vanilla-thor`. Its cold 30-second title check logged exact R8, Mesa 25.99.99,
+  Adreno 740, Vulkan 1.4.335, and program ID `0004000000054000`, with no fatal, device-lost, or ANR
+  match. Both physical panels were visually clean; primary and secondary screenshot SHA-256 values
+  were `75F9C130F7420BF2537C011D23DB101688F2943CEFED63BA39510C449F2D1803` and
+  `6D566815461890C3DD7344FF2C1FF521A2410177A8CDEAD600A097D4540C98C6`. The
+  accepted config hash, modes, fan, and brightness remained unchanged. Azahar was force-stopped and
+  no PID remained.
+- The Thor stayed AC-powered at 80%, 4.264 V, and 25.0 C. This rejects a CPU-path candidate; it is
+  not battery-discharge evidence. The physical mean and nearest-rank P95 power at or below 6 W gate
+  remains open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.
