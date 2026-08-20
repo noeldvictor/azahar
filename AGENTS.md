@@ -145,6 +145,16 @@
   hidden; task-clock and cycles changed -0.214% and -0.278%. `__kernel_clock_gettime` self share
   fell from 1.11% in the prior profile to 0.29%, and `steady_clock::now` fell from 0.86% to 0.02%.
   Treat this as measured recurring-work removal, not an FPS or battery-watt claim.
+- Preserve the Vulkan Choreographer-wakeup elision from commit `b62eb36f2`. Android must post one
+  frame callback on fragment resume and keep it alive while the native renderer window is still
+  being constructed. Once running, the base/Vulkan window reports that it does not require another
+  Java display-vsync callback; only `EmuWindow_Android_OpenGL` opts in and continues through
+  `TryPresenting()`/`eglSwapBuffers`. Do not make Vulkan repost itself or let OpenGL lose its callback.
+  Retain real Vulkan launch/HOME/resume and temporary-restored OpenGL presentation checks. A matched
+  six-versus-six 7th Dragon bracket reduced mean whole-process CPU cycles 9.409% and retired
+  instructions 5.077% at only 0.009% higher sampled frequency; the Vulkan profile no longer
+  contained Azahar's `EmulationFragment.doFrame` or JNI `doFrame` chain. This is recurring CPU and
+  display-scheduling work removal, not a battery-watt claim while the Thor remains AC-powered.
 - Do not add an atomic fast path around `System::signal_mutex` based on the 2026-08-20 profile.
   Caller attribution found that the ordinary no-signal lock was only about 0.05% of whole-app
   sampled cycles; changing asynchronous reset/save/load/shutdown timing for that cost misses the

@@ -820,9 +820,45 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `5F7EEE22B280B8C972578A1147FFAE2889636722E3E68D114FC89437AE16460C` and reproduced the same exact
   scene. Smaller code did not reduce application work here, so no source or test remains and this is
   not entry 159. The Thor remained AC-powered, so neither profile can establish battery watts.
-- Entry 158 raises the ledger to 158 numbered entries and 157 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 158 are
-  measured recurring presentation, scheduler, and audio-work reductions, not additive percentages.
+- Entry 159 removes a recurring Android display-vsync wakeup from the Vulkan renderer. The fragment
+  previously reposted itself with `Choreographer.postFrameCallback()` on every display frame and
+  crossed JNI into `TryPresenting()`, even though only `EmuWindow_Android_OpenGL` implements that
+  presentation hook; the Vulkan window presents through its renderer/swapchain path. Android's
+  official [Choreographer API](https://developer.android.com/reference/android/view/Choreographer)
+  documents that a posted callback runs once and is automatically removed, so continuous renderers
+  must explicitly repost it. Azahar now reposts only when the active window subclass reports that it
+  requires the callback. Initialization keeps the first callback alive until the native window is
+  constructed, and OpenGL alone opts into the recurring path.
+- The pinned JDK 17 / NDK 27.3 ARM64 native and RelWithDebInfo APK build passed, as did
+  `:app:testVanillaRelWithDebInfoUnitTest`. The 32,438,811-byte candidate debug APK had SHA-256
+  `A329E59002A2FBE839FFCF8D809303987FE64EA2B90A145F071EBAF828088C30`. Vulkan 7th Dragon reproduced
+  exact SHA-256 `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` both before and after a real
+  HOME/resume cycle, stayed alive, and produced no fatal, assertion, fastmem, page-fault, profiler,
+  or Vulkan device-lost log match.
+- The renderer split was tested rather than inferred. The device's 412-byte configuration was
+  backed up at SHA-256 `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`, only
+  `graphics_api` was temporarily changed from Vulkan `2` to OpenGL `1`, and the original file was
+  restored byte-for-byte to the same hash. OpenGL rendered the title at 30 FPS. Its zero-lost-sample
+  profile retained `EmulationFragment.doFrame` at 25.53% inclusive, JNI `doFrame` at 22.92%,
+  `EmuWindow_Android_OpenGL::TryPresenting` at 16.87%, and `eglSwapBuffers` at 6.05%, proving the
+  callback-driven renderer was not accidentally disabled.
+- The accepted Vulkan profile captured 7,631 samples, lost zero, and recorded 12,650,989,901 cycles,
+  down 9.858% from the closest untouched profile's 8,261 samples and 14,034,484,337 cycles. The
+  control attributed 2.92% inclusive to Azahar's `EmulationFragment.doFrame`, 2.78% to its Java
+  `postFrameCallback` route, and 0.02% self to JNI `doFrame`; all three Azahar symbols/routes were
+  absent from the accepted profile. Other Android Choreographer activity remained and is not claimed
+  as removed.
+- A same-scene six-versus-six ten-second hardware-counter bracket confirmed the whole-process win.
+  Candidate means were 4.483033 billion CPU cycles and 1.523423 billion retired instructions versus
+  control means of 4.948643 and 1.604904 billion. Candidate deltas were -9.409% cycles and -5.077%
+  instructions; median deltas agreed at -9.447% and -5.067%. Mean sampled frequency changed only
+  from 1.921693 to 1.921866 GHz (+0.009%). The Thor remained AC-powered at 80%, 4.263 V, and 24.0 C,
+  so this demonstrates recurring CPU/display-scheduling work removal but not battery watts or an
+  under-6-W result. Source commit `b62eb36f2` was pushed directly to `origin/master`.
+- Entry 159 raises the ledger to 159 numbered entries and 158 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 through 159 are
+  measured recurring presentation, scheduler, audio, and Android wakeup reductions, not additive
+  percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
