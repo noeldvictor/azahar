@@ -1356,6 +1356,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   clean at 60 FPS, with no fatal, device-lost, or ANR match. AC remained connected at 80%, 4.266 V,
   and 25.0 C, so none of this runtime evidence is presented as battery power. The strict power-tool
   default now names this production version.
+- Exact bounded cleanup removed 7,807,498,854 logical host bytes. The obsolete 3.24-GB native
+  configuration, Gradle/JNI/R8/symbol/mapping staging, 450-MB native test runner, both experiment
+  evidence directories, debug APK, and device-side traces/test runner/screenshots were removed by
+  exact validated path. The retained build output is only the 2,801,868,169-byte active
+  `5h1x5ud1` ARM64 CMake/Ninja cache plus the 29,011,488-byte production APK and 476-byte metadata.
+  Azahar was force-stopped and no PID remained. Existing user source edits and historical repo-root
+  artifacts were not staged, modified, or deleted.
 - Entry 163 raises the ledger to 163 numbered entries and 162 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. This bracket proves less CPU
   work in one recurring rasterizer-cache path; it does not prove a whole-game FPS gain, cannot be
