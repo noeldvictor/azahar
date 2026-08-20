@@ -23,6 +23,7 @@ enum class FrameProfileEvent : u32 {
     DuplicateFramePreparationsSkipped,
     PresentBlits,
     PresentCopies,
+    PresentDirectRenders,
     PresentPixels,
     PresentQueueWaitNanoseconds,
     PresentCombinedSubmissions,

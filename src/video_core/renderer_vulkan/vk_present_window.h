@@ -26,7 +26,9 @@ struct Frame {
     u32 width{};
     u32 height{};
     VmaAllocation allocation{};
+    vk::Framebuffer fallback_framebuffer{};
     vk::Framebuffer framebuffer{};
+    vk::RenderPass renderpass{};
     vk::Image image{};
     vk::ImageView image_view{};
     vk::Image present_image{};
@@ -35,6 +37,7 @@ struct Frame {
     vk::Semaphore present_ready{};
     u64 submit_tick{};
     bool present_valid{};
+    bool direct_present{};
     // LibRetro owns its presentation command buffers and synchronization separately.
     vk::Semaphore render_ready{};
     vk::Fence present_done{};
@@ -52,6 +55,12 @@ public:
 
     /// Returns the last used render frame.
     Frame* GetRenderFrame();
+
+#ifdef ANDROID
+    /// Uses an acquired, exact-size Android swapchain image as the final color attachment when
+    /// immediately available. Falls back without waiting when acquisition would block.
+    bool TryPrepareDirectPresent(Frame* frame);
+#endif
 
     /// Recreates the render frame to match provided parameters.
     void RecreateFrame(Frame* frame, u32 width, u32 height);
@@ -83,7 +92,13 @@ private:
 
     void RecreateSwapchain(Frame* frame);
 
-    vk::RenderPass CreateRenderpass();
+    vk::RenderPass CreateRenderpass(bool direct_to_swapchain);
+
+#ifdef ANDROID
+    void CreateDirectFramebuffers();
+
+    void DestroyDirectFramebuffers();
+#endif
 
 private:
     Frontend::EmuWindow& emu_window;
@@ -95,6 +110,11 @@ private:
     Swapchain swapchain;
     vk::Queue graphics_queue;
     vk::RenderPass present_renderpass;
+#ifdef ANDROID
+    vk::RenderPass direct_present_renderpass;
+    std::vector<vk::ImageView> direct_image_views;
+    std::vector<vk::Framebuffer> direct_framebuffers;
+#endif
     std::vector<Frame> swap_chain;
     std::queue<Frame*> free_queue;
     std::queue<Frame*> present_queue;

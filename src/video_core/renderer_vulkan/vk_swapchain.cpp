@@ -307,6 +307,8 @@ void Swapchain::Destroy() {
         device.destroySwapchainKHR(swapchain);
         swapchain = VK_NULL_HANDLE;
     }
+    images.clear();
+    image_count = 0;
     for (const vk::Semaphore semaphore : present_ready) {
         device.destroySemaphore(semaphore);
     }

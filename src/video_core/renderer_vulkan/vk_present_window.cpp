@@ -38,6 +38,14 @@ static_assert(!ShouldBlitToSwapchain(true, 1920, 1080, 1920, 1080));
 static_assert(ShouldBlitToSwapchain(true, 1280, 720, 1920, 1080));
 static_assert(!ShouldBlitToSwapchain(false, 1280, 720, 1920, 1080));
 
+constexpr bool CanRenderDirectToSwapchain(u32 frame_width, u32 frame_height, u32 swapchain_width,
+                                          u32 swapchain_height) {
+    return frame_width == swapchain_width && frame_height == swapchain_height;
+}
+
+static_assert(CanRenderDirectToSwapchain(1920, 1080, 1920, 1080));
+static_assert(!CanRenderDirectToSwapchain(1280, 720, 1920, 1080));
+
 [[nodiscard]] vk::ImageSubresourceLayers MakeImageSubresourceLayers() {
     return vk::ImageSubresourceLayers{
         .aspectMask = vk::ImageAspectFlagBits::eColor,
@@ -116,7 +124,10 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
       surface{CreateSurface(instance.GetInstance(), emu_window)}, next_surface{surface},
       swapchain{instance, emu_window.GetFramebufferLayout().width,
                 emu_window.GetFramebufferLayout().height, surface, low_refresh_rate_},
-      graphics_queue{instance.GetGraphicsQueue()}, present_renderpass{CreateRenderpass()},
+      graphics_queue{instance.GetGraphicsQueue()}, present_renderpass{CreateRenderpass(false)},
+#ifdef ANDROID
+      direct_present_renderpass{CreateRenderpass(true)},
+#endif
       vsync_enabled{Settings::values.use_vsync.GetValue()},
       blit_supported{
           CanBlitToSwapchain(instance.GetPhysicalDevice(), swapchain.GetSurfaceFormat().format)},
@@ -133,6 +144,9 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
             SetObjectName(device, frame.image_acquired, "Frame Semaphore: image_acquired {}", i);
         }
     }
+#ifdef ANDROID
+    CreateDirectFramebuffers();
+#endif
 
     if (use_present_thread) {
         present_thread = std::jthread([this](std::stop_token token) { PresentThread(token); });
@@ -142,9 +156,13 @@ PresentWindow::PresentWindow(Frontend::EmuWindow& emu_window_, const Instance& i
 PresentWindow::~PresentWindow() {
     scheduler.Finish();
     const vk::Device device = instance.GetDevice();
+#ifdef ANDROID
+    DestroyDirectFramebuffers();
+    device.destroyRenderPass(direct_present_renderpass);
+#endif
     device.destroyRenderPass(present_renderpass);
     for (auto& frame : swap_chain) {
-        device.destroyFramebuffer(frame.framebuffer);
+        device.destroyFramebuffer(frame.fallback_framebuffer);
         device.destroyImageView(frame.image_view);
         device.destroySemaphore(frame.image_acquired);
         if (frame.image) {
@@ -155,8 +173,8 @@ PresentWindow::~PresentWindow() {
 
 void PresentWindow::RecreateFrame(Frame* frame, u32 width, u32 height) {
     vk::Device device = instance.GetDevice();
-    if (frame->framebuffer) {
-        device.destroyFramebuffer(frame->framebuffer);
+    if (frame->fallback_framebuffer) {
+        device.destroyFramebuffer(frame->fallback_framebuffer);
     }
     if (frame->image_view) {
         device.destroyImageView(frame->image_view);
@@ -218,7 +236,10 @@ void PresentWindow::RecreateFrame(Frame* frame, u32 width, u32 height) {
         .height = height,
         .layers = 1,
     };
-    frame->framebuffer = instance.GetDevice().createFramebuffer(framebuffer_info);
+    frame->fallback_framebuffer = instance.GetDevice().createFramebuffer(framebuffer_info);
+    frame->framebuffer = frame->fallback_framebuffer;
+    frame->renderpass = present_renderpass;
+    frame->direct_present = false;
 
     frame->width = width;
     frame->height = height;
@@ -270,17 +291,56 @@ Frame* PresentWindow::GetRenderFrame() {
     if (frame->submit_tick != 0) {
         scheduler.Wait(frame->submit_tick);
     }
+    frame->framebuffer = frame->fallback_framebuffer;
+    frame->renderpass = present_renderpass;
+    frame->direct_present = false;
     return frame;
 }
+
+#ifdef ANDROID
+bool PresentWindow::TryPrepareDirectPresent(Frame* frame) {
+    std::scoped_lock lock{swapchain_mutex};
+    const vk::Extent2D extent = swapchain.GetExtent();
+    if (swapchain.NeedsRecreation() ||
+        !CanRenderDirectToSwapchain(frame->width, frame->height, extent.width, extent.height) ||
+        direct_framebuffers.size() != swapchain.GetImageCount()) {
+        return false;
+    }
+
+    AcquiredSwapchainImage acquired_image;
+    if (swapchain.AcquireNextImage(frame->image_acquired, acquired_image) !=
+        SwapchainAcquireResult::Success) {
+        return false;
+    }
+
+    frame->present_image = acquired_image.image;
+    frame->present_image_index = acquired_image.index;
+    frame->present_ready = acquired_image.present_ready;
+    frame->present_valid = true;
+    frame->framebuffer = direct_framebuffers[acquired_image.index];
+    frame->renderpass = direct_present_renderpass;
+    frame->direct_present = true;
+    return true;
+}
+#endif
 
 void PresentWindow::Present(Frame* frame) {
     VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCombinedSubmissions);
     const auto prepare = [this, frame](vk::CommandBuffer cmdbuf) {
-        PrepareForPresent(cmdbuf, frame);
+        if (frame->direct_present) {
+            VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentFrames);
+            VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentDirectRenders);
+            VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentPixels,
+                                            static_cast<u64>(frame->width) * frame->height);
+        } else {
+            PrepareForPresent(cmdbuf, frame);
+        }
         return Scheduler::SubmissionSemaphores{
             .signal = frame->present_valid ? frame->present_ready : vk::Semaphore{},
             .wait = frame->present_valid ? frame->image_acquired : vk::Semaphore{},
-            .wait_stage = vk::PipelineStageFlagBits::eTransfer,
+            .wait_stage = frame->direct_present
+                              ? vk::PipelineStageFlagBits::eColorAttachmentOutput
+                              : vk::PipelineStageFlagBits::eTransfer,
         };
     };
 
@@ -376,7 +436,13 @@ void PresentWindow::RecreateSwapchain(Frame* frame) {
 #endif
     std::scoped_lock submit_lock{scheduler.submit_mutex};
     graphics_queue.waitIdle();
+#ifdef ANDROID
+    DestroyDirectFramebuffers();
+#endif
     swapchain.Create(frame->width, frame->height, surface, low_refresh_rate);
+#ifdef ANDROID
+    CreateDirectFramebuffers();
+#endif
 }
 
 void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
@@ -404,6 +470,7 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
 
     std::unique_lock swapchain_lock{swapchain_mutex};
     frame->present_valid = false;
+    frame->direct_present = false;
 
 #ifndef ANDROID
     const bool use_vsync = Settings::values.use_vsync.GetValue();
@@ -555,7 +622,7 @@ void PresentWindow::FinishPresent(Frame* frame) {
     frame->present_valid = false;
 }
 
-vk::RenderPass PresentWindow::CreateRenderpass() {
+vk::RenderPass PresentWindow::CreateRenderpass(bool direct_to_swapchain) {
     const vk::AttachmentReference color_ref = {
         .attachment = 0,
         .layout = vk::ImageLayout::eGeneral,
@@ -577,8 +644,20 @@ vk::RenderPass PresentWindow::CreateRenderpass() {
         .storeOp = vk::AttachmentStoreOp::eStore,
         .stencilLoadOp = vk::AttachmentLoadOp::eDontCare,
         .stencilStoreOp = vk::AttachmentStoreOp::eDontCare,
-        .initialLayout = vk::ImageLayout::eGeneral,
-        .finalLayout = vk::ImageLayout::eTransferSrcOptimal,
+        .initialLayout =
+            direct_to_swapchain ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral,
+        .finalLayout = direct_to_swapchain ? vk::ImageLayout::ePresentSrcKHR
+                                           : vk::ImageLayout::eTransferSrcOptimal,
+    };
+
+    const vk::SubpassDependency acquire_dependency = {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        .dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        .srcAccessMask = vk::AccessFlagBits::eNone,
+        .dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite,
+        .dependencyFlags = vk::DependencyFlagBits::eByRegion,
     };
 
     const vk::RenderPassCreateInfo renderpass_info = {
@@ -586,11 +665,65 @@ vk::RenderPass PresentWindow::CreateRenderpass() {
         .pAttachments = &color_attachment,
         .subpassCount = 1,
         .pSubpasses = &subpass,
-        .dependencyCount = 0,
-        .pDependencies = nullptr,
+        .dependencyCount = direct_to_swapchain ? 1u : 0u,
+        .pDependencies = direct_to_swapchain ? &acquire_dependency : nullptr,
     };
 
     return instance.GetDevice().createRenderPass(renderpass_info);
 }
+
+#ifdef ANDROID
+void PresentWindow::CreateDirectFramebuffers() {
+    if (swapchain.NeedsRecreation()) {
+        return;
+    }
+
+    const vk::Device device = instance.GetDevice();
+    const vk::Format format = swapchain.GetSurfaceFormat().format;
+    const vk::Extent2D extent = swapchain.GetExtent();
+    const auto& images = swapchain.GetImages();
+
+    direct_image_views.reserve(images.size());
+    direct_framebuffers.reserve(images.size());
+    for (const vk::Image image : images) {
+        const vk::ImageViewCreateInfo view_info = {
+            .image = image,
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .subresourceRange{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        };
+        direct_image_views.push_back(device.createImageView(view_info));
+
+        const vk::ImageView image_view = direct_image_views.back();
+        const vk::FramebufferCreateInfo framebuffer_info = {
+            .renderPass = direct_present_renderpass,
+            .attachmentCount = 1,
+            .pAttachments = &image_view,
+            .width = extent.width,
+            .height = extent.height,
+            .layers = 1,
+        };
+        direct_framebuffers.push_back(device.createFramebuffer(framebuffer_info));
+    }
+}
+
+void PresentWindow::DestroyDirectFramebuffers() {
+    const vk::Device device = instance.GetDevice();
+    for (const vk::Framebuffer framebuffer : direct_framebuffers) {
+        device.destroyFramebuffer(framebuffer);
+    }
+    for (const vk::ImageView image_view : direct_image_views) {
+        device.destroyImageView(image_view);
+    }
+    direct_framebuffers.clear();
+    direct_image_views.clear();
+}
+#endif
 
 } // namespace Vulkan

@@ -206,8 +206,13 @@ void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& 
     }
 
     renderpass_cache.EndRendering();
+#ifdef HAVE_LIBRETRO
+    const vk::RenderPass present_renderpass = main_present_window.Renderpass();
+#else
+    const vk::RenderPass present_renderpass = frame->renderpass;
+#endif
     scheduler.Record([this, layout, frame, present_set, clear = clear_color,
-                      renderpass = main_present_window.Renderpass(),
+                      renderpass = present_renderpass,
                       index = current_pipeline](vk::CommandBuffer cmdbuf) {
         const vk::Viewport viewport = {
             .x = 0.0f,
@@ -257,6 +262,10 @@ void RendererVulkan::RenderToWindow(PresentWindow& window, const Layout::Framebu
             scheduler.Finish();
             window.RecreateFrame(frame, layout.width, layout.height);
         }
+
+#ifdef ANDROID
+        window.TryPrepareDirectPresent(frame);
+#endif
 
         clear_color.float32[0] = Settings::values.bg_red.GetValue();
         clear_color.float32[1] = Settings::values.bg_green.GetValue();

@@ -74,6 +74,10 @@ public:
         return extent;
     }
 
+    const std::vector<vk::Image>& GetImages() const {
+        return images;
+    }
+
 private:
     /// Selects the best available swapchain image format
     void FindPresentFormat();
