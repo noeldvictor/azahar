@@ -14,6 +14,7 @@
 #include "common/settings.h"
 #include "core/memory.h"
 #include "video_core/custom_textures/custom_tex_manager.h"
+#include "video_core/frame_profile.h"
 #include "video_core/pica/regs_external.h"
 #include "video_core/pica/regs_internal.h"
 #include "video_core/rasterizer_cache/rasterizer_cache_base.h"
@@ -278,6 +279,9 @@ bool RasterizerCache<T>::AccelerateTextureCopy(const Pica::DisplayTransferConfig
         .dst_offset = {dst_rect.left, dst_rect.bottom},
         .extent = {src_rect.GetWidth(), src_rect.GetHeight()},
     };
+    AddFrameProfileEvent(FrameProfileEvent::AcceleratedTextureCopies);
+    AddFrameProfileEvent(FrameProfileEvent::AcceleratedTextureCopyPixels,
+                         static_cast<u64>(texture_copy.extent.width) * texture_copy.extent.height);
     runtime.CopyTextures(src_surface, dst_surface, texture_copy);
 
     InvalidateRegion(dst_params.addr, dst_params.size, dst_surface_id);
@@ -348,6 +352,9 @@ bool RasterizerCache<T>::AccelerateDisplayTransfer(const Pica::DisplayTransferCo
         .src_rect = src_rect,
         .dst_rect = dst_rect,
     };
+    AddFrameProfileEvent(FrameProfileEvent::AcceleratedDisplayTransfers);
+    AddFrameProfileEvent(FrameProfileEvent::AcceleratedDisplayTransferPixels,
+                         static_cast<u64>(dst_rect.GetWidth()) * dst_rect.GetHeight());
     runtime.BlitTextures(src_surface, dst_surface, texture_blit);
 
     InvalidateRegion(dst_params.addr, dst_params.size, dst_surface_id);
@@ -465,6 +472,9 @@ void RasterizerCache<T>::CopySurface(Surface& src_surface, Surface& dst_surface,
             .dst_offset = {dst_rect.left, dst_rect.bottom},
             .extent = {src_rect.GetWidth(), src_rect.GetHeight()},
         };
+        AddFrameProfileEvent(FrameProfileEvent::SurfaceValidationCopies);
+        AddFrameProfileEvent(FrameProfileEvent::SurfaceValidationCopyPixels,
+                             static_cast<u64>(copy.extent.width) * copy.extent.height);
         runtime.CopyTextures(src_surface, dst_surface, copy);
     } else {
         const TextureBlit blit = {
@@ -473,6 +483,9 @@ void RasterizerCache<T>::CopySurface(Surface& src_surface, Surface& dst_surface,
             .src_rect = src_rect,
             .dst_rect = dst_rect,
         };
+        AddFrameProfileEvent(FrameProfileEvent::SurfaceValidationBlits);
+        AddFrameProfileEvent(FrameProfileEvent::SurfaceValidationBlitPixels,
+                             static_cast<u64>(dst_rect.GetWidth()) * dst_rect.GetHeight());
         runtime.BlitTextures(src_surface, dst_surface, blit);
     }
 }

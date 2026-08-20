@@ -116,6 +116,18 @@ void ReportFrameProfileWindow() {
              values[Index(FrameProfileEvent::TextureScaleBlits)],
              values[Index(FrameProfileEvent::TextureScaleBlitPixels)] / 1'000'000.0);
     LOG_INFO(Render_Vulkan,
+             "ThorFrameProfile cache_paths texture_copy={} texture_copy_mpix={:.3f} "
+             "display_transfer={} display_transfer_mpix={:.3f} validation_copy={} "
+             "validation_copy_mpix={:.3f} validation_blit={} validation_blit_mpix={:.3f}",
+             values[Index(FrameProfileEvent::AcceleratedTextureCopies)],
+             values[Index(FrameProfileEvent::AcceleratedTextureCopyPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::AcceleratedDisplayTransfers)],
+             values[Index(FrameProfileEvent::AcceleratedDisplayTransferPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::SurfaceValidationCopies)],
+             values[Index(FrameProfileEvent::SurfaceValidationCopyPixels)] / 1'000'000.0,
+             values[Index(FrameProfileEvent::SurfaceValidationBlits)],
+             values[Index(FrameProfileEvent::SurfaceValidationBlitPixels)] / 1'000'000.0);
+    LOG_INFO(Render_Vulkan,
              "ThorFrameProfile present blits={} copies={} direct={} mpix={:.3f} "
              "queue_wait_ms_per_swap={:.3f} combined_submissions={}",
              values[Index(FrameProfileEvent::PresentBlits)],
