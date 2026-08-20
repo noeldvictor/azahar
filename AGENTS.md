@@ -129,6 +129,10 @@
   Caller attribution found that the ordinary no-signal lock was only about 0.05% of whole-app
   sampled cycles; changing asynchronous reset/save/load/shutdown timing for that cost misses the
   forest. Reconsider only with stronger normal-build evidence and explicit concurrency coverage.
+- Do not restore the rejected `dirty_regions.empty()` early return in `RasterizerCache::FlushRegion`
+  without new attribution. A three-run 7th Dragon total looked about 0.5% lower, but the function's
+  own sampled share rose from 1.03% to 1.12%; the dirty map was not the ranked self-cost and the
+  apparent total was noise. Required dirty-surface downloads and interval ownership remain intact.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

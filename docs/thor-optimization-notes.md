@@ -599,6 +599,12 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and no fatal log appeared.
   Debug-app CheckJNI magnifies the boundary cost, so this is accepted only as exact recurring-work
   elimination, not as a normal-Lite FPS or watt improvement.
+- A follow-up `dirty_regions.empty()` early return in `RasterizerCache::FlushRegion` was rejected
+  and reverted. Three candidate runs appeared to reduce mean task-clock 0.51%, cycles 0.49%, and
+  instructions 0.37%, but the ranked function itself rose from 1.03% to 1.12% of sampled cycles.
+  The dirty map therefore was not usually empty in this workload, and the apparent aggregate change
+  was run noise rather than attribution-confirmed work removal. Required interval ownership and
+  dirty-surface download behavior remain unchanged; this is not entry 156.
 - A device-policy follow-up checked the forest-level power control before selecting another small
   code path. The Thor Quick Settings UI identified `performance_mode=2` as High Performance. In the
   final profiling-off 7th Dragon title scene it pinned Adreno at 615 MHz, used 517 process CPU ticks
