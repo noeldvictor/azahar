@@ -1612,6 +1612,52 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   not battery-discharge evidence. The physical mean and nearest-rank P95 power at or below 6 W gate
   remains open.
 
+## Consecutive Vulkan Texture-Descriptor Reuse Rejection (2026-08-20)
+
+- Entry 167 tested a one-entry cache for consecutive ordinary texture descriptor sets in the fresh
+  Super Mario 3D Land profile. The candidate still resolved and validated all three texture
+  surfaces and samplers, but reused the prior descriptor set when the exact image views, samplers,
+  and rasterizer-cache surface generation matched. It retained the set through the current GPU tick
+  and avoided redundant descriptor updates and binds. Cube descriptors kept the established route.
+  A successful full 2,203-action ARM64 build produced a 32,447,243-byte profiling-off candidate APK
+  with SHA-256 `B2891AB29EA2154F713B571D56F0E3A912A81D399C1BD47B7FC4F062D80227E1`;
+  its 460,158,192-byte unstripped library has SHA-256
+  `1C08A6D5726AD6766A96C3D85E19B51C45F71C602A8580AC4D11885D167B329B`.
+- The physical Thor bracket alternated the preserved Entry 166 control and this candidate three
+  times. Every run used Wi-Fi ADB, exact program ID `0004000000054000`, generic Turnip R8 metadata,
+  Mesa 25.99.99, Adreno 740, Vulkan 1.4.335, the accepted config, modes 2/4, brightness 255, a
+  45-second cold warmup, and a 30-second 4-kHz user-cycle call graph. All six profiles lost zero
+  samples. All six logs matched the title and driver and had no fatal, device-lost, or ANR match.
+  Control 2/Candidate 3 and Candidate 2/Control 3 captured the same two frames in swapped order,
+  with exact screenshot SHA-256 values
+  `C4BE5AF1CCB3D238CCA83F07D952F04B6114E2725DB41B1566022D90CA134A4F` and
+  `CADC7C9DFDAF921E2104F523EB75EB49287EA6FA87F711AB2D8CCCE9071DBDBE`.
+
+  | Alternating run | Process cycles | `AccelerateDrawBatch` cycles | `SyncTextureUnits` cycles | Descriptor-update self cycles | Descriptor-bind self cycles |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | Control 1 | 17,413,061,757 | 2,010,554,943 | 218,981,274 | 114,699,123 | 81,049,003 |
+  | Candidate 1 | 17,179,104,958 | 1,974,771,957 | 225,017,311 | 65,062,287 | 64,508,107 |
+  | Control 2 | 16,854,788,318 | 1,998,420,316 | 200,466,187 | 107,442,710 | 68,989,212 |
+  | Candidate 2 | 16,354,027,857 | 1,795,382,101 | 195,436,075 | 61,677,531 | 72,021,495 |
+  | Control 3 | 16,292,947,527 | 1,826,772,537 | 201,856,182 | 105,275,739 | 86,644,608 |
+  | Candidate 3 | 17,381,589,303 | 2,044,176,664 | 228,904,639 | 74,512,773 | 62,908,936 |
+
+- The cache did reduce its intended leaves: aggregate descriptor-update self cycles fell
+  38.533357%, descriptor-bind self cycles fell 15.735948%, and descriptor-pool commit self cycles
+  fell 36.207488%. Including the cache's own `SyncTextureUnits()` self work, those four direct
+  costs fell 22.620343% raw and 23.158234% in process-normalized share. This is real targeted-path
+  evidence, not a whole-emulator win.
+- The forest-level gate did not clear. Aggregate process work rose 0.699998%, complete
+  `AccelerateDrawBatch()` work fell only 0.366998% raw, and its normalized share fell 1.059579%.
+  `SyncTextureUnits()` itself rose 4.515406% inclusive and 3.788886% in normalized share because the
+  exact surface/sampler comparisons remained recurring work. Animated-scene variation is larger
+  than the complete-path delta, so the result cannot support an FPS or energy claim.
+- The 128-line, seven-file candidate was fully reverted with no source delta left. Entry 167 does
+  not raise the 163 active accepted-entry count. Reconsider descriptor reuse only with a simpler
+  ownership design or a title/scene where complete draw-path or frame-level work falls materially,
+  not merely because driver leaf calls decline. The Thor was wall-powered, so the discharging-
+  battery mean and nearest-rank P95 at or below 6 W gate remains open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

@@ -503,6 +503,13 @@
   aggregate `SetupVertexArray()` regression; its process-normalized share rose 3.55%. Keep the two
   reservations until a materially different implementation beats the complete recurring path, not
   just its helper-call count.
+- Do not restore the rejected one-entry Vulkan texture-descriptor cache merely to reduce Turnip
+  descriptor-update/bind calls. Three alternating Super Mario 3D Land pairs reduced those driver
+  leaves 38.53%/15.74% and the combined direct-cost share 23.16%, but complete
+  `AccelerateDrawBatch()` work moved only -0.37% raw while total sampled work rose 0.70%, and
+  `SyncTextureUnits()` inclusive share rose 3.79%. Reconsider only with a simpler ownership design
+  or a matched title/scene showing a material complete-path or frame-level win; exact image-view,
+  sampler, surface-generation, cube-shape, and GPU-lifetime guards remain mandatory.
 - Do not enable the blending subset of `VK_EXT_extended_dynamic_state3` merely because Turnip R8
   advertises it. The physical Thor confirmed all four required logic-op-enable, blend-enable,
   blend-equation, and color-write-mask features and rendered the exact Super Mario 3D Land loop
