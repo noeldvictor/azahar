@@ -1663,8 +1663,9 @@ class EmulationFragment :
     }
 
     override fun doFrame(frameTimeNanos: Long) {
-        Choreographer.getInstance().postFrameCallback(this)
-        NativeLibrary.doFrame()
+        if (NativeLibrary.doFrame()) {
+            Choreographer.getInstance().postFrameCallback(this)
+        }
     }
 
     private val applyCutoutInsets: (View, WindowInsetsCompat) -> WindowInsetsCompat = {

@@ -23,6 +23,9 @@ public:
                              EGLContext* sharedContext = NULL);
     ~EmuWindow_Android_OpenGL() override = default;
 
+    [[nodiscard]] bool RequiresFrameCallback() const override {
+        return true;
+    }
     void TryPresenting() override;
     void StopPresenting() override;
     void PollEvents() override;

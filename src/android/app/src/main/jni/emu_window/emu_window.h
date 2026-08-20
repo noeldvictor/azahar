@@ -30,6 +30,9 @@ public:
 
     void DoneCurrent() override;
 
+    [[nodiscard]] virtual bool RequiresFrameCallback() const {
+        return false;
+    }
     virtual void TryPresenting() {}
     // EGL Context must be shared
     // could probably use the existing

@@ -177,7 +177,8 @@ object NativeLibrary {
     // Surface Handling
     external fun surfaceChanged(surf: Surface)
     external fun surfaceDestroyed()
-    external fun doFrame()
+    /** Returns whether the active renderer needs another display-vsync callback. */
+    external fun doFrame(): Boolean
 
     // Second window
     external fun secondarySurfaceChanged(secondary_surface: Surface)

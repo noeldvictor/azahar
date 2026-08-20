@@ -512,17 +512,24 @@ void Java_org_citra_citra_1emu_NativeLibrary_surfaceDestroyed([[maybe_unused]] J
     }
 }
 
-void Java_org_citra_citra_1emu_NativeLibrary_doFrame([[maybe_unused]] JNIEnv* env,
-                                                     [[maybe_unused]] jobject obj) {
-    if (stop_run || pause_emulation) {
-        return;
+jboolean Java_org_citra_citra_1emu_NativeLibrary_doFrame([[maybe_unused]] JNIEnv* env,
+                                                         [[maybe_unused]] jobject obj) {
+    // Keep the callback alive while the emulation thread is constructing its window. Once it is
+    // running, Vulkan presents from its own renderer thread and doesn't need a Java vsync wakeup.
+    if (stop_run || !window) {
+        return JNI_TRUE;
     }
-    if (window) {
+
+    const bool requires_frame_callback =
+        window->RequiresFrameCallback() ||
+        (secondary_window && secondary_window->RequiresFrameCallback());
+    if (!pause_emulation) {
         window->TryPresenting();
+        if (secondary_window) {
+            secondary_window->TryPresenting();
+        }
     }
-    if (secondary_window) {
-        secondary_window->TryPresenting();
-    }
+    return static_cast<jboolean>(requires_frame_callback);
 }
 
 void JNICALL Java_org_citra_citra_1emu_NativeLibrary_initializeGpuDriver(
