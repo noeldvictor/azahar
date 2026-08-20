@@ -602,6 +602,16 @@ accelerated guest PICA texture-copy or display-transfer command; cache-validatio
 zero. Those guest-visible operations are deliberately not being mislabeled as disposable host
 overhead.
 
+Optimization 153 skips a redundant Dynarmic context save/load when the scheduler reselects a CPU
+whose live JIT already targets the exact same shared page table. Initial JIT setup and real process
+page-table changes retain the established save, JIT lookup/creation, and restore path. In three
+matched 15-second Simpleperf runs on the same 7th Dragon title scene, mean task-clock fell 2.622%,
+CPU cycles fell 2.656%, and retired instructions fell 5.350%; `SetPageTable` itself fell from 2.57%
+to 0.45% of sampled cycles. The candidate ran at a slightly lower sampled frequency, and both 7th
+Dragon and Art Academy reproduced their retained screenshot hashes with no page-table, fastmem,
+fatal, or Vulkan device-lost logs. The Thor remained AC-powered, so this is a CPU-work result rather
+than a battery-watt claim.
+
 The AArch64 PICA `RSQ` helper now follows the x64 backend's approximate reciprocal-square-root
 contract with one scalar hardware estimate and one Newton refinement instead of exact `FSQRT` plus
 `FDIV`. A pinned Thor microbenchmark measured the isolated operation 16.2% to 43.2% faster across

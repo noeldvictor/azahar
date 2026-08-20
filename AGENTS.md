@@ -93,6 +93,13 @@
   faults while booting Art Academy and 7th Dragon on the Thor. Any future page-table representation
   change requires real A32 JIT memory coverage plus multi-title on-device boot/render validation;
   a successful compile and pointer round-trip test are not sufficient.
+- Preserve the redundant Dynarmic page-table reload guard from commit `10cb11ad7`. `SetPageTable`
+  may return early only when a live JIT already targets the identical shared `PageTable` object;
+  initial JIT construction and every actual table change must retain the established context save,
+  JIT lookup/creation, and context restore. On the steady 7th Dragon title, three matched 15-second
+  Simpleperf runs reduced mean task-clock 2.622%, cycles 2.656%, and retired instructions 5.350%,
+  while the symbol's sampled share fell from 2.57% to 0.45%. Preserve the byte-identical 7th Dragon
+  and Art Academy screenshots and multi-title no-fault device checks.
 - Dynarmic A32 keeps guest NZCV in reserved callee-saved `W23`. `A32SetCpsrNZCV` must load its IR
   argument directly into `X23` through `ReadIntoFixedRegister()` so a flags value becomes one
   `MRS X23, NZCV`, not `MRS Xtemp, NZCV` plus `MOV W23, Wtemp`. Fixed-register reads may target

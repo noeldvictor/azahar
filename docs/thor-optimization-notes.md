@@ -531,6 +531,23 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `206B09DE56B0A5078A60715E18756CB7AB9F468E8E2445A09BA72F5EE9CE1FDF`. It reports package
   `org.azahar_emu.azahar.debug`, version `57044971c-vanilla-thor`, minimum SDK 29, and target SDK 37,
   installed successfully over Wi-Fi ADB, and booted the same title without profiler log lines.
+- Entry 153 targets the next measured CPU cost without changing page-table representation.
+  Simpleperf attributed 2.57% of a steady 30-second 7th Dragon title capture to
+  `ARM_Dynarmic::SetPageTable`. The scheduler commonly passed the exact same shared page-table
+  object to a live JIT, but the function still copied the complete register banks out and back into
+  that same JIT. Commit `10cb11ad7` returns only for that exact live-JIT/same-object case; initial
+  JIT construction and real page-table changes retain context save, lookup/creation, and restore.
+- Three matched 15-second baseline runs averaged 4,162.069 ms task-clock, 8.093625 billion cycles,
+  and 2.749295 billion retired instructions. Three candidate runs averaged 4,052.940 ms,
+  7.878676 billion cycles, and 2.602196 billion instructions: reductions of 2.622%, 2.656%, and
+  5.350%, respectively. Mean sampled frequency also fell from 1.893561 to 1.888335 GHz. A second
+  30-second profile reduced `SetPageTable` itself from 2.57% to 0.45% of sampled cycles.
+- The native test executable linked, 7th Dragon reproduced screenshot SHA-256
+  `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and Art Academy reproduced
+  `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`. Both titles remained alive
+  without page-table, fastmem, fatal, or Vulkan device-lost logs. The measurements used a temporary
+  debuggable package with native frame profiling disabled; the Lite package remains the acceptance
+  and battery-power target.
 - Power remains an explicit open gate. Both 60 Hz panels were on, primary brightness was 255,
   secondary brightness was 100, Thor performance mode was 2, fan mode was 4, and Adreno was held
   at 615 MHz. The normal build's single steady sample used 25.54% of one CPU core with KGSL busy
@@ -538,9 +555,9 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `current_now=0`. Those are utilization observations only. No watt, thermal, battery-life, or
   whole-game FPS improvement is claimed until the charger is physically unplugged and a matched
   discharge capture confirms the required ceiling.
-- Entry 152 raises the ledger to 152 numbered entries and 151 active accepted entries because the
-  unsafe absolute-offset ARM64 page-table entry remains withdrawn. It is a recurring presentation-
-  traffic reduction, not an additive speed percentage.
+- Entry 153 raises the ledger to 153 numbered entries and 152 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. Entries 152 and 153 are measured
+  recurring presentation-traffic and CPU-work reductions, not additive speed percentages.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
