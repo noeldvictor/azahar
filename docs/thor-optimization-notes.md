@@ -567,12 +567,12 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C` and Art Academy SHA-256
   `5C64ED5BC0A4B10DF61376E71498D8285D0C48B2A9663B7E2EBD27D7187DF932`, and emitted no fatal log.
   AC remained connected at 80%, so these observations do not prove lower battery watts.
-- The final profiling-off Lite APK from pushed documentation/source head `d48fdce02` is ARM64-only,
-  29,010,488 bytes, and SHA-256
-  `F427B6571C059AA7037170A82C99D3D59AE5F16C6A71B857B120D2B68947AB98`. The installed package is
-  version `d48fdce02-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
+- The final profiling-off Lite APK built from pushed documentation/source head `e0ca802f7` is
+  ARM64-only, 29,009,132 bytes, and SHA-256
+  `44F4A213A5AE150F0C92A77727B9D6809377888B6937CC1018FD83F65428EF18`. The installed package is
+  version `e0ca802f7-vanilla-thor`, minimum SDK 29, target SDK 37, and non-debuggable; the native
   library contains no `ThorFrameProfile` string. Wi-Fi ADB installation succeeded, the final Lite
-  run reproduced 7th Dragon SHA-256
+  process remained alive and reproduced 7th Dragon SHA-256
   `E831B2637B609C064C21C0E7531D74DC30ADC5EB3F344466C43D6BF750A3F13C`, and its log contained no
   fatal, profiler, page-table, fastmem, or Vulkan device-lost evidence. The user's High Performance
   and smart-fan modes remained restored at values 2 and 4. AC remained connected at 80%, 4.264 V,
