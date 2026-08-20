@@ -28,6 +28,14 @@ param(
     [double]$MaxP95PresentIntervalMs = 40.0,
     [ValidateRange(0, 10000)]
     [int]$MaxPresentIntervalsOver50Ms = 0,
+    [ValidateRange(1, 384000)]
+    [int]$ExpectedAudioSampleRate = 32728,
+    [ValidateRange(1, 96000)]
+    [int]$MaxAudioFrameCount = 2048,
+    [ValidateRange(1.0, 5000.0)]
+    [double]$MaxAudioLatencyMs = 150.0,
+    [ValidateRange(0, 1000000)]
+    [int]$MaxAudioUnderruns = 0,
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
     [int]$ExpectedBrightness = -1,
@@ -257,6 +265,59 @@ function Test-SurfacePacingSnapshot {
     return $true
 }
 
+function ConvertFrom-AudioFlingerDump {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text,
+        [Parameter(Mandatory)]
+        [int]$ProcessId
+    )
+
+    $trackPattern = '^\s*\d+\s+yes\s+' + [regex]::Escape("$ProcessId") + '\s+'
+    $trackLines = @($Text -split "`r?`n" | Where-Object { $_ -match $trackPattern })
+    if ($trackLines.Count -ne 1) {
+        throw "Expected one active AudioFlinger track for PID $ProcessId, found $($trackLines.Count)."
+    }
+    $fields = @($trackLines[0].Trim() -split '\s+')
+    if ($fields.Count -lt 24) {
+        throw "Incomplete AudioFlinger track for PID ${ProcessId}: '$($trackLines[0])'"
+    }
+    $frameCountMatch = [regex]::Match($fields[18], '^(\d+)[A-Za-z]*$')
+    if (-not $frameCountMatch.Success) {
+        throw "Invalid AudioFlinger frame count '$($fields[18])'."
+    }
+    $latencyMilliseconds = 0.0
+    if (-not [double]::TryParse(
+            $fields[23],
+            [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$latencyMilliseconds)) {
+        throw "Invalid AudioFlinger latency '$($fields[23])'."
+    }
+    return [pscustomobject]@{
+        TrackId = ConvertTo-Int64Invariant -Text $fields[0] -Name 'AudioFlinger track id'
+        ProcessId = ConvertTo-Int64Invariant -Text $fields[2] -Name 'AudioFlinger client pid'
+        SampleRate = ConvertTo-Int64Invariant -Text $fields[9] -Name 'AudioFlinger sample rate'
+        FrameCount = ConvertTo-Int64Invariant `
+            -Text $frameCountMatch.Groups[1].Value -Name 'AudioFlinger frame count'
+        FramesReady = ConvertTo-Int64Invariant -Text $fields[19] -Name 'AudioFlinger frames ready'
+        Underruns = ConvertTo-Int64Invariant -Text $fields[21] -Name 'AudioFlinger underruns'
+        LatencyMilliseconds = $latencyMilliseconds
+    }
+}
+
+function Test-AudioState {
+    param(
+        [Parameter(Mandatory)]
+        [object]$State
+    )
+
+    return $State.SampleRate -eq $ExpectedAudioSampleRate -and
+        $State.FrameCount -le $MaxAudioFrameCount -and
+        $State.LatencyMilliseconds -le $MaxAudioLatencyMs -and
+        $State.Underruns -le $MaxAudioUnderruns
+}
+
 function Invoke-SelfTest {
     $values = [double[]](@(1..19 | ForEach-Object { 5.0 }) + 6.0)
     $statistics = Get-SampleStatistics -Values $values
@@ -302,6 +363,20 @@ function Invoke-SelfTest {
     $pacingLayer.IntervalMilliseconds.P95 = 100.0
     if (Test-SurfacePacingSnapshot -Snapshot $pacingSnapshot) {
         throw 'Failing SurfaceFlinger pacing self-test failed.'
+    }
+    $audioFixture = @'
+           3589    yes   9639  141505    3566 A  0x000 00000001 00000003  32728  3   1  2  -inf     0     0     0  0019E36B   1962r   1819 A         0        0  117.56 t
+'@
+    $audioState = ConvertFrom-AudioFlingerDump -Text $audioFixture -ProcessId 9639
+    if (-not (Test-AudioState -State $audioState) -or $audioState.FrameCount -ne 1962 -or
+        $audioState.LatencyMilliseconds -ne 117.56) {
+        throw 'Passing AudioFlinger state self-test failed.'
+    }
+    $audioState.FrameCount = 4096
+    $audioState.LatencyMilliseconds = 271.84
+    $audioState.Underruns = 989
+    if (Test-AudioState -State $audioState) {
+        throw 'Failing AudioFlinger state self-test failed.'
     }
 
     $thermalSamples = @(
@@ -449,6 +524,26 @@ function Assert-SurfacePacingSnapshot {
 
     if (-not $Snapshot.Passed) {
         throw "${Phase}: SurfaceFlinger pacing failed. Expected $ExpectedSurfaceLayerCount layers, at least $MinMeasuredSurfaceLayerCount measurable layer(s), >= $MinPresentIntervalsPerMeasuredLayer intervals per measured layer, >= $MinMeanPresentedFps FPS, P95 <= $MaxP95PresentIntervalMs ms, and <= $MaxPresentIntervalsOver50Ms intervals over 50 ms."
+    }
+}
+
+function Get-AudioState {
+    $dump = Invoke-AdbText -Arguments @(
+        '-s', $Serial, 'shell', 'dumpsys', 'media.audio_flinger'
+    )
+    return ConvertFrom-AudioFlingerDump -Text $dump -ProcessId ([int]$devicePid)
+}
+
+function Assert-AudioState {
+    param(
+        [Parameter(Mandatory)]
+        [object]$State,
+        [Parameter(Mandatory)]
+        [string]$Phase
+    )
+
+    if (-not (Test-AudioState -State $State)) {
+        throw "${Phase}: AudioFlinger state failed. Expected $ExpectedAudioSampleRate Hz, <= $MaxAudioFrameCount frames, <= $MaxAudioLatencyMs ms latency, and <= $MaxAudioUnderruns underruns; found $($State.SampleRate) Hz, $($State.FrameCount) frames, $($State.LatencyMilliseconds) ms, and $($State.Underruns) underruns."
     }
 }
 
@@ -750,6 +845,8 @@ if ([string]::IsNullOrWhiteSpace(
 }
 $pacingBefore = Get-SurfacePacingSnapshot
 Assert-SurfacePacingSnapshot -Snapshot $pacingBefore -Phase 'After warmup'
+$audioBefore = Get-AudioState
+Assert-AudioState -State $audioBefore -Phase 'After warmup'
 
 $samples = [System.Collections.Generic.List[object]]::new()
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -779,6 +876,7 @@ if ($postflightPid -ne $devicePid) {
     throw "$Package restarted during measurement (PID $devicePid -> $postflightPid)."
 }
 $pacingAfter = Get-SurfacePacingSnapshot
+$audioAfter = Get-AudioState
 
 if ($shouldCapture) {
     $afterScreenshotHash = Save-DeviceScreenshot -Destination (
@@ -811,7 +909,9 @@ $workloadPassed = Test-WorkloadGate `
     -MinimumProcessCpuTicksPerSecond $MinProcessCpuTicksPerSecond `
     -MinimumMeanGpuBusyPercent $MinMeanGpuBusyPercent
 $pacingPassed = $pacingBefore.Passed -and $pacingAfter.Passed
-$passed = $powerPassed -and $workloadPassed -and $pacingPassed
+$audioPassed = (Test-AudioState -State $audioAfter) -and
+    $audioAfter.TrackId -eq $audioBefore.TrackId
+$passed = $powerPassed -and $workloadPassed -and $pacingPassed -and $audioPassed
 $chargeCounterDelta = [long]$samples[$samples.Count - 1].ChargeCounterMicroAmpHours -
     [long]$samples[0].ChargeCounterMicroAmpHours
 $meanVoltageMicroVolts = (
@@ -838,9 +938,14 @@ $summary = [pscustomobject]@{
         MinMeanPresentedFps = $MinMeanPresentedFps
         MaxP95PresentIntervalMs = $MaxP95PresentIntervalMs
         MaxPresentIntervalsOver50Ms = $MaxPresentIntervalsOver50Ms
+        ExpectedAudioSampleRate = $ExpectedAudioSampleRate
+        MaxAudioFrameCount = $MaxAudioFrameCount
+        MaxAudioLatencyMs = $MaxAudioLatencyMs
+        MaxAudioUnderruns = $MaxAudioUnderruns
         PowerPassed = $powerPassed
         WorkloadPassed = $workloadPassed
         PacingPassed = $pacingPassed
+        AudioPassed = $audioPassed
     }
     Power = $powerStatistics
     Temperature = [pscustomobject]@{
@@ -859,6 +964,10 @@ $summary = [pscustomobject]@{
     Pacing = [pscustomobject]@{
         Before = $pacingBefore
         After = $pacingAfter
+    }
+    Audio = [pscustomobject]@{
+        Before = $audioBefore
+        After = $audioAfter
     }
     Run = [pscustomobject]@{
         StartedUtc = $samples[0].TimestampUtc
@@ -887,15 +996,17 @@ $powerSummary = 'Power: mean={0:N3} W median={1:N3} W P95={2:N3} W max={3:N3} W'
 $temperatureSummary = 'Temperature: {0:N1}-{1:N1} C, slope={2:N3} C/min' -f $temperatureStatistics.Minimum, $temperatureStatistics.Maximum, $thermalSlope
 $workloadSummary = 'Workload: process={0:N2} CPU ticks/s, GPU busy mean={1:N2}%, GPU clock mean={2:N1} MHz' -f $processCpuTicksPerSecond, $gpuBusyStatistics.Mean, $gpuClockStatistics.Mean
 $pacingSummary = 'Pacing: start={0}/{1} measured layers, end={2}/{3}, passed={4}' -f $pacingBefore.MeasuredLayerCount, $pacingBefore.LayerCount, $pacingAfter.MeasuredLayerCount, $pacingAfter.LayerCount, $pacingPassed
+$audioSummary = 'Audio: {0} Hz, {1} frames, {2:N2} ms, underruns={3}, passed={4}' -f $audioAfter.SampleRate, $audioAfter.FrameCount, $audioAfter.LatencyMilliseconds, $audioAfter.Underruns, $audioPassed
 Write-Host $powerSummary
 Write-Host $temperatureSummary
 Write-Host $workloadSummary
 Write-Host $pacingSummary
+Write-Host $audioSummary
 Write-Host "Raw samples: $samplesPath"
 Write-Host "Summary: $summaryPath"
 
 if (-not $passed) {
-    Write-Error "Thor acceptance gate failed: power must remain within limits, the workload must stay active, and frame pacing must hold."
+    Write-Error "Thor acceptance gate failed: power, active workload, frame pacing, and clean low-latency audio must all hold."
     exit 2
 }
 
