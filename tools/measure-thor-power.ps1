@@ -39,7 +39,10 @@ param(
     [int]$ExpectedPerformanceMode = 0,
     [int]$ExpectedFanMode = 4,
     [int]$ExpectedBrightness = -1,
-    [string]$ExpectedVersionName = '37053eb9d-vanilla-thor',
+    [string]$ExpectedVersionName = 'bc25ea052-vanilla-thor',
+    [string]$ExpectedVulkanDriverName = 'Mesa Turnip driver v26.0.0 - R8',
+    [string]$ExpectedVulkanDriverVersion = 'Vulkan 1.4.335',
+    [string]$ExpectedVulkanDriverLibraryName = 'vulkan.ad07xx.so',
     [string]$ExpectedConfigSha256 =
         'EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21',
     [string]$ExpectedScreenshotSha256 = '',
@@ -318,6 +321,39 @@ function Test-AudioState {
         $State.Underruns -le $MaxAudioUnderruns
 }
 
+function ConvertFrom-VulkanDriverMetadataLog {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text
+    )
+
+    $metadataMatches = [regex]::Matches(
+        $Text,
+        '(?m)Active Vulkan driver metadata:\s*(\{[^\r\n]+\})\s*$'
+    )
+    if ($metadataMatches.Count -eq 0) {
+        throw 'Active Vulkan driver metadata was not found in the current process log.'
+    }
+
+    $json = $metadataMatches[$metadataMatches.Count - 1].Groups[1].Value
+    try {
+        $metadata = $json | ConvertFrom-Json
+    } catch {
+        throw "Active Vulkan driver metadata is invalid JSON: $json"
+    }
+    foreach ($propertyName in @('name', 'version', 'libraryName')) {
+        if ($metadata.PSObject.Properties.Name -notcontains $propertyName) {
+            throw "Active Vulkan driver metadata is missing '$propertyName': $json"
+        }
+    }
+
+    return [pscustomobject]@{
+        Name = [string]$metadata.name
+        Version = [string]$metadata.version
+        LibraryName = [string]$metadata.libraryName
+    }
+}
+
 function Invoke-SelfTest {
     $values = [double[]](@(1..19 | ForEach-Object { 5.0 }) + 6.0)
     $statistics = Get-SampleStatistics -Values $values
@@ -377,6 +413,24 @@ function Invoke-SelfTest {
     $audioState.Underruns = 989
     if (Test-AudioState -State $audioState) {
         throw 'Failing AudioFlinger state self-test failed.'
+    }
+    $driverFixture = @'
+I/CitraNative(19705): Frontend <Info>: [GpuDriverHelper] Active Vulkan driver metadata: {"name":"Mesa Turnip driver v26.0.0 - R8 SYSMEM","version":"Vulkan 1.4.335","libraryName":"vulkan.ad07xx.so"}
+I/CitraNative(19705): Frontend <Info>: [GpuDriverHelper] Active Vulkan driver metadata: {"name":"Mesa Turnip driver v26.0.0 - R8","version":"Vulkan 1.4.335","libraryName":"vulkan.ad07xx.so"}
+'@
+    $driverMetadata = ConvertFrom-VulkanDriverMetadataLog -Text $driverFixture
+    if ($driverMetadata.Name -ne 'Mesa Turnip driver v26.0.0 - R8' -or
+        $driverMetadata.Version -ne 'Vulkan 1.4.335' -or
+        $driverMetadata.LibraryName -ne 'vulkan.ad07xx.so') {
+        throw 'Vulkan-driver metadata parser self-test failed.'
+    }
+    try {
+        [void](ConvertFrom-VulkanDriverMetadataLog -Text 'VK_DRIVER: turnip Mesa driver 25.99.99')
+        throw 'Missing Vulkan-driver metadata self-test failed.'
+    } catch {
+        if ($_.Exception.Message -notmatch 'was not found') {
+            throw
+        }
     }
 
     $thermalSamples = @(
@@ -484,6 +538,13 @@ function Invoke-AdbText {
 function Get-DeviceBatteryState {
     $dump = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'dumpsys', 'battery')
     return ConvertFrom-BatteryDump -Text $dump
+}
+
+function Get-VulkanDriverMetadata {
+    $log = Invoke-AdbText -Arguments @(
+        '-s', $Serial, 'logcat', '-d', "--pid=$devicePid", '-v', 'brief'
+    )
+    return ConvertFrom-VulkanDriverMetadataLog -Text $log
 }
 
 function Get-SurfacePacingSnapshot {
@@ -785,6 +846,18 @@ if (-not $abiMatch.Success -or $abiMatch.Groups[1].Value -ne 'arm64-v8a') {
     throw "Installed primary ABI is '$($abiMatch.Groups[1].Value)'; expected arm64-v8a."
 }
 
+$vulkanDriver = Get-VulkanDriverMetadata
+if ($ExpectedVulkanDriverName -and $vulkanDriver.Name -ne $ExpectedVulkanDriverName) {
+    throw "Active Vulkan driver is '$($vulkanDriver.Name)'; expected '$ExpectedVulkanDriverName'."
+}
+if ($ExpectedVulkanDriverVersion -and $vulkanDriver.Version -ne $ExpectedVulkanDriverVersion) {
+    throw "Active Vulkan driver version is '$($vulkanDriver.Version)'; expected '$ExpectedVulkanDriverVersion'."
+}
+if ($ExpectedVulkanDriverLibraryName -and
+    $vulkanDriver.LibraryName -ne $ExpectedVulkanDriverLibraryName) {
+    throw "Active Vulkan driver library is '$($vulkanDriver.LibraryName)'; expected '$ExpectedVulkanDriverLibraryName'."
+}
+
 $performanceMode = [int](Get-RemoteSetting -Name 'performance_mode')
 $fanMode = [int](Get-RemoteSetting -Name 'fan_mode')
 $brightness = [int](Get-RemoteSetting -Name 'screen_brightness')
@@ -942,6 +1015,9 @@ $summary = [pscustomobject]@{
         MaxAudioFrameCount = $MaxAudioFrameCount
         MaxAudioLatencyMs = $MaxAudioLatencyMs
         MaxAudioUnderruns = $MaxAudioUnderruns
+        ExpectedVulkanDriverName = $ExpectedVulkanDriverName
+        ExpectedVulkanDriverVersion = $ExpectedVulkanDriverVersion
+        ExpectedVulkanDriverLibraryName = $ExpectedVulkanDriverLibraryName
         PowerPassed = $powerPassed
         WorkloadPassed = $workloadPassed
         PacingPassed = $pacingPassed
@@ -982,6 +1058,7 @@ $summary = [pscustomobject]@{
         Package = $Package
         Pid = $devicePid
         VersionName = $versionName
+        VulkanDriver = $vulkanDriver
         PerformanceMode = $performanceMode
         FanMode = $fanMode
         Brightness = $brightness
