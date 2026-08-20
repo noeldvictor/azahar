@@ -1370,6 +1370,81 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   AC-powered, so physical discharging-battery mean and nearest-rank P95 power at or below 6 W remain
   an open gate.
 
+## Generation-Guarded Aligned Texture Surface Selection Cache (2026-08-20)
+
+- Entry 164 follows the next ranked recurring rasterizer-cache subtree in the exact Super Mario 3D
+  Land workload. `RasterizerCache<Vulkan::Traits>::SyncTextureUnits()` consumed 1.57% inclusive in
+  the fresh post-entry-163 profile. Its ordinary aligned texture path repeatedly rebuilt identical
+  `SurfaceParams`, walked `GetSurface()`, and selected the same registered surface. Odd-sized
+  textures instead require an existing temporary-surface/blit path and were deliberately excluded.
+- The accepted path keeps four recent aligned selections in circular replacement order. A record
+  matches only the complete `SurfaceParams`, an explicit resolution scale, and the shared surface
+  topology generation; scale is compared separately because `SurfaceParams::operator==` omits it.
+  Registration, unregistration, slot replacement, cache clear, and scale-up already advance that
+  generation. A hit skips only `GetSurface()` selection and still calls `ValidateSurface()` over
+  the exact requested interval. Misses use the unchanged lookup and publish only a nonzero result.
+  The odd-size temporary texture creation, mipmap constraint, resource sentencing, and blit route
+  are unchanged.
+- The physical AYN Thor used Wi-Fi ADB at `192.168.1.33:5555`, exact program ID
+  `0004000000054000`, Mesa Turnip 25.99.99 / Adreno 740, the byte-identical accepted configuration,
+  at least 60 seconds of warmup per install, and 30-second 4-kHz user-cycle call-graph captures.
+  All four alternating control/candidate traces lost zero samples. The preserved control APK is
+  32,440,095 bytes with SHA-256
+  `817C0FCC9D6C6536A86C623C2BF3BEAE853D7874B05CD8FA2EC3B105520D873C`; the profiled candidate APK
+  is 32,440,671 bytes with SHA-256
+  `E3AA9758AAD86FC12EF7B053B99A747E1EFBD23FC1147AC107205C0490839465`.
+
+  | Alternating run | Samples | Process cycles | `SyncTextureUnits` cycles | `GetTextureSurface` cycles | Aligned `GetSurface` cycles | `ValidateSurface` cycles |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Control 1 | 43,543 | 16,604,098,863 | 260,227,114 | 100,738,264 | 140,120,581 | 122,335,330 |
+  | Candidate 1 | 46,051 | 16,946,857,220 | 199,289,658 | 79,874,754 | 110,258,696 | 113,686,734 |
+  | Control 2 | 47,477 | 17,752,744,424 | 250,036,613 | 112,986,536 | 135,274,421 | 128,905,504 |
+  | Candidate 2 | 48,871 | 17,798,350,739 | 218,932,488 | 83,735,273 | 96,402,668 | 126,050,059 |
+
+- Aggregating raw cycles on each side, texture synchronization fell from 1.485188% to 1.203683% of
+  process work, an 18.95% relative reduction and 0.281505 process-percentage-point saving.
+  `GetTextureSurface()` fell from 0.622073% to 0.470885% (24.30% relative), and the aligned
+  `GetSurface()` subtree fell from 0.801572% to 0.594791% (25.80% relative). The small cache
+  comparisons increased `GetTextureSurface()` self share from 0.051840% to 0.084340%, but the
+  avoided lookup was materially larger. `ValidateSurface()` changed from 0.731269% to 0.689985%
+  (5.65% relative), close enough to animated-scene variation that no validation win is claimed.
+  Inspected frames remained visually clean at the capped 58-60 FPS range.
+- The final source layout moves the independently testable record contract into
+  `surface_selection_cache.h` without changing the profiled runtime algorithm. The physical-Thor
+  focused rasterizer-cache suite passed 24 assertions in five cases, including exact parameters,
+  generation changes, explicit scale changes despite base equality, and invalid records. The final
+  ARM64 source build after test extraction succeeded in 1 minute 32 seconds. Source/test commit
+  `1e2c106bc` was pushed directly to `origin/master`.
+- The exact post-commit JDK 21 `:app:assembleVanillaRelWithDebInfoLite
+  -PthorFrameProfiling=false --no-configuration-cache` production build passed in 2 minutes 42
+  seconds. The ARM64-only APK is 29,012,988 bytes with SHA-256
+  `FB110D6656C2B65D7D0317025533AA960F471C778869EF684652D22EC20A83D5`. It reports package
+  `org.azahar_emu.azahar.debug`, version `1e2c106bc-vanilla-thor`, minimum SDK 29, target SDK 37,
+  and no manifest `DEBUGGABLE` attribute. APK Signature Scheme v2 verification passed with the
+  established signer-certificate SHA-256
+  `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`. The active native cache
+  records `ENABLE_THOR_FRAME_PROFILING=OFF`, and the unstripped production library contains no
+  Thor frame-profiler marker or warning string. The strict power-tool default now names this exact
+  production version, and its deterministic self-test passes.
+- Wi-Fi ADB installed that exact APK, and the on-device base APK reproduced SHA-256
+  `FB110D6656C2B65D7D0317025533AA960F471C778869EF684652D22EC20A83D5`. The accepted configuration
+  remained byte-identical at SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`; Thor performance/fan modes
+  remained 2/4 and primary brightness remained 255. Super Mario 3D Land reported exact program ID
+  `0004000000054000`, Turnip Mesa 25.99.99, and Adreno 740. Both physical panels rendered cleanly:
+  the primary attract-loop frame showed 59 FPS with SHA-256
+  `F18067587881283AA10FEDE333C444FCAE927A41AB06D1BA30E53ED991D92998`, and the secondary control
+  frame had SHA-256 `BC7BEFAF4185BBC0D32B8409220A3207307AAAB435210CC7E6E50B30EEFB84CC`.
+  Two Azahar BLAST surfaces were live. The active AudioFlinger track was 32,728 Hz, 1,962 frames,
+  122.23 ms reported latency, and zero underruns. No profiler, fatal, device-lost, or ANR log matched.
+  AC remained connected at 80%, 4.265 V, and 22.0 C, so this is production correctness evidence and
+  not a battery-watt measurement.
+- Entry 164 raises the ledger to 164 numbered entries and 163 active accepted entries because the
+  unsafe absolute-offset ARM64 page-table entry remains withdrawn. The repeated bracket proves less
+  CPU work in the aligned texture-selection path; it is not additive with earlier animated-scene
+  results and does not prove higher capped FPS or lower battery watts. Testing remained AC-powered,
+  so the physical discharging-battery mean and nearest-rank P95 power at or below 6 W remain open.
+
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 
 - Merged 37 commits from `upstream/master` (`d81195bdc` through `b34de55b5`) in merge commit `abb63f2c3`.

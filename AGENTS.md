@@ -99,7 +99,7 @@
   latency, and zero underruns. A power/FPS win with audio breakup or a restarted track is a failure.
   The production package must emit the one-time JSON `Active Vulkan driver metadata` log. Do not
   substitute Mesa's runtime banner: generic and forced-Sysmem R8 expose the same banner despite
-  measurably different work. The current strict default is package `f692d3962-vanilla-thor`, driver
+  measurably different work. The current strict default is package `1e2c106bc-vanilla-thor`, driver
   name `Mesa Turnip driver v26.0.0 - R8`, version `Vulkan 1.4.335`, and library
   `vulkan.ad07xx.so`; explicitly override all affected expectations for another accepted artifact.
   It must also require manual brightness mode and two active physical displays, record each display
@@ -507,6 +507,20 @@
   `GetFramebufferSurfaces()` share fell from 2.16438% to 1.49514% of sampled user cycles (30.92%
   relative), while `GetSurfaceSubRect()` fell from 1.19870% to 0.47212% (60.61% relative) and
   validation stayed neutral. Keep this as path-local CPU-work evidence, not an FPS or watt claim.
+- Preserve the four-entry aligned texture-surface selection cache from commit `1e2c106bc`. It may
+  reuse a surface ID only when the complete `SurfaceParams`, explicit resolution scale, and
+  `surface_generation` match. The explicit scale comparison is required because
+  `SurfaceParams::operator==` intentionally omits it. A hit skips only the recurring
+  `GetSurface()` page-table/search route: it must still call `ValidateSurface()` over the requested
+  interval before returning. Cache only a successful normal aligned lookup, keep circular
+  replacement, and leave the odd-size temporary-surface/mipmap route unchanged. Registration,
+  unregistration, slot replacement, cache clear, and scale-up must continue advancing the shared
+  generation so stale IDs cannot match. Retain focused tests for valid, invalid, changed-generation,
+  changed-parameter, and scale-only cases. On the exact Turnip/Adreno 740 Super Mario 3D Land
+  four-run bracket, `SyncTextureUnits()` fell from 1.48519% to 1.20368% of sampled user cycles
+  (18.95% relative), `GetTextureSurface()` fell from 0.62207% to 0.47089% (24.30%), and the aligned
+  `GetSurface()` subtree fell from 0.80157% to 0.59479% (25.80%). Validation remained within scene
+  variation. Keep this as path-local CPU-work evidence, not an additive FPS or watt claim.
 - The vertex shader's packed 64-bit attribute-to-input-register map and active attribute count are
   also invariant for a CPU-fallback draw. Keep `ShaderInputMap` constructed once in
   `PicaCore::LoadVertices()` and make each recurring `ShaderUnit::LoadInput()` mask and shift its
