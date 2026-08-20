@@ -1439,6 +1439,13 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   122.23 ms reported latency, and zero underruns. No profiler, fatal, device-lost, or ANR log matched.
   AC remained connected at 80%, 4.265 V, and 22.0 C, so this is production correctness evidence and
   not a battery-watt measurement.
+- Exact bounded cleanup removed 3,032,860,665 logical host bytes: obsolete debug packaging,
+  Gradle/JNI/R8/mapping/symbol staging, the four A/B traces and APK twins, and temporary production
+  screenshots/UI dumps. The device-side test runner, Simpleperf binary, four traces, and temporary
+  screenshots/UI dumps removed another 486,925,748 bytes. The retained build output is only the
+  3,252,280,333-byte active `5h1x5ud1` ARM64 CMake/Ninja cache plus the 29,012,988-byte production
+  APK and 476-byte metadata. Azahar was force-stopped and no PID remained. Historical repo-root
+  artifacts and the user's four pre-existing source edits were not staged, modified, or deleted.
 - Entry 164 raises the ledger to 164 numbered entries and 163 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. The repeated bracket proves less
   CPU work in the aligned texture-selection path; it is not additive with earlier animated-scene
