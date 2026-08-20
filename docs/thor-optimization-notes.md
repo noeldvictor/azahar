@@ -1234,6 +1234,26 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   the established standalone-JNI `get_build_flavor` omissions, and the only three skips remain the
   established missing-DSP-firmware cases. This is one new passing case and six new passing
   assertions over entry 161.
+- Source/test/guidance commit `6987ffd79` was pushed directly to `origin/master`. Its post-commit
+  JDK 17 `:app:assembleVanillaRelWithDebInfoLite -PthorFrameProfiling=false
+  --no-configuration-cache` build passed in 1 minute 16 seconds. The ARM64-only, v2-signed
+  production APK is 29,010,636 bytes with SHA-256
+  `AFC0BB31BB3BE703E3208FB0C0A56CB5328B8CD8E7CAADC8C91D8FCF7B6DE01E`; its signer certificate
+  SHA-256 remains `0E5F42FF8E92CEDCBE3379BE71C8370B09BC10880584ACE4CF50F880EC514D4E`.
+  It reports package `org.azahar_emu.azahar.debug`, version `6987ffd79-vanilla-thor`, minimum SDK 29,
+  target SDK 37, ARM64 ABI, and no `DEBUGGABLE` attribute. The active native cache records profiling
+  OFF and the unstripped library contains zero `ThorFrameProfile` strings.
+- Wi-Fi ADB installed that exact APK, and the on-device base APK reproduced SHA-256
+  `AFC0BB31BB3BE703E3208FB0C0A56CB5328B8CD8E7CAADC8C91D8FCF7B6DE01E`. The configuration
+  remained byte-identical at SHA-256
+  `EC42812B2580738DB6994126A1BB92BBEC4BBBDC11D3035330901E58ACD44E21`, with performance/fan
+  modes 2/4. The required structured record identified `Mesa Turnip driver v26.0.0 - R8`, Vulkan
+  1.4.335, and `vulkan.ad07xx.so`; the renderer identified Turnip Mesa 25.99.99 / Adreno 740 and the
+  exact title identified program ID `0004000000054000`. Two Azahar BLAST surfaces were live, and a
+  visually clean gameplay frame showed 59 FPS. The active AudioFlinger track was 32,728 Hz, 1,962
+  frames, 112.20 ms reported latency, and zero underruns. No profiler, fatal, device-lost,
+  Vulkan-error, ANR, or native-crash log matched. The strict power-tool default now names this
+  production version and its complete self-test passes.
 - Entry 162 raises the ledger to 162 numbered entries and 161 active accepted entries because the
   unsafe absolute-offset ARM64 page-table entry remains withdrawn. The measured reduction is real
   for the ranked Vulkan vertex-setup path but cannot be added to earlier entries or converted into
