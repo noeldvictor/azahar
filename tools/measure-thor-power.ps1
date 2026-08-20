@@ -185,6 +185,37 @@ Current Battery Service state:
         throw 'Simulated-battery parser self-test failed.'
     }
 
+    $processStat = '2542 (mu.azahar.debug) S 1870 1870 0 0 -1 1077936448 441662 0 103 0 13325 3739 0 0'
+    if ((Get-ProcessCpuTicksFromStat -Text $processStat) -ne 17064) {
+        throw 'Process-stat parser self-test failed.'
+    }
+    $gpuBusy = Get-GpuBusyPercent -Text '82469 1003316'
+    if ([Math]::Abs($gpuBusy - (100.0 * 82469.0 / 1003316.0)) -gt 0.000001) {
+        throw 'KGSL busy parser self-test failed.'
+    }
+    $powerFixture = @(
+        '-1200000',
+        '4200000',
+        '5040000',
+        '5000000',
+        '4000000',
+        '315',
+        '70',
+        'Discharging',
+        '0',
+        '0',
+        '0',
+        '401',
+        '82469 1003316',
+        $processStat
+    ) -join "`n"
+    $powerSample = ConvertFrom-ThorPowerText -Text $powerFixture -ElapsedSeconds 1.25
+    if ($powerSample.Watts -ne 5.04 -or $powerSample.DerivedWatts -ne 5.04 -or
+        $powerSample.TemperatureC -ne 31.5 -or $powerSample.ProcessCpuTicks -ne 17064 -or
+        $powerSample.GpuClockMhz -ne 401 -or $powerSample.ChargeCounterMicroAmpHours -ne 4000000) {
+        throw 'Complete Thor power-sample parser self-test failed.'
+    }
+
     Write-Host 'measure-thor-power.ps1 self-test passed.'
 }
 
@@ -271,39 +302,71 @@ function ConvertTo-Int64Invariant {
     return $value
 }
 
-function Get-ThorPowerSample {
+function Get-ProcessCpuTicksFromStat {
     param(
+        [Parameter(Mandatory)]
+        [string]$Text
+    )
+
+    # The process name is parenthesized and may contain spaces. The captured fields begin at
+    # proc(5) field 4, so indexes 10 and 11 are utime and stime (fields 14 and 15).
+    $match = [regex]::Match($Text.Trim(), '^\d+\s+\(.+\)\s+\S\s+(.+)$')
+    if (-not $match.Success) {
+        throw "Invalid /proc process stat line: '$Text'"
+    }
+    $fields = @($match.Groups[1].Value -split '\s+')
+    if ($fields.Count -lt 12) {
+        throw "Incomplete /proc process stat line: '$Text'"
+    }
+    $userTicks = ConvertTo-Int64Invariant -Text $fields[10] -Name 'process utime'
+    $systemTicks = ConvertTo-Int64Invariant -Text $fields[11] -Name 'process stime'
+    return $userTicks + $systemTicks
+}
+
+function Get-GpuBusyPercent {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text
+    )
+
+    $match = [regex]::Match($Text.Trim(), '^(\d+)\s+(\d+)$')
+    if (-not $match.Success) {
+        throw "Invalid KGSL gpubusy value: '$Text'"
+    }
+    $busy = [double]$match.Groups[1].Value
+    $total = [double]$match.Groups[2].Value
+    if ($total -le 0.0 -or $busy -lt 0.0 -or $busy -gt $total) {
+        throw "Implausible KGSL gpubusy value: '$Text'"
+    }
+    return 100.0 * $busy / $total
+}
+
+function ConvertFrom-ThorPowerText {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Text,
         [Parameter(Mandatory)]
         [double]$ElapsedSeconds
     )
 
-    $paths = @(
-        '/sys/class/power_supply/battery/current_now',
-        '/sys/class/power_supply/battery/voltage_now',
-        '/sys/class/power_supply/battery/power_now',
-        '/sys/class/power_supply/battery/power_avg',
-        '/sys/class/power_supply/battery/temp',
-        '/sys/class/power_supply/battery/capacity',
-        '/sys/class/power_supply/battery/status',
-        '/sys/class/power_supply/usb/online',
-        '/sys/class/power_supply/wireless/online',
-        '/sys/class/power_supply/ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1/online'
-    )
-    $text = Invoke-AdbText -Arguments (@('-s', $Serial, 'shell', 'cat') + $paths)
     $lines = @($text -split "`r?`n")
-    if ($lines.Count -ne $paths.Count) {
-        throw "Expected $($paths.Count) Thor power values, received $($lines.Count)."
+    if ($lines.Count -ne 14) {
+        throw "Expected 14 Thor power values, received $($lines.Count)."
     }
 
     $currentMicroAmps = ConvertTo-Int64Invariant -Text $lines[0] -Name 'current_now'
     $voltageMicroVolts = ConvertTo-Int64Invariant -Text $lines[1] -Name 'voltage_now'
     $powerMicroWatts = ConvertTo-Int64Invariant -Text $lines[2] -Name 'power_now'
     $averagePowerMicroWatts = ConvertTo-Int64Invariant -Text $lines[3] -Name 'power_avg'
-    $temperatureTenthsC = ConvertTo-Int64Invariant -Text $lines[4] -Name 'temp'
-    $capacityPercent = ConvertTo-Int64Invariant -Text $lines[5] -Name 'capacity'
-    $usbOnline = ConvertTo-Int64Invariant -Text $lines[7] -Name 'usb online'
-    $wirelessOnline = ConvertTo-Int64Invariant -Text $lines[8] -Name 'wireless online'
-    $ucsiOnline = ConvertTo-Int64Invariant -Text $lines[9] -Name 'UCSI source online'
+    $chargeCounterMicroAmpHours = ConvertTo-Int64Invariant -Text $lines[4] -Name 'charge_counter'
+    $temperatureTenthsC = ConvertTo-Int64Invariant -Text $lines[5] -Name 'temp'
+    $capacityPercent = ConvertTo-Int64Invariant -Text $lines[6] -Name 'capacity'
+    $usbOnline = ConvertTo-Int64Invariant -Text $lines[8] -Name 'usb online'
+    $wirelessOnline = ConvertTo-Int64Invariant -Text $lines[9] -Name 'wireless online'
+    $ucsiOnline = ConvertTo-Int64Invariant -Text $lines[10] -Name 'UCSI source online'
+    $gpuClockMhz = ConvertTo-Int64Invariant -Text $lines[11] -Name 'KGSL clock_mhz'
+    $gpuBusyPercent = Get-GpuBusyPercent -Text $lines[12]
+    $processCpuTicks = Get-ProcessCpuTicksFromStat -Text $lines[13]
 
     if ($usbOnline -ne 0 -or $wirelessOnline -ne 0 -or $ucsiOnline -ne 0) {
         throw 'A charger came online during the measurement; discarding the run.'
@@ -330,16 +393,46 @@ function Get-ThorPowerSample {
         PowerSource = $powerSource
         PowerNowMicroWatts = $powerMicroWatts
         PowerAverageMicroWatts = $averagePowerMicroWatts
+        ChargeCounterMicroAmpHours = $chargeCounterMicroAmpHours
         DerivedWatts = [Math]::Round($derivedWatts, 6)
         CurrentMicroAmps = $currentMicroAmps
         VoltageMicroVolts = $voltageMicroVolts
         TemperatureC = [Math]::Round([double]$temperatureTenthsC / 10.0, 1)
         CapacityPercent = $capacityPercent
-        BatteryStatus = $lines[6].Trim()
+        BatteryStatus = $lines[7].Trim()
         UsbOnline = $usbOnline
         WirelessOnline = $wirelessOnline
         UcsiSourceOnline = $ucsiOnline
+        GpuClockMhz = $gpuClockMhz
+        GpuBusyPercent = [Math]::Round($gpuBusyPercent, 6)
+        ProcessCpuTicks = $processCpuTicks
     }
+}
+
+function Get-ThorPowerSample {
+    param(
+        [Parameter(Mandatory)]
+        [double]$ElapsedSeconds
+    )
+
+    $paths = @(
+        '/sys/class/power_supply/battery/current_now',
+        '/sys/class/power_supply/battery/voltage_now',
+        '/sys/class/power_supply/battery/power_now',
+        '/sys/class/power_supply/battery/power_avg',
+        '/sys/class/power_supply/battery/charge_counter',
+        '/sys/class/power_supply/battery/temp',
+        '/sys/class/power_supply/battery/capacity',
+        '/sys/class/power_supply/battery/status',
+        '/sys/class/power_supply/usb/online',
+        '/sys/class/power_supply/wireless/online',
+        '/sys/class/power_supply/ucsi-source-psy-soc:qcom,pmic_glink:qcom,ucsi1/online',
+        '/sys/class/kgsl/kgsl-3d0/clock_mhz',
+        '/sys/class/kgsl/kgsl-3d0/gpubusy',
+        "/proc/$devicePid/stat"
+    )
+    $text = Invoke-AdbText -Arguments (@('-s', $Serial, 'shell', 'cat') + $paths)
+    return ConvertFrom-ThorPowerText -Text $text -ElapsedSeconds $ElapsedSeconds
 }
 
 function Get-RemoteSetting {
@@ -488,9 +581,12 @@ if ($samples.Count -lt $minimumSamples) {
 }
 
 Assert-RealDischargeState -State (Get-DeviceBatteryState) -Phase 'Postflight'
-if ([string]::IsNullOrWhiteSpace(
-        (Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'pidof', $Package)))) {
+$postflightPid = Invoke-AdbText -Arguments @('-s', $Serial, 'shell', 'pidof', $Package)
+if ([string]::IsNullOrWhiteSpace($postflightPid)) {
     throw "$Package exited during measurement."
+}
+if ($postflightPid -ne $devicePid) {
+    throw "$Package restarted during measurement (PID $devicePid -> $postflightPid)."
 }
 
 if ($shouldCapture) {
@@ -509,6 +605,23 @@ $temperatureStatistics = Get-SampleStatistics -Values (
 )
 $thermalSlope = Get-ThermalSlopePerMinute -Samples $samples.ToArray()
 $passed = Test-PowerGate -Statistics $powerStatistics -MaximumMean $MaxAverageWatts -MaximumP95 $MaxP95Watts
+$gpuBusyStatistics = Get-SampleStatistics -Values (
+    [double[]]@($samples | ForEach-Object { $_.GpuBusyPercent })
+)
+$gpuClockStatistics = Get-SampleStatistics -Values (
+    [double[]]@($samples | ForEach-Object { $_.GpuClockMhz })
+)
+$processCpuTicks = [long]$samples[$samples.Count - 1].ProcessCpuTicks -
+    [long]$samples[0].ProcessCpuTicks
+$processCpuTicksPerSecond = $processCpuTicks / [double]$timer.Elapsed.TotalSeconds
+$chargeCounterDelta = [long]$samples[$samples.Count - 1].ChargeCounterMicroAmpHours -
+    [long]$samples[0].ChargeCounterMicroAmpHours
+$meanVoltageMicroVolts = (
+    $samples | Measure-Object -Property VoltageMicroVolts -Average
+).Average
+$chargeDerivedWattHours = -1.0 * $chargeCounterDelta * $meanVoltageMicroVolts / 1000000000000.0
+$chargeDerivedAverageWatts =
+    $chargeDerivedWattHours * 3600.0 / [double]$timer.Elapsed.TotalSeconds
 
 $samplesPath = Join-Path $OutputDirectory 'samples.csv'
 $summaryPath = Join-Path $OutputDirectory 'summary.json'
@@ -524,6 +637,15 @@ $summary = [pscustomobject]@{
     Temperature = [pscustomobject]@{
         Statistics = $temperatureStatistics
         SlopeCPerMinute = $thermalSlope
+    }
+    Workload = [pscustomobject]@{
+        ProcessCpuTicks = $processCpuTicks
+        ProcessCpuTicksPerSecond = $processCpuTicksPerSecond
+        GpuBusyPercent = $gpuBusyStatistics
+        GpuClockMhz = $gpuClockStatistics
+        ChargeCounterDeltaMicroAmpHours = $chargeCounterDelta
+        ChargeDerivedWattHours = $chargeDerivedWattHours
+        ChargeDerivedAverageWatts = $chargeDerivedAverageWatts
     }
     Run = [pscustomobject]@{
         StartedUtc = $samples[0].TimestampUtc
