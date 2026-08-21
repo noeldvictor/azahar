@@ -101,6 +101,7 @@ jlong ptm_current_title_id = std::numeric_limits<jlong>::max(); // Arbitrary def
 std::atomic<bool> stop_run{true};
 std::atomic<bool> pause_emulation{false};
 std::atomic<bool> emulation_paused{};
+std::atomic<u64> emulation_session_id{};
 
 std::mutex paused_mutex;
 std::mutex running_mutex;
@@ -203,6 +204,10 @@ std::shared_ptr<Network::AnnounceMultiplayerSession> announce_multiplayer_sessio
 bool AndroidNativeState::IsEmulationPaused() {
     return pause_emulation.load(std::memory_order_acquire) &&
            emulation_paused.load(std::memory_order_acquire);
+}
+
+std::uint64_t AndroidNativeState::GetEmulationSessionId() {
+    return emulation_session_id.load(std::memory_order_acquire);
 }
 
 static jobject ToJavaCoreError(Core::System::ResultStatus result) {
@@ -413,6 +418,7 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
         return load_result;
     }
 
+    emulation_session_id.fetch_add(1, std::memory_order_acq_rel);
     stop_run = false;
     pause_emulation = false;
     emulation_paused = false;

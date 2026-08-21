@@ -7,6 +7,7 @@ package org.citra.citra_emu.display
 import android.app.Activity
 import android.content.Context
 import android.view.WindowManager
+import android.widget.Toast
 import org.citra.citra_emu.NativeLibrary
 import org.citra.citra_emu.R
 import org.citra.citra_emu.features.settings.model.BooleanSetting
@@ -65,6 +66,21 @@ class ScreenAdjustmentUtil(
             val layoutOption = landscapeValues[(pos + 1) % landscapeValues.size]
             changeScreenOrientation(layoutOption)
         }
+    }
+
+    fun toggleTopScreenStretch() {
+        val isEnabled = !BooleanSetting.TOP_SCREEN_STRETCH.boolean
+        BooleanSetting.TOP_SCREEN_STRETCH.boolean = isEnabled
+        settings.saveSetting(BooleanSetting.TOP_SCREEN_STRETCH, SettingsFile.FILE_NAME_CONFIG)
+        NativeLibrary.reloadSettings()
+        NativeLibrary.updateFramebuffer(NativeLibrary.isPortraitMode())
+
+        val message = if (isEnabled) {
+            R.string.top_screen_stretch_enabled
+        } else {
+            R.string.top_screen_stretch_disabled
+        }
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
     fun changePortraitOrientation(layoutOption: Int) {

@@ -35,6 +35,7 @@ constexpr std::size_t MAX_SEARCH_CANDIDATES = 1'000'000;
 
 struct UndoWrite {
     u64 title_id{};
+    u64 session_id{};
     VAddr address{};
     Cheats::MemorySearchValueSize value_size{};
     u64 original_value{};
@@ -43,8 +44,30 @@ struct UndoWrite {
 
 Cheats::MemorySearch memory_search;
 std::optional<u64> memory_search_title_id;
+std::optional<u64> memory_search_session_id;
 std::optional<UndoWrite> undo_write;
 std::mutex memory_search_mutex;
+
+bool SearchMatchesSession(const std::optional<u64>& title_id, u64 session_id) {
+    return title_id.has_value() && title_id == memory_search_title_id &&
+           session_id == memory_search_session_id;
+}
+
+bool ClearStaleSessionState(const std::optional<u64>& title_id, u64 session_id) {
+    const bool invalidated_search =
+        memory_search.IsActive() && !SearchMatchesSession(title_id, session_id);
+    if (invalidated_search) {
+        memory_search.Reset();
+        memory_search_title_id.reset();
+        memory_search_session_id.reset();
+    }
+    if (undo_write.has_value() &&
+        (!title_id.has_value() || undo_write->title_id != *title_id ||
+         undo_write->session_id != session_id)) {
+        undo_write.reset();
+    }
+    return invalidated_search;
+}
 
 std::optional<u64> GetRunningTitleId() {
     Core::System& system = Core::System::GetInstance();
@@ -207,14 +230,12 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_getMemorySearchStatu
 
     std::scoped_lock lock{memory_search_mutex};
     const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
+    if (ClearStaleSessionState(title_id, session_id)) {
+        return SEARCH_TITLE_CHANGED;
+    }
     if (!memory_search.IsActive()) {
         return SEARCH_NO_SESSION;
-    }
-    if (!title_id.has_value() || title_id != memory_search_title_id) {
-        memory_search.Reset();
-        memory_search_title_id.reset();
-        undo_write.reset();
-        return SEARCH_TITLE_CHANGED;
     }
     return static_cast<jlong>(memory_search.Candidates().size());
 }
@@ -239,10 +260,13 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_startMemorySearch(
     }
 
     std::scoped_lock lock{memory_search_mutex};
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
+    ClearStaleSessionState(title_id, session_id);
     if (!memory_search.Begin(*value_size, static_cast<u64>(raw_value))) {
         return SEARCH_INVALID_VALUE;
     }
     memory_search_title_id = title_id;
+    memory_search_session_id = session_id;
 
     constexpr std::array search_ranges{
         std::pair{Memory::PROCESS_IMAGE_VADDR, Memory::PROCESS_IMAGE_VADDR_END},
@@ -261,11 +285,13 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_startMemorySearch(
                 page, std::span<const u8>{pointer, Memory::CITRA_PAGE_SIZE}, MAX_SEARCH_CANDIDATES);
             if (result == Cheats::MemorySearch::ScanResult::TooManyCandidates) {
                 memory_search_title_id.reset();
+                memory_search_session_id.reset();
                 return SEARCH_TOO_MANY;
             }
             if (result != Cheats::MemorySearch::ScanResult::Success) {
                 memory_search.Reset();
                 memory_search_title_id.reset();
+                memory_search_session_id.reset();
                 return SEARCH_INVALID_VALUE;
             }
         }
@@ -288,15 +314,13 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_refineMemorySearch(
     Core::System& system = Core::System::GetInstance();
     const auto page_table = system.Memory().GetCurrentPageTable();
     const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
     std::scoped_lock lock{memory_search_mutex};
+    if (ClearStaleSessionState(title_id, session_id)) {
+        return SEARCH_TITLE_CHANGED;
+    }
     if (!page_table || !title_id.has_value() || !memory_search.IsActive()) {
         return SEARCH_NO_SESSION;
-    }
-    if (title_id != memory_search_title_id) {
-        memory_search.Reset();
-        memory_search_title_id.reset();
-        undo_write.reset();
-        return SEARCH_TITLE_CHANGED;
     }
     if (raw_value < 0) {
         return SEARCH_INVALID_VALUE;
@@ -322,7 +346,11 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_getMemorySearchResul
     JNIEnv* env, jclass, jint raw_limit) {
     const std::size_t limit = raw_limit > 0 ? static_cast<std::size_t>(raw_limit) : 0;
     std::scoped_lock lock{memory_search_mutex};
-    if (CheckSearchAvailability() != 0 || GetRunningTitleId() != memory_search_title_id) {
+    const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
+    ClearStaleSessionState(title_id, session_id);
+    if (CheckSearchAvailability() != 0 || !memory_search.IsActive() ||
+        !SearchMatchesSession(title_id, session_id)) {
         return env->NewLongArray(0);
     }
     const auto candidates = memory_search.Candidates();
@@ -344,8 +372,11 @@ JNIEXPORT jint JNICALL
 Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_getMemorySearchValueSize(JNIEnv*,
                                                                                       jclass) {
     std::scoped_lock lock{memory_search_mutex};
-    return CheckSearchAvailability() == 0 && GetRunningTitleId() == memory_search_title_id &&
-                   memory_search.IsActive()
+    const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
+    ClearStaleSessionState(title_id, session_id);
+    return CheckSearchAvailability() == 0 && memory_search.IsActive() &&
+                   SearchMatchesSession(title_id, session_id)
                ? static_cast<jint>(memory_search.ValueSize())
                : 0;
 }
@@ -359,8 +390,10 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_writeMemorySearchRes
     Core::System& system = Core::System::GetInstance();
     const auto page_table = system.Memory().GetCurrentPageTable();
     const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
     std::scoped_lock lock{memory_search_mutex};
-    if (!page_table || !title_id.has_value() || title_id != memory_search_title_id ||
+    ClearStaleSessionState(title_id, session_id);
+    if (!page_table || !title_id.has_value() || !SearchMatchesSession(title_id, session_id) ||
         !memory_search.IsActive() || undo_write.has_value()) {
         return JNI_FALSE;
     }
@@ -386,6 +419,7 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_writeMemorySearchRes
         return JNI_FALSE;
     }
     undo_write = UndoWrite{.title_id = *title_id,
+                           .session_id = session_id,
                            .address = address,
                            .value_size = value_size,
                            .original_value = *original,
@@ -397,8 +431,11 @@ JNIEXPORT jboolean JNICALL
 Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_canUndoMemorySearchWrite(JNIEnv*,
                                                                                      jclass) {
     std::scoped_lock lock{memory_search_mutex};
-    return CheckSearchAvailability() == 0 && GetRunningTitleId() == memory_search_title_id &&
-                   undo_write.has_value()
+    const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
+    ClearStaleSessionState(title_id, session_id);
+    return CheckSearchAvailability() == 0 && SearchMatchesSession(title_id, session_id) &&
+                   undo_write.has_value() && undo_write->session_id == session_id
                ? JNI_TRUE
                : JNI_FALSE;
 }
@@ -412,9 +449,11 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_undoMemorySearchWrit
     Core::System& system = Core::System::GetInstance();
     const auto page_table = system.Memory().GetCurrentPageTable();
     const std::optional<u64> title_id = GetRunningTitleId();
+    const u64 session_id = AndroidNativeState::GetEmulationSessionId();
     std::scoped_lock lock{memory_search_mutex};
+    ClearStaleSessionState(title_id, session_id);
     if (!undo_write.has_value() || !page_table || !title_id.has_value() ||
-        undo_write->title_id != *title_id) {
+        undo_write->title_id != *title_id || undo_write->session_id != session_id) {
         return 0;
     }
     const std::optional<u64> current = ReadSearchValue(
@@ -433,7 +472,11 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_undoMemorySearchWrit
 JNIEXPORT void JNICALL
 Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_resetMemorySearch(JNIEnv*, jclass) {
     std::scoped_lock lock{memory_search_mutex};
+    if (undo_write.has_value()) {
+        return;
+    }
     memory_search.Reset();
     memory_search_title_id.reset();
+    memory_search_session_id.reset();
 }
 }

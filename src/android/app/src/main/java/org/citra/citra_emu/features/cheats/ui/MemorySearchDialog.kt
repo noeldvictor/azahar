@@ -81,12 +81,15 @@ class MemorySearchDialog(
         if (candidateCount > 0) {
             actions += Action(R.string.memory_search_view_results) { showResults() }
         }
-        if (CheatEngine.canUndoMemorySearchWrite()) {
+        val hasPendingWrite = CheatEngine.canUndoMemorySearchWrite()
+        if (hasPendingWrite) {
             actions += Action(R.string.memory_search_undo_write) { undoWrite() }
         }
-        actions += Action(R.string.memory_search_new) {
-            CheatEngine.resetMemorySearch()
-            showStartDialog()
+        if (!hasPendingWrite) {
+            actions += Action(R.string.memory_search_new) {
+                CheatEngine.resetMemorySearch()
+                showStartDialog()
+            }
         }
 
         MaterialAlertDialogBuilder(context)

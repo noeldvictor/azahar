@@ -18,6 +18,7 @@ enum class BooleanSetting(
     PLUGIN_LOADER(SettingKeys.plugin_loader(), Settings.SECTION_SYSTEM, false),
     ALLOW_PLUGIN_LOADER(SettingKeys.allow_plugin_loader(), Settings.SECTION_SYSTEM, true),
     SWAP_SCREEN(SettingKeys.swap_screen(), Settings.SECTION_LAYOUT, false),
+    TOP_SCREEN_STRETCH(SettingKeys.screen_top_stretch(), Settings.SECTION_LAYOUT, false),
     INSTANT_DEBUG_LOG(SettingKeys.instant_debug_log(), Settings.SECTION_DEBUG, false),
     ENABLE_RPC_SERVER(SettingKeys.enable_rpc_server(), Settings.SECTION_DEBUG, false),
     TOGGLE_UNIQUE_DATA_CONSOLE_TYPE(

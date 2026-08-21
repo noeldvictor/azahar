@@ -119,6 +119,8 @@ class HotkeyUtility(
 
             Hotkey.CYCLE_LAYOUT.button -> screenAdjustmentUtil.cycleLayouts()
 
+            Hotkey.TOP_SCREEN_STRETCH.button -> screenAdjustmentUtil.toggleTopScreenStretch()
+
             Hotkey.CLOSE_GAME.button -> EmulationLifecycleUtil.closeGame()
 
             Hotkey.PAUSE_OR_RESUME.button -> EmulationLifecycleUtil.pauseOrResume()
