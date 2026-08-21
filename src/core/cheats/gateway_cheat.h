@@ -47,10 +47,10 @@ public:
 
     struct CheatLine {
         explicit CheatLine(const std::string& line);
-        CheatType type;
-        u32 address;
-        u32 value;
-        u32 first;
+        CheatType type{CheatType::Null};
+        u32 address{};
+        u32 value{};
+        u32 first{};
         std::string cheat_line;
         bool valid = true;
     };

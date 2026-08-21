@@ -182,6 +182,15 @@ static inline void PatchOp(const GatewayCheat::CheatLine& line, State& state, Co
     }
 }
 
+static bool IsSupportedCheatType(GatewayCheat::CheatType type) {
+    const int raw_type = static_cast<int>(type);
+    return (raw_type >= static_cast<int>(GatewayCheat::CheatType::Write32) &&
+            raw_type <= static_cast<int>(GatewayCheat::CheatType::Loop)) ||
+           (raw_type >= static_cast<int>(GatewayCheat::CheatType::Terminator) &&
+            raw_type <= static_cast<int>(GatewayCheat::CheatType::Joker)) ||
+           type == GatewayCheat::CheatType::Patch;
+}
+
 GatewayCheat::CheatLine::CheatLine(const std::string& line) {
     constexpr std::size_t cheat_length = 17;
     if (line.length() != cheat_length) {
@@ -202,6 +211,11 @@ GatewayCheat::CheatLine::CheatLine(const std::string& line) {
         address = first & 0x0FFFFFFF;
         value = static_cast<u32>(std::stoul(line.substr(9, 8), 0, 16));
         cheat_line = line;
+        if (!IsSupportedCheatType(type)) {
+            type = CheatType::Null;
+            valid = false;
+            LOG_ERROR(Core_Cheats, "Cheat contains unsupported opcode: {}", line);
+        }
     } catch (const std::logic_error&) {
         type = CheatType::Null;
         cheat_line = line;
@@ -441,6 +455,13 @@ bool GatewayCheat::IsEnabled() const {
 }
 
 void GatewayCheat::SetEnabled(bool enabled_) {
+    if (enabled_ &&
+        std::any_of(cheat_lines.begin(), cheat_lines.end(),
+                    [](const CheatLine& line) { return !line.valid; })) {
+        LOG_ERROR(Core_Cheats, "Refusing to enable cheat '{}' because it has invalid lines", name);
+        enabled = false;
+        return;
+    }
     enabled = enabled_;
     if (enabled) {
         LOG_WARNING(Core_Cheats, "Cheats enabled. This might lead to weird behaviour or crashes");

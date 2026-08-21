@@ -1733,8 +1733,9 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   opening Cheats from EmulationActivity pauses guest execution, and the new `Back to game` action
   closes Cheats so EmulationActivity resumes it. A verified temporary write offers the same direct
   return. The native safety contract is unchanged: offline single-player only, acknowledged pause,
-  surviving candidates, one pending write, verified readback, guarded restoration, and saved
-  Gateway cheats disabled by default.
+  surviving candidates, one pending write, verified readback, and guarded restoration. A later
+  safety audit removed one-session raw-address promotion to persistent Gateway cheats; results stay
+  temporary until a stable pointer, AOB, or relaunch-validated path exists.
 - Pure Kotlin coverage checks decimal/underscored/hexadecimal parsing, missing/negative/out-of-range
   rejection, the complete unsigned 32-bit boundary, all three Gateway code widths, address masking,
   and unsupported-width rejection. The focused Vanilla debug unit suite passed five tests. The
@@ -1751,6 +1752,30 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
 - Source/test commit `aa043576f` was pushed directly to `origin/master`. This is a usability and
   safety improvement, not optimization entry 170: it adds no FPS, frametime, or wattage claim and
   does not change the active accepted-optimization count of 163.
+
+### Guest-memory cheat safety follow-up (2026-08-20)
+
+- Initial exact scans now have a native operation token and a visible Cancel action. Cancellation
+  is checked between mapped guest pages, clears partial candidates, waits for the native scan to
+  stop, and reports that no game memory was changed before returning control to the UI.
+- Temporary-write recovery now retains an undo record if both test-write verification and rollback
+  verification fail. Restore still writes only when the current value exactly matches the verified
+  temporary value. If the game changed or unmapped the value first, Azahar performs no write and
+  permanently discards the stale record so it cannot block later searches or revive on a
+  coincidental future value.
+- The search UI no longer promotes a one-session raw address into a persistent Gateway cheat.
+  Persistent promotion requires a stable pointer, AOB signature, module-relative path, or relaunch
+  validation; ordinary manually supplied Gateway cheats remain available through the existing
+  editor.
+- Gateway parsing now rejects unsupported opcode families instead of accepting lines that execute
+  as silent no-ops. Invalid or unsupported lines are initialized safely, and a cheat containing
+  one cannot be enabled. All seven bundled Android cheat files passed a local shape and supported-
+  opcode audit.
+- The focused Vanilla Lite Kotlin suite passed four value-parser/range tests. The ARM64 native test
+  and app targets compiled successfully with six expanded memory-search cases and three Gateway
+  parser cases embedded in the linked test executable. Per the user's direction, this follow-up
+  did not launch, install to, scan on, or otherwise use the Thor; the newly expanded native cases
+  therefore remain compile-verified rather than device-executed.
 
 ## 2026-08-16 Upstream and RPCS3 ARM64 Review
 

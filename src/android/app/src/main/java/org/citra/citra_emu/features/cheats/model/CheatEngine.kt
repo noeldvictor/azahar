@@ -18,7 +18,9 @@ object CheatEngine {
     external fun updateCheat(index: Int, newCheat: Cheat?)
 
     external fun getMemorySearchStatus(): Long
-    external fun startMemorySearch(valueSize: Int, value: Long): Long
+    external fun beginMemorySearchOperation(): Long
+    external fun cancelMemorySearchOperation()
+    external fun startMemorySearch(valueSize: Int, value: Long, operationId: Long): Long
     external fun refineMemorySearch(comparison: Int, value: Long): Long
     external fun getMemorySearchResults(limit: Int): LongArray
     external fun getMemorySearchValueSize(): Int

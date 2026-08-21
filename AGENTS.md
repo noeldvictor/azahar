@@ -62,9 +62,11 @@
   exact-value searches over mapped process-image/application-heap pages, capped at one million
   candidates; refinements compare against the last paused snapshot. A test write must target a
   surviving candidate, record the original value, verify readback, allow only one pending write,
-  and restore only when the current value still equals the verified test value. Generated Gateway
-  cheats stay disabled by default. Do not add host-process scanning, online use, background scans,
-  raw-address-only reusable cheats, DRM/anti-cheat bypasses, or an unverified write path.
+  and restore only when the current value still equals the verified test value. If the game changes
+  that value first, discard the stale restore without writing. Do not generate a persistent cheat
+  from a one-session raw address. Initial searches must remain safely cancelable without leaving a
+  partial search. Do not add host-process scanning, online use, background scans, raw-address-only
+  reusable cheats, DRM/anti-cheat bypasses, or an unverified write path.
 - Keep Android guest-memory search beginner-first: expose the labeled `Find value` toolbar action,
   explain that opening Cheats pauses the running game, start the main path as a 32-bit exact search,
   and keep 8/16-bit sizing plus hexadecimal input under `Advanced`. Refinements should describe

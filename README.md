@@ -1409,6 +1409,12 @@ Bundled cheats are copied into the Android app assets for convenience. They are 
 
 Existing user cheat files on-device may not be overwritten by the app if the destination file is already present. If a bundled cheat was fixed in git but a device still shows the old version, manually replace or remove the existing device cheat file first.
 
+The Android Cheats screen also has `Find value` for legally owned offline single-player games. It
+waits for an acknowledged guest pause, searches only mapped guest application memory, and supports
+a single verified temporary write with guarded restoration. Slow initial searches can be canceled
+without keeping partial results. Search matches stay temporary: Azahar does not turn a one-session
+raw address into a persistent cheat without a stable pointer, signature, or relaunch validation.
+
 ## Upstream Credit
 
 Azahar is an open-source Nintendo 3DS emulator project based on Citra. This fork exists because upstream Azahar, PabloMK7's Citra fork, Lime3DS, Citra, and many emulator contributors did the real foundational work.

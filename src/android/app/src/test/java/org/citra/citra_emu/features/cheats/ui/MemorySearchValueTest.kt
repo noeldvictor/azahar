@@ -12,6 +12,7 @@ class MemorySearchValueTest {
     fun `parses visible decimal and advanced hexadecimal values`() {
         assertEquals(12_345L, parseMemorySearchValue("12_345", 4))
         assertEquals(255L, parseMemorySearchValue("0xFF", 1))
+        assertEquals(0xABCDEFL, parseMemorySearchValue("  0Xab_cdef  ", 4))
     }
 
     @Test
@@ -21,6 +22,8 @@ class MemorySearchValueTest {
         assertNull(parseMemorySearchValue("256", 1))
         assertNull(parseMemorySearchValue("0x10000", 2))
         assertNull(parseMemorySearchValue("1", 3))
+        assertNull(parseMemorySearchValue("0x", 4))
+        assertNull(parseMemorySearchValue("12.5", 4))
     }
 
     @Test
@@ -30,15 +33,11 @@ class MemorySearchValueTest {
     }
 
     @Test
-    fun `creates gateway codes for every supported number size`() {
-        val address = 0x81234567L
-        assertEquals("21234567 000000AB", memorySearchGatewayCode(address, 0xABL, 1))
-        assertEquals("11234567 0000ABCD", memorySearchGatewayCode(address, 0xABCDL, 2))
-        assertEquals("01234567 ABCDEF01", memorySearchGatewayCode(address, 0xABCDEF01L, 4))
+    fun `reports every supported unsigned value range`() {
+        assertEquals(0xFFL, memorySearchValueMask(1))
+        assertEquals(0xFFFFL, memorySearchValueMask(2))
+        assertEquals(0xFFFFFFFFL, memorySearchValueMask(4))
+        assertEquals(-1L, memorySearchValueMask(3))
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun `rejects unsupported gateway number size`() {
-        memorySearchGatewayCode(0, 0, 3)
-    }
 }

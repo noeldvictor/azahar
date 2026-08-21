@@ -772,6 +772,8 @@
     <string name="memory_search_new">Start over</string>
     <string name="memory_search_back_to_game">Back to game</string>
     <string name="memory_search_scanning">Finding matches…</string>
+    <string name="memory_search_canceling">Stopping the search…</string>
+    <string name="memory_search_cancelled">Search stopped. No game memory was changed.</string>
     <string name="memory_search_test_write">Try a different value safely</string>
     <string name="memory_search_test_value">Value to try</string>
     <string name="memory_search_writing">Checking the temporary value…</string>
@@ -780,14 +782,9 @@
     <string name="memory_search_write_failed">Azahar could not safely apply and verify that value. If another temporary value is active, restore it first.</string>
     <string name="memory_search_undo_write">Restore the original value</string>
     <string name="memory_search_undo_success">The original value was restored and checked.</string>
+    <string name="memory_search_undo_stale_cleared">The game changed that match, so Azahar left it alone and cleared the old restore.</string>
     <string name="memory_search_undo_none">There is no test write to undo.</string>
     <string name="memory_search_undo_failed">Azahar did not overwrite memory because the game, match, or current value changed. Return to the same paused state and try again.</string>
-    <string name="memory_search_create_cheat">Save this value as a cheat</string>
-    <string name="memory_search_cheat_value">Value to save</string>
-    <string name="memory_search_create">Save</string>
-    <string name="memory_search_default_cheat_name">Saved value %1$d</string>
-    <string name="memory_search_cheat_notes">Created from paused guest-memory search at 0x%1$08X. Offline single-player only.</string>
-    <string name="memory_search_cheat_added">The saved cheat was added and is off by default.</string>
     <string name="memory_search_error_no_game">Start a game before using Find value.</string>
     <string name="memory_search_error_online">Find value and temporary changes are blocked while multiplayer is joining or connected.</string>
     <string name="memory_search_error_not_paused">Azahar is still pausing the game. Wait a moment and try again.</string>

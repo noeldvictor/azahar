@@ -107,7 +107,7 @@ class CheatListFragment : Fragment() {
         }
         binding.toolbarCheatList.setOnMenuItemClickListener {
             if (it.itemId == R.id.menu_memory_search) {
-                MemorySearchDialog(this, cheatsViewModel).show()
+                MemorySearchDialog(this).show()
                 true
             } else {
                 false

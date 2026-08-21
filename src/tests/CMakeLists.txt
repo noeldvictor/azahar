@@ -5,6 +5,7 @@ add_executable(tests
     common/param_package.cpp
     core/arm/dynarmic.cpp
     core/core_timing.cpp
+    core/cheats/gateway_cheat.cpp
     core/cheats/memory_search.cpp
     core/file_sys/path_parser.cpp
     core/hle/kernel/hle_ipc.cpp

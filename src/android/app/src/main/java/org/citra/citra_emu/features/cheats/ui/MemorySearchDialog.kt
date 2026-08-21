@@ -18,14 +18,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.citra.citra_emu.R
-import org.citra.citra_emu.features.cheats.model.Cheat
 import org.citra.citra_emu.features.cheats.model.CheatEngine
-import org.citra.citra_emu.features.cheats.model.CheatsViewModel
 
 /** Controller-friendly UI for the paused, offline-only guest-memory search engine. */
 class MemorySearchDialog(
-    private val fragment: Fragment,
-    private val cheatsViewModel: CheatsViewModel
+    private val fragment: Fragment
 ) {
     private val context get() = fragment.requireContext()
 
@@ -122,7 +119,11 @@ class MemorySearchDialog(
             size
         ) { value ->
             if (initial) {
-                runSearch { CheatEngine.startMemorySearch(size, value) }
+                val operationId = CheatEngine.beginMemorySearchOperation()
+                runSearch(
+                    operation = { CheatEngine.startMemorySearch(size, value, operationId) },
+                    onCancel = { CheatEngine.cancelMemorySearchOperation() }
+                )
             } else {
                 runSearch { CheatEngine.refineMemorySearch(COMPARISON_EXACT, value) }
             }
@@ -133,8 +134,8 @@ class MemorySearchDialog(
         runSearch { CheatEngine.refineMemorySearch(comparison, 0) }
     }
 
-    private fun runSearch(operation: () -> Long) {
-        runNative(R.string.memory_search_scanning, operation) { result ->
+    private fun runSearch(onCancel: (() -> Unit)? = null, operation: () -> Long) {
+        runNative(R.string.memory_search_scanning, operation, onCancel) { result ->
             when {
                 result >= 0 -> showRefineMenu(result)
                 result == SEARCH_TOO_MANY -> showError(R.string.memory_search_error_too_many)
@@ -143,6 +144,7 @@ class MemorySearchDialog(
                 result == SEARCH_ONLINE_BLOCKED -> showError(R.string.memory_search_error_online)
                 result == SEARCH_NOT_PAUSED -> showError(R.string.memory_search_error_not_paused)
                 result == SEARCH_TITLE_CHANGED -> showError(R.string.memory_search_error_title_changed)
+                result == SEARCH_CANCELLED -> showToast(R.string.memory_search_cancelled)
                 else -> showError(R.string.memory_search_error_generic)
             }
         }
@@ -179,12 +181,6 @@ class MemorySearchDialog(
                 }
             }
         }
-        actions += Action(R.string.memory_search_create_cheat) {
-            promptValue(R.string.memory_search_cheat_value, size, currentValue) { value ->
-                promptCheatName(match, address, value, size)
-            }
-        }
-
         MaterialAlertDialogBuilder(context)
             .setTitle(context.getString(R.string.memory_search_match, match, currentValue))
             .setItems(actions.map { context.getString(it.label) }.toTypedArray()) { _, which ->
@@ -218,44 +214,11 @@ class MemorySearchDialog(
         runNative(R.string.memory_search_writing, { CheatEngine.undoMemorySearchWrite().toLong() }) {
             when (it) {
                 1L -> showToast(R.string.memory_search_undo_success)
+                2L -> showToast(R.string.memory_search_undo_stale_cleared)
                 0L -> showError(R.string.memory_search_undo_none)
                 else -> showError(R.string.memory_search_undo_failed)
             }
         }
-    }
-
-    private fun promptCheatName(match: Int, address: Long, value: Long, size: Int) {
-        val defaultName = context.getString(R.string.memory_search_default_cheat_name, match)
-        val (inputLayout, input) = makeInput(R.string.cheats_name, defaultName)
-        val dialog = MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.memory_search_create_cheat)
-            .setView(inputLayout)
-            .setPositiveButton(R.string.memory_search_create, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                val name = input.text?.toString()?.trim().orEmpty()
-                if (name.isEmpty()) {
-                    inputLayout.error = context.getString(R.string.cheats_error_no_name)
-                    return@setOnClickListener
-                }
-                val code = memorySearchGatewayCode(address, value, size)
-                check(Cheat.isValidGatewayCode(code) == 0)
-                cheatsViewModel.startAddingCheat()
-                cheatsViewModel.finishAddingCheat(
-                    Cheat.createGatewayCode(
-                        name,
-                        context.getString(R.string.memory_search_cheat_notes, address),
-                        code
-                    )
-                )
-                cheatsViewModel.saveIfNeeded()
-                dialog.dismiss()
-                showToast(R.string.memory_search_cheat_added)
-            }
-        }
-        dialog.show()
     }
 
     private fun promptValue(
@@ -311,20 +274,45 @@ class MemorySearchDialog(
         return inputLayout to input
     }
 
-    private fun runNative(title: Int, operation: () -> Long, onComplete: (Long) -> Unit) {
+    private fun runNative(
+        title: Int,
+        operation: () -> Long,
+        onCancel: (() -> Unit)? = null,
+        onComplete: (Long) -> Unit
+    ) {
         val progress = ProgressBar(context).apply {
             isIndeterminate = true
             setPadding(dp(32), dp(24), dp(32), dp(24))
         }
-        val dialog = MaterialAlertDialogBuilder(context)
+        val builder = MaterialAlertDialogBuilder(context)
             .setTitle(title)
             .setView(progress)
             .setCancelable(false)
-            .show()
+        if (onCancel != null) {
+            builder.setNegativeButton(android.R.string.cancel, null)
+        }
+        val dialog = builder.create()
+        var cancellationRequested = false
+        dialog.setOnShowListener {
+            if (onCancel != null) {
+                dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                    cancellationRequested = true
+                    dialog.setTitle(R.string.memory_search_canceling)
+                    it.isEnabled = false
+                    onCancel()
+                }
+            }
+        }
+        dialog.show()
         fragment.viewLifecycleOwner.lifecycleScope.launch {
             val result = withContext(Dispatchers.Default) { operation() }
             dialog.dismiss()
-            onComplete(result)
+            if (cancellationRequested) {
+                CheatEngine.resetMemorySearch()
+                onComplete(SEARCH_CANCELLED)
+            } else {
+                onComplete(result)
+            }
         }
     }
 
@@ -358,6 +346,7 @@ class MemorySearchDialog(
         private const val SEARCH_TITLE_CHANGED = -5L
         private const val SEARCH_TOO_MANY = -6L
         private const val SEARCH_INVALID_VALUE = -7L
+        private const val SEARCH_CANCELLED = -8L
 
         private const val COMPARISON_EXACT = 0
         private const val COMPARISON_CHANGED = 1

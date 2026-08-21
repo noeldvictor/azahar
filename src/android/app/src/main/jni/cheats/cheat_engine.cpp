@@ -3,6 +3,7 @@
 // Refer to the license.txt file included.
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <mutex>
 #include <optional>
@@ -31,6 +32,7 @@ constexpr jlong SEARCH_NOT_PAUSED = -4;
 constexpr jlong SEARCH_TITLE_CHANGED = -5;
 constexpr jlong SEARCH_TOO_MANY = -6;
 constexpr jlong SEARCH_INVALID_VALUE = -7;
+constexpr jlong SEARCH_CANCELLED = -8;
 constexpr std::size_t MAX_SEARCH_CANDIDATES = 1'000'000;
 
 struct UndoWrite {
@@ -47,6 +49,7 @@ std::optional<u64> memory_search_title_id;
 std::optional<u64> memory_search_session_id;
 std::optional<UndoWrite> undo_write;
 std::mutex memory_search_mutex;
+std::atomic<u64> memory_search_operation_id{};
 
 bool SearchMatchesSession(const std::optional<u64>& title_id, u64 session_id) {
     return title_id.has_value() && title_id == memory_search_title_id &&
@@ -241,8 +244,26 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_getMemorySearchStatu
 }
 
 JNIEXPORT jlong JNICALL
+Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_beginMemorySearchOperation(JNIEnv*,
+                                                                                       jclass) {
+    return static_cast<jlong>(memory_search_operation_id.fetch_add(1, std::memory_order_acq_rel) +
+                              1);
+}
+
+JNIEXPORT void JNICALL
+Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_cancelMemorySearchOperation(JNIEnv*,
+                                                                                        jclass) {
+    memory_search_operation_id.fetch_add(1, std::memory_order_acq_rel);
+}
+
+JNIEXPORT jlong JNICALL
 Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_startMemorySearch(
-    JNIEnv*, jclass, jint raw_value_size, jlong raw_value) {
+    JNIEnv*, jclass, jint raw_value_size, jlong raw_value, jlong raw_operation_id) {
+    if (raw_operation_id <= 0 ||
+        memory_search_operation_id.load(std::memory_order_acquire) !=
+            static_cast<u64>(raw_operation_id)) {
+        return SEARCH_CANCELLED;
+    }
     const jlong availability = CheckSearchAvailability();
     if (availability != 0) {
         return availability;
@@ -260,6 +281,10 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_startMemorySearch(
     }
 
     std::scoped_lock lock{memory_search_mutex};
+    const u64 operation_id = static_cast<u64>(raw_operation_id);
+    if (memory_search_operation_id.load(std::memory_order_acquire) != operation_id) {
+        return SEARCH_CANCELLED;
+    }
     const u64 session_id = AndroidNativeState::GetEmulationSessionId();
     ClearStaleSessionState(title_id, session_id);
     if (!memory_search.Begin(*value_size, static_cast<u64>(raw_value))) {
@@ -274,6 +299,12 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_startMemorySearch(
     };
     for (const auto& [range_begin, range_end] : search_ranges) {
         for (VAddr page = range_begin; page < range_end; page += Memory::CITRA_PAGE_SIZE) {
+            if (memory_search_operation_id.load(std::memory_order_acquire) != operation_id) {
+                memory_search.Reset();
+                memory_search_title_id.reset();
+                memory_search_session_id.reset();
+                return SEARCH_CANCELLED;
+            }
             if (!IsSearchablePage(page_table->attributes[page >> Memory::CITRA_PAGE_BITS])) {
                 continue;
             }
@@ -414,16 +445,20 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_writeMemorySearchRes
     if (!original.has_value()) {
         return JNI_FALSE;
     }
+    const UndoWrite pending_write{.title_id = *title_id,
+                                  .session_id = session_id,
+                                  .address = address,
+                                  .value_size = value_size,
+                                  .original_value = *original,
+                                  .written_value = value};
     if (!WriteSearchValue(system, address, value_size, value)) {
-        WriteSearchValue(system, address, value_size, *original);
+        if (!WriteSearchValue(system, address, value_size, *original)) {
+            // Preserve a recovery path if either write may have landed but readback was unavailable.
+            undo_write = pending_write;
+        }
         return JNI_FALSE;
     }
-    undo_write = UndoWrite{.title_id = *title_id,
-                           .session_id = session_id,
-                           .address = address,
-                           .value_size = value_size,
-                           .original_value = *original,
-                           .written_value = value};
+    undo_write = pending_write;
     return JNI_TRUE;
 }
 
@@ -459,7 +494,10 @@ Java_org_citra_citra_1emu_features_cheats_model_CheatEngine_undoMemorySearchWrit
     const std::optional<u64> current = ReadSearchValue(
         system.Memory(), page_table, undo_write->address, undo_write->value_size);
     if (!current.has_value() || *current != undo_write->written_value) {
-        return -1;
+        // Never restore over a value the game changed itself. The stale record must also be
+        // discarded so a later coincidental match cannot revive an unsafe write or block searches.
+        undo_write.reset();
+        return 2;
     }
     if (!WriteSearchValue(system, undo_write->address, undo_write->value_size,
                           undo_write->original_value)) {
