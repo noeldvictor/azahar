@@ -377,7 +377,8 @@ class DocumentsTree {
             "/config/",
             "/cheats/",
             "/log/",
-            "/gpu_drivers/"
+            "/gpu_drivers/",
+            "/GameSettings/"
         )
     }
 }
