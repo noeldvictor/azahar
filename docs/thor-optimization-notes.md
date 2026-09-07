@@ -1552,6 +1552,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   and no PID remained. This safety merge is not a performance entry and supplies no FPS gain or
   battery-watt evidence; the discharging-battery mean/P95 <=6 W gate remains open.
 
+## 2026-09-07 Upstream Vulkan Surface-Lifetime Merge and Conception II Crash
+
+- Command-line Git fetched official `upstream/master` from `c0d923ba2` through `abdc43af0`, 44
+  commits, merged as `3b27718bf`. Eight of them rewrite Vulkan surface lifetime and recycling:
+  `079bda1f3` latent surface garbage collection, `2ef875ac1` separate resource-tick and
+  resource-free-tick, `d216f961a` surface recycling implementation, `604ade099` recycling criteria,
+  `c2783e110` framebuffer removal for upscaled recycled textures, `aaa3d3032` copy-texture
+  invalidation after `ScaleUp`, `ab89916d1` destroy-before-recreate, and `d08a7c654` stale
+  shadow-buffer images. The remainder is Android UI, audio, Qt, libretro, and translations.
+- The reported Conception II (`0004000000112C00`) failure on `bfaf28f39-vanilla-thor` was a driver
+  segfault, not an emulator assertion: `SIGSEGV` / `SEGV_ACCERR` in `fdl6_view_init<(chip)7>` inside
+  `vulkan.ad07xx.so` on the `VulkanWorker` thread, 172 s into the process, with Azahar's own log
+  ending mid-session and no fatal entry. That signature is a freed `VkImage` reaching Turnip's view
+  initialization, which is precisely the inter-frame recycling dependency `d216f961a` and the
+  long-lived descriptor reference `d08a7c654` describe. The merge did not reproduce it across a
+  boot, character creation, opening cinematics, and gameplay run at 60 FPS.
+- Eight merge conflicts were resolved against this fork's ledger rather than by taking a side.
+  `source.cpp` keeps the protected PCM16 suffix decoder and the underrun tail clear, gains
+  upstream's `current_buffer_length`/`mono_or_stereo`/`format`/`is_looping` bookkeeping so the new
+  looping refresh has its inputs, and drops the old `frame_position * rate_multiplier` accounting
+  that upstream replaced with exact AudioInterp consumption; upstream's unconditional
+  `current_frame.fill({})` was not restored. `rasterizer_cache.h` keeps
+  `IsResourceRetirementComplete()` but takes upstream's separate free-tick. Guest-texture and
+  presentation samplers keep anisotropy disabled, so upstream's `use_anisotropy` probe was removed
+  rather than left unused. `strings.xml` keeps the descriptive texture-filter labels.
+  `EmulationActivity.kt` takes `NativeLibrary.initMultiplayer()` and keeps the fork's
+  `SecondaryDisplay(context, settings)` signature, including on upstream's new early-exit path.
+  `break_on_unmapped_memory_access` was upstream's own setting, removed by `03c0a94e6`; retaining
+  its log line was a resolution error that the first native build caught.
+- The merge then exposed a second, different crash at 441 s: `SIGTRAP` / `TRAP_BRKPT` on the
+  `NativeEmulation` thread with abort message `vk_texture_runtime.cpp:1308: Assertion Failed!`,
+  through `Surface::ImageView` <- `SyncUtilityTextures` <- `Draw`. Upstream's rewritten
+  `SyncUtilityTextures()` binds the unit named by `lighting.config0.shadow_selector` as an R32Uint
+  storage image, but storage usage and the mutable RGBA8 allocation are only applied when
+  `TextureInfo::is_shadow_source` was true at construction, which requires the unit's type to be
+  `Shadow2D` or `ShadowCube`. Conception II enables shadow reading on a unit that is not typed that
+  way, so the surface kept its native format and `StorageView()` tripped
+  `traits.native == eR8G8B8A8Unorm`. The merged function is byte-identical to upstream's tip, so
+  this is an upstream defect that the fork's previous early return simply never reached.
+- `Surface::SupportsStorageView()` now mirrors the allocator's exact
+  `native == eR8G8B8A8Unorm && storage_support` condition, and the shadow-reading branch binds the
+  null surface, with a one-shot warning, when it fails. This is the same fallback upstream already
+  uses for the no-shadow case, so the crash degrades to a null shadow map instead of aborting.
+- Evidence status. The merge's fix for the original Turnip segfault is device-verified. The
+  shadow-source guard is verified statically and by a clean 10 min 39 s session on
+  `ab70d18d2-vanilla-thor`, but the fallback warning did not fire, so the shadow-reading path was
+  not re-exercised by scripted input and that guard has no on-device confirmation yet. ADB
+  `input keyevent` reaches `BUTTON_A` but cannot drive this title's menu cursor, which needs a hat
+  axis. The APK carrying the guard is 29,117,484 bytes with SHA-256
+  `1E5EEF15931C4B18A6B3C8B934C65E109F9BD72610489E802EED3F59C0566AA3`. The session ran on USB serial
+  `c3ca0370`, generic Turnip R8 / Vulkan 1.4.335, resolution factor 3, Anime4K, Eco Turbo on, with
+  the user's performance mode 1 and fan mode 4 left unchanged. No power or FPS claim is made.
+
 ## Combined Vulkan Vertex/Fixed Stream Reservation Rejection (2026-08-20)
 
 - Entry 166 tested the next ranked post-entry-164 CPU candidate rather than accepting a source-level

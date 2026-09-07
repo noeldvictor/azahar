@@ -712,7 +712,24 @@ void RasterizerVulkan::SyncUtilityTextures(const Framebuffer* framebuffer) {
         const u32 shadow_texture_unit = regs.lighting.config0.shadow_selector.Value();
         const auto shadow_texture = regs.texturing.GetTextures()[shadow_texture_unit];
         Surface& shadow_surface = res_cache.GetTextureSurface(shadow_texture);
-        update_queue.AddStorageImage(utility_set, 0, shadow_surface.StorageView());
+        // The utility slot aliases the image as R32Uint for shadow atomics, which is only a valid
+        // view on the storage-capable RGBA8 allocation. A unit chosen through shadow_selector is
+        // not necessarily typed Shadow2D/ShadowCube, so it may have been allocated in its native
+        // format and cannot supply that view. Bind the null surface rather than an invalid one.
+        if (shadow_surface.SupportsStorageView()) {
+            update_queue.AddStorageImage(utility_set, 0, shadow_surface.StorageView());
+        } else {
+            static bool logged_unsupported_shadow_source = false;
+            if (!logged_unsupported_shadow_source) {
+                logged_unsupported_shadow_source = true;
+                LOG_WARNING(Render_Vulkan,
+                            "Shadow-reading texture unit {} was not allocated as a shadow source; "
+                            "binding the null surface instead",
+                            shadow_texture_unit);
+            }
+            Surface& null_surface = res_cache.GetSurface(VideoCore::NULL_SURFACE_ID);
+            update_queue.AddStorageImage(utility_set, 0, null_surface.StorageView());
+        }
     } else {
         Surface& null_surface = res_cache.GetSurface(VideoCore::NULL_SURFACE_ID);
         update_queue.AddStorageImage(utility_set, 0, null_surface.StorageView());

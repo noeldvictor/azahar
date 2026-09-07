@@ -1456,3 +1456,17 @@
 - Keep first-party Markdown current when behavior changes: `README.md`, `AGENTS.md`, `AI-POLICY.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/*.md`, `tools/README.md`, and Android asset READMEs. Leave vendored dependency Markdown and license files alone unless a dependency itself changes.
 - Track Thor performance findings in `docs/thor-optimization-notes.md`. Thor dual-display mode intentionally pins the primary panel to the 3DS top screen and the secondary panel to the 3DS bottom screen, and the app must not recreate the old hidden virtual secondary-display render path.
 - Keep Snapdragon/Adreno/ARM research used for this fork under `docs/research/` and a provenance index under `docs/hardware/`. Prefer concise project-specific summaries. Do not commit vendor, device, or console manual PDFs; keep local research copies outside the Git repository and record their public source, revision, hash, and project relevance in the provenance index.
+- Preserve the shadow-source storage-view guard added alongside merge `3b27718bf`. Upstream's
+  rewritten `RasterizerVulkan::SyncUtilityTextures()` binds the unit named by
+  `lighting.config0.shadow_selector` as an R32Uint storage image, but Vulkan storage usage and the
+  mutable RGBA8 allocation are only applied when `TextureInfo::is_shadow_source` was true at
+  `Surface` construction, which requires that unit's type to be `Shadow2D` or `ShadowCube`.
+  Conception II (`0004000000112C00`) enables shadow reading on a unit that is not typed that way,
+  so `StorageView()` aborted the emulation thread on the
+  `traits.native == eR8G8B8A8Unorm` assertion. Keep `Surface::SupportsStorageView()` mirroring the
+  allocator's exact `native == eR8G8B8A8Unorm && storage_support` condition, and keep binding the
+  null surface when it fails. Do not attempt to repair this by assigning
+  `SurfaceFlagBits::ShadowSource` after construction: format, usage, and mutability are decided in
+  the constructor, so a late flag cannot make an allocation storage capable. Allocating the
+  selected unit as a shadow source instead would change how that texture is sampled elsewhere and
+  requires visual validation on a shadow-reading title first.

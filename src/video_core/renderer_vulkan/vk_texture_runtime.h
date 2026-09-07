@@ -240,6 +240,12 @@ public:
         return ImageView(ViewType::Stencil);
     }
 
+    /// Returns whether this surface's allocation can back the R32 storage view. Storage usage is
+    /// only added for the RGBA8 allocation, so any other host format cannot supply that view.
+    bool SupportsStorageView() const noexcept {
+        return traits.native == vk::Format::eR8G8B8A8Unorm && traits.storage_support;
+    }
+
     /// Returns the R32 image view used for atomic load/store.
     vk::ImageView StorageView() noexcept {
         is_storage = true;
