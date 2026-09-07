@@ -1605,6 +1605,59 @@ These notes are for AYN Thor Base/Pro/Max only. The assumed target is Snapdragon
   `c3ca0370`, generic Turnip R8 / Vulkan 1.4.335, resolution factor 3, Anime4K, Eco Turbo on, with
   the user's performance mode 1 and fan mode 4 left unchanged. No power or FPS claim is made.
 
+## 2026-09-07 Per-Title Settings, Snapdragon GSR, and the Conception II Crisp Profile
+
+- The complaint was image softness, not missing detail. On the Thor the 1920x1080 primary panel
+  shows the 400x240 top screen at 1800x1080 and the 1240x1080 secondary panel shows the 320x240
+  bottom screen at 1240x930 (both from `dumpsys display`). At the accepted 3x the screens are
+  1200x720 and 960x720, so presentation stretches them 1.5x and 1.29x with bilinear filtering
+  after the Anime4K texture filter has already smoothed every texture. At 5x they are 2000x1200
+  and 1600x1200 and presentation downscales 0.9x and 0.78x instead. That is a geometric argument
+  for supersampled downscale over any upscaling filter when the goal is crispness without
+  invented detail; it is a per-title choice and the global 3x acceptance configuration is
+  unchanged. 4x would leave the bottom screen at 0.97x and the top at 1.125x.
+- Android per-title settings are now data-driven. `Config::ApplyGameSettings()` overlays
+  `GameSettings/<16-hex title id>.ini` after the global reload at boot and on
+  `reloadSettings()`, session-only, never writing `config.ini`. The overlay runs `ReadValues()`
+  with `sparse_overlay` set: `ReadSetting` returns early for absent keys, the raw `Get*` reads
+  are guarded the same way, and Controls, Camera, log filter, LLE selection, Debugging, and
+  Miscellaneous are skipped. The hardcoded E.X. Troopers branch in `native.cpp` is gone; its
+  manifest now carries the same values. Bundled profiles under `assets/game_profiles/` are
+  copied into `GameSettings/` only when absent. The Kotlin side finishes the dormant per-game
+  scaffolding: the long-press **Game Settings** button opens the ordinary settings UI scoped to
+  the title, hides Camera/Controls/Network/Debug and the reset action, and writes only keys that
+  differ from the global value or were already overridden, replacing the file so removed
+  overrides disappear. `DocumentsTree.resolvePath()` gates both the Kotlin seeding step and
+  native user-directory opens through a fixed whitelist; `/GameSettings/` had to be added or the
+  directory was created empty and the launch-time read was refused.
+- Snapdragon Game Super Resolution 1 is vendored verbatim from Qualcomm's BSD-3-Clause
+  `sgsr1_shader_mobile.frag` as `ScreenFilter::SGSR`, present pipeline 4, with only the
+  `ViewportInfo` and sampler plumbing adapted. Its upscale-only guard compares covered area
+  because `o_resolution` is stored height-first and the guest screen may be rotated. At 5x the
+  guard keeps SGSR inert; it engages only if a title's resolution is lowered. SGSR 2 needs motion
+  vectors and depth that PICA content cannot supply, and Adreno Frame Motion Engine is not an
+  app-callable API. Because the Thor runs Mesa Turnip rather than the proprietary driver, the
+  `VK_QCOM_*` vendor extensions are largely unavailable; SGSR works precisely because it is a
+  plain shader.
+- Evidence, USB serial `c3ca0370`, generic Turnip R8. APK 29,131,387 bytes, SHA-256
+  `E356CA31624308B3F076AEB17DE3384B414109607EC85EB1C4C2A1CBA8CAF099`. First launch seeded
+  `GameSettings/0004000000053700.ini` and `0004000000112C00.ini` with no install errors. Launching
+  Conception II logged `Applied per-title settings /GameSettings/0004000000112C00.ini`, then
+  `Renderer_UseResolutionFactor: 5`, `Renderer_TextureFilter: None`,
+  `Renderer_ScreenFilter: Snapdragon GSR 1`, `Renderer_FilterMode: true`, at 60 FPS on the title
+  screen with the crash buffer empty; `config.ini` still read `resolution_factor = 3`,
+  `texture_filter = 1`, `screen_filter = 0`. The per-title root showed exactly General, System,
+  Graphics, Layout, Audio. Changing Screen Filter to None and backing out rewrote the file to
+  the four overlay keys with `screen_filter = 0` and left `config.ini` untouched; switching back
+  restored `screen_filter = 2`. The opening FMV is pre-rendered video and is not crispness
+  evidence; the rendered title screen is. No power or sustained-FPS claim is made for 5x: it is
+  roughly 2.8x the pixel work of 3x and needs a matched bracket before any title adopts it as a
+  default beyond this profile.
+- Texture packs were considered and rejected for this goal. No Conception II pack exists in the
+  known 3DS indexes, no machine-readable 3DS pack index exists at all, every available pack is
+  AI-upscaled, and dumping textures writes large PNG sets to the SD card. A manifest-driven pack
+  browser modelled on the driver picker remains possible later.
+
 ## Combined Vulkan Vertex/Fixed Stream Reservation Rejection (2026-08-20)
 
 - Entry 166 tested the next ranked post-entry-164 CPU candidate rather than accepting a source-level
