@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <INIReader.h>
 #include <boost/hana/string.hpp>
+#include <fmt/format.h>
 #include "common/file_util.h"
 #include "common/logging/backend.h"
 #include "common/logging/log.h"
@@ -78,8 +79,52 @@ static const std::array<int, Settings::NativeAnalog::NumAnalogs> default_analogs
     InputManager::N3DS_STICK_C,
 }};
 
+bool Config::Has(const std::string& group, const std::string& name) const {
+    // INIReader offers no presence query, so probe with a value that cannot appear in a file.
+    static const std::string absent{"\x01azahar-absent\x01"};
+    return android_config && android_config->Get(group, name, absent) != absent;
+}
+
+std::string Config::GetGameSettingsPath(u64 title_id) {
+    return fmt::format("{}GameSettings/{:016X}.ini",
+                       FileUtil::GetUserPath(FileUtil::UserPath::UserDir), title_id);
+}
+
+bool Config::ApplyGameSettings(u64 title_id) {
+    const std::string path = GetGameSettingsPath(title_id);
+    std::string ini_buffer;
+    FileUtil::ReadFileToString(true, path, ini_buffer);
+    if (ini_buffer.empty()) {
+        return false;
+    }
+
+    auto game_config = std::make_unique<INIReader>(ini_buffer.c_str(), ini_buffer.size());
+    if (game_config->ParseError() < 0) {
+        LOG_ERROR(Config, "Failed to parse per-title settings {}", path);
+        return false;
+    }
+
+    // Swap the per-title file in, overlay only the keys it defines, then restore the global
+    // reader so any later Reload() still describes config.ini.
+    std::swap(android_config, game_config);
+    sparse_overlay = true;
+    ReadValues();
+    if (Has("Compatibility", "skip_texture_copy_fallback")) {
+        Settings::values.skip_texture_copy_fallback =
+            android_config->GetBoolean("Compatibility", "skip_texture_copy_fallback", false);
+    }
+    sparse_overlay = false;
+    std::swap(android_config, game_config);
+
+    LOG_INFO(Config, "Applied per-title settings {}", path);
+    return true;
+}
+
 template <>
 void Config::ReadSetting(const std::string& group, Settings::Setting<std::string>& setting) {
+    if (sparse_overlay && !Has(group, setting.GetLabel())) {
+        return;
+    }
     std::string setting_value =
         android_config->Get(group, setting.GetLabel(), setting.GetDefault());
     if (setting_value.empty()) {
@@ -90,11 +135,17 @@ void Config::ReadSetting(const std::string& group, Settings::Setting<std::string
 
 template <>
 void Config::ReadSetting(const std::string& group, Settings::Setting<bool>& setting) {
+    if (sparse_overlay && !Has(group, setting.GetLabel())) {
+        return;
+    }
     setting = android_config->GetBoolean(group, setting.GetLabel(), setting.GetDefault());
 }
 
 template <typename Type, bool ranged>
 void Config::ReadSetting(const std::string& group, Settings::Setting<Type, ranged>& setting) {
+    if (sparse_overlay && !Has(group, setting.GetLabel())) {
+        return;
+    }
     if constexpr (std::is_floating_point_v<Type>) {
         setting = android_config->GetReal(group, setting.GetLabel(), setting.GetDefault());
     } else {
@@ -104,7 +155,14 @@ void Config::ReadSetting(const std::string& group, Settings::Setting<Type, range
 }
 
 void Config::ReadValues() {
-    // Controls
+    // Raw reads below default to literals rather than the current value, so a per-title
+    // overlay must skip them unless the file actually defines the key.
+    const auto overlay_lacks = [this](const char* group, const std::string& name) {
+        return sparse_overlay && !Has(group, name);
+    };
+
+    // Controls are global only; a per-title overlay never touches input mappings.
+    if (!sparse_overlay) {
     for (int i = 0; i < Settings::NativeButton::NumButtons; ++i) {
         std::string default_param = InputManager::GenerateButtonParamPackage(default_buttons[i]);
         Settings::values.current_input_profile.buttons[i] = android_config->GetString(
@@ -131,6 +189,7 @@ void Config::ReadValues() {
     Settings::values.current_input_profile.udp_input_port =
         static_cast<u16>(android_config->GetInteger("Controls", "udp_input_port",
                                                     InputCommon::CemuhookUDP::DEFAULT_PORT));
+    }
 
     ReadSetting("Controls", Settings::values.use_artic_base_controller);
 
@@ -139,9 +198,13 @@ void Config::ReadValues() {
     ReadSetting("Core", Settings::values.cpu_clock_percentage);
 
     // Renderer
-    Settings::values.use_gles = android_config->GetBoolean("Renderer", "use_gles", true);
-    Settings::values.shaders_accurate_mul =
-        android_config->GetBoolean("Renderer", "shaders_accurate_mul", false);
+    if (!overlay_lacks("Renderer", "use_gles")) {
+        Settings::values.use_gles = android_config->GetBoolean("Renderer", "use_gles", true);
+    }
+    if (!overlay_lacks("Renderer", "shaders_accurate_mul")) {
+        Settings::values.shaders_accurate_mul =
+            android_config->GetBoolean("Renderer", "shaders_accurate_mul", false);
+    }
     ReadSetting("Renderer", Settings::values.graphics_api);
     ReadSetting("Renderer", Settings::values.async_presentation);
     ReadSetting("Renderer", Settings::values.async_shader_compilation);
@@ -158,10 +221,13 @@ void Config::ReadValues() {
     ReadSetting("Renderer", Settings::values.turbo_limit);
     ReadSetting("Renderer", Settings::values.eco_turbo);
     // Workaround to map Android setting for enabling the frame limiter to the format Citra expects
-    if (android_config->GetBoolean("Renderer", "use_frame_limit", true)) {
-        ReadSetting("Renderer", Settings::values.frame_limit);
-    } else {
-        Settings::values.frame_limit = 0;
+    if (!overlay_lacks("Renderer", "use_frame_limit") ||
+        !overlay_lacks("Renderer", "frame_limit")) {
+        if (android_config->GetBoolean("Renderer", "use_frame_limit", true)) {
+            ReadSetting("Renderer", Settings::values.frame_limit);
+        } else {
+            Settings::values.frame_limit = 0;
+        }
     }
 
     ReadSetting("Renderer", Settings::values.render_3d);
@@ -171,8 +237,10 @@ void Config::ReadValues() {
         default_shader = "Dubois (builtin)";
     else if (Settings::values.render_3d.GetValue() == Settings::StereoRenderOption::Interlaced)
         default_shader = "Horizontal (builtin)";
-    Settings::values.pp_shader_name =
-        android_config->GetString("Renderer", "pp_shader_name", default_shader);
+    if (!overlay_lacks("Renderer", "pp_shader_name")) {
+        Settings::values.pp_shader_name =
+            android_config->GetString("Renderer", "pp_shader_name", default_shader);
+    }
     ReadSetting("Renderer", Settings::values.filter_mode);
     ReadSetting("Renderer", Settings::values.screen_filter);
     ReadSetting("Renderer", Settings::values.use_integer_scaling);
@@ -189,19 +257,27 @@ void Config::ReadValues() {
     // Layout
     // Somewhat inelegant solution to ensure layout value is between 0 and 5 on read
     // since older config files may have other values
-    int layoutInt = (int)android_config->GetInteger(
-        "Layout", "layout_option", static_cast<int>(Settings::LayoutOption::LargeScreen));
-    if (layoutInt < 0 || layoutInt > 5) {
-        layoutInt = static_cast<int>(Settings::LayoutOption::LargeScreen);
+    if (!overlay_lacks("Layout", "layout_option")) {
+        int layoutInt = (int)android_config->GetInteger(
+            "Layout", "layout_option", static_cast<int>(Settings::LayoutOption::LargeScreen));
+        if (layoutInt < 0 || layoutInt > 5) {
+            layoutInt = static_cast<int>(Settings::LayoutOption::LargeScreen);
+        }
+        Settings::values.layout_option = static_cast<Settings::LayoutOption>(layoutInt);
     }
-    Settings::values.layout_option = static_cast<Settings::LayoutOption>(layoutInt);
-    Settings::values.screen_gap =
-        static_cast<int>(android_config->GetReal("Layout", "screen_gap", 0));
-    Settings::values.large_screen_proportion =
-        static_cast<float>(android_config->GetReal("Layout", "large_screen_proportion", 2.25));
-    Settings::values.small_screen_position = static_cast<Settings::SmallScreenPosition>(
-        android_config->GetInteger("Layout", "small_screen_position",
-                                   static_cast<int>(Settings::SmallScreenPosition::TopRight)));
+    if (!overlay_lacks("Layout", "screen_gap")) {
+        Settings::values.screen_gap =
+            static_cast<int>(android_config->GetReal("Layout", "screen_gap", 0));
+    }
+    if (!overlay_lacks("Layout", "large_screen_proportion")) {
+        Settings::values.large_screen_proportion = static_cast<float>(
+            android_config->GetReal("Layout", "large_screen_proportion", 2.25));
+    }
+    if (!overlay_lacks("Layout", "small_screen_position")) {
+        Settings::values.small_screen_position = static_cast<Settings::SmallScreenPosition>(
+            android_config->GetInteger("Layout", "small_screen_position",
+                                       static_cast<int>(Settings::SmallScreenPosition::TopRight)));
+    }
     ReadSetting("Layout", Settings::values.screen_gap);
     ReadSetting("Layout", Settings::values.custom_top_x);
     ReadSetting("Layout", Settings::values.custom_top_y);
@@ -218,13 +294,18 @@ void Config::ReadValues() {
     ReadSetting("Layout", Settings::values.cardboard_y_shift);
     ReadSetting("Layout", Settings::values.upright_screen);
 
-    Settings::values.portrait_layout_option =
-        static_cast<Settings::PortraitLayoutOption>(android_config->GetInteger(
-            "Layout", "portrait_layout_option",
-            static_cast<int>(Settings::PortraitLayoutOption::PortraitTopFullWidth)));
-    Settings::values.secondary_display_layout = static_cast<Settings::SecondaryDisplayLayout>(
-        android_config->GetInteger("Layout", Settings::HKeys::secondary_display_layout.c_str(),
-                                   static_cast<int>(Settings::SecondaryDisplayLayout::None)));
+    if (!overlay_lacks("Layout", "portrait_layout_option")) {
+        Settings::values.portrait_layout_option =
+            static_cast<Settings::PortraitLayoutOption>(android_config->GetInteger(
+                "Layout", "portrait_layout_option",
+                static_cast<int>(Settings::PortraitLayoutOption::PortraitTopFullWidth)));
+    }
+    if (!overlay_lacks("Layout", Settings::HKeys::secondary_display_layout.c_str())) {
+        Settings::values.secondary_display_layout =
+            static_cast<Settings::SecondaryDisplayLayout>(android_config->GetInteger(
+                "Layout", Settings::HKeys::secondary_display_layout.c_str(),
+                static_cast<int>(Settings::SecondaryDisplayLayout::None)));
+    }
     ReadSetting("Layout", Settings::values.custom_portrait_top_x);
     ReadSetting("Layout", Settings::values.custom_portrait_top_y);
     ReadSetting("Layout", Settings::values.custom_portrait_top_width);
@@ -264,7 +345,7 @@ void Config::ReadValues() {
     ReadSetting("System", Settings::values.enable_required_online_lle_modules);
     ReadSetting("System", Settings::values.region_value);
     ReadSetting("System", Settings::values.init_clock);
-    {
+    if (!overlay_lacks("System", Settings::HKeys::init_time.c_str())) {
         std::string time =
             android_config->GetString("System", Settings::HKeys::init_time.c_str(), "946681277");
         try {
@@ -278,6 +359,12 @@ void Config::ReadValues() {
     ReadSetting("System", Settings::values.allow_plugin_loader);
     ReadSetting("System", Settings::values.steps_per_hour);
     ReadSetting("System", Settings::values.apply_region_free_patch);
+
+    // Camera, log filter, LLE module selection, debugging, and frame-time recording are global
+    // only; a per-title overlay stops here.
+    if (sparse_overlay) {
+        return;
+    }
 
     // Camera
     using namespace Service::CAM;

@@ -38,10 +38,26 @@ class Settings {
     val isEmpty: Boolean
         get() = sections.isEmpty()
 
+    /**
+     * Every global value at load time, keyed "section/key", so a per-game save can write only
+     * what actually differs from config.ini instead of snapshotting the whole configuration.
+     */
+    private val globalValues = HashMap<String, String>()
+
+    /** "section/key" entries the per-game file already contained when it was loaded. */
+    private val overriddenKeys = HashSet<String>()
+
     fun loadSettings(view: SettingsActivityView? = null) {
         sections = SettingsSectionMap()
+        globalValues.clear()
+        overriddenKeys.clear()
         loadCitraSettings(view)
         if (!TextUtils.isEmpty(gameId)) {
+            for ((sectionName, section) in sections) {
+                section?.settings?.values?.forEach {
+                    globalValues["$sectionName/${it.key}"] = it.valueAsString
+                }
+            }
             loadCustomGameSettings(gameId!!, view)
         }
         isLoaded = true
@@ -54,9 +70,16 @@ class Settings {
     }
 
     private fun loadCustomGameSettings(gameId: String, view: SettingsActivityView?) {
-        // Custom game settings
-        mergeSections(SettingsFile.readCustomGameSettings(gameId, view))
+        val custom = SettingsFile.readCustomGameSettings(gameId, view)
+        for ((sectionName, section) in custom) {
+            section?.settings?.keys?.forEach { overriddenKeys.add("$sectionName/$it") }
+        }
+        mergeSections(custom)
     }
+
+    /** Whether the loaded per-game file overrides this setting. */
+    fun isOverridden(setting: AbstractSetting): Boolean =
+        overriddenKeys.contains("${setting.section}/${setting.key}")
 
     private fun mergeSections(updatedSections: HashMap<String, SettingSection?>) {
         for ((key, updatedSection) in updatedSections) {
@@ -88,7 +111,27 @@ class Settings {
                 SettingsFile.saveFile(fileName, iniSections, view)
             }
         } else {
-            // TODO: Implement per game settings
+            // Persist only the sections native code overlays per title, and within them only
+            // keys that were already overridden or now differ from the global value.
+            val iniSections = TreeMap<String, SettingSection?>()
+            for (sectionName in PER_GAME_SECTIONS) {
+                val section = sections[sectionName] ?: continue
+                val filtered = SettingSection(sectionName)
+                for (setting in section.settings.values) {
+                    val id = "$sectionName/${setting.key}"
+                    if (overriddenKeys.contains(id) || globalValues[id] != setting.valueAsString) {
+                        filtered.putSetting(setting)
+                    }
+                }
+                if (filtered.settings.isNotEmpty()) {
+                    iniSections[sectionName] = filtered
+                }
+            }
+            SettingsFile.saveCustomGameFile(gameId!!, iniSections, view)
+            view.showToastMessage(
+                CitraApplication.appContext.getString(R.string.game_settings_saved),
+                false
+            )
         }
     }
 
@@ -238,6 +281,20 @@ class Settings {
         const val PREF_STATIC_THEME_COLOR = "StaticThemeColor"
 
         private val configFileSectionsMap: MutableMap<String, List<String>> = HashMap()
+
+        /**
+         * Sections a per-title file may override. Controls, Camera, WebService, Debugging, and
+         * Miscellaneous stay global; the native overlay ignores them.
+         */
+        val PER_GAME_SECTIONS = listOf(
+            SECTION_CORE,
+            SECTION_SYSTEM,
+            SECTION_RENDERER,
+            SECTION_LAYOUT,
+            SECTION_STORAGE,
+            SECTION_UTILITY,
+            SECTION_AUDIO
+        )
 
         init {
             configFileSectionsMap[SettingsFile.FILE_NAME_CONFIG] =

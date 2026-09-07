@@ -22,6 +22,8 @@ import org.citra.citra_emu.utils.PermissionsHandler.hasWriteAccess
  */
 object DirectoryInitialization {
     private const val BUNDLED_CHEATS_DIR = "cheats"
+    private const val BUNDLED_GAME_SETTINGS_DIR = "game_profiles"
+    private const val GAME_SETTINGS_DIR = "GameSettings"
     private const val SYS_DIR_VERSION = "sysDirectoryVersion"
     private val REPLACEABLE_BUNDLED_CHEAT_SIZES = mapOf(
         "0004000000086300.txt" to 5076L,
@@ -51,6 +53,7 @@ object DirectoryInitialization {
                     NativeLibrary.logUserDirectory(userPath.toString())
                     NativeLibrary.createConfigFile()
                     installBundledCheats()
+                    installBundledGameSettings()
                     GpuDriverHelper.initializeDriverParameters()
                     DirectoryInitializationState.CITRA_DIRECTORIES_INITIALIZED
                 } else {
@@ -158,6 +161,55 @@ object DirectoryInitialization {
             } catch (e: Exception) {
                 Log.error(
                     "[DirectoryInitialization] Failed to install bundled cheat $filename: " +
+                        e.message
+                )
+            }
+        }
+    }
+
+    /**
+     * Seeds GameSettings/ with the per-title profiles shipped in assets. A file the user already
+     * has is never touched, so in-app edits always win over bundled defaults.
+     */
+    private fun installBundledGameSettings() {
+        val profiles = try {
+            context.assets.list(BUNDLED_GAME_SETTINGS_DIR) ?: return
+        } catch (e: IOException) {
+            Log.error("[DirectoryInitialization] Failed to list bundled game settings: ${e.message}")
+            return
+        }
+        val iniFiles = profiles.filter { it.endsWith(".ini", ignoreCase = true) }
+        if (iniFiles.isEmpty()) {
+            return
+        }
+        val tree = CitraApplication.documentsTree
+        if (tree.folderUriHelper("/$GAME_SETTINGS_DIR/", true) == null) {
+            Log.warning("[DirectoryInitialization] Failed to create $GAME_SETTINGS_DIR directory")
+            return
+        }
+        for (filename in iniFiles) {
+            val destinationPath = "/$GAME_SETTINGS_DIR/$filename"
+            try {
+                if (tree.exists(destinationPath)) {
+                    continue
+                }
+                if (!tree.createFile("/$GAME_SETTINGS_DIR/", filename)) {
+                    Log.warning("[DirectoryInitialization] Failed to create $destinationPath")
+                    continue
+                }
+                context.assets.open("$BUNDLED_GAME_SETTINGS_DIR/$filename").use { input ->
+                    context.contentResolver.openOutputStream(tree.getUri(destinationPath), "wt")
+                        .use { output ->
+                            if (output == null) {
+                                Log.warning("[DirectoryInitialization] Failed to open $destinationPath")
+                            } else {
+                                copyFile(input, output)
+                            }
+                        }
+                }
+            } catch (e: Exception) {
+                Log.error(
+                    "[DirectoryInitialization] Failed to install bundled game settings $filename: " +
                         e.message
                 )
             }

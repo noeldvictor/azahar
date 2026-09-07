@@ -70,7 +70,7 @@ static_assert(sizeof(PresentUniformData) == 100,
               "PresentUniformData does not structure in shader!");
 
 class RendererVulkan : public VideoCore::RendererBase {
-    static constexpr std::size_t PRESENT_PIPELINES = 4;
+    static constexpr std::size_t PRESENT_PIPELINES = 5;
 
 public:
     explicit RendererVulkan(Core::System& system, Pica::PicaCore& pica, Frontend::EmuWindow& window,

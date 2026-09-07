@@ -49,6 +49,8 @@ import kotlinx.coroutines.launch
 import org.citra.citra_emu.CitraApplication
 import org.citra.citra_emu.HomeNavigationDirections
 import org.citra.citra_emu.NativeLibrary
+import org.citra.citra_emu.features.settings.ui.SettingsActivity
+import org.citra.citra_emu.features.settings.utils.SettingsFile
 import org.citra.citra_emu.R
 import org.citra.citra_emu.adapters.GameAdapter.GameViewHolder
 import org.citra.citra_emu.databinding.CardGameBinding
@@ -734,6 +736,15 @@ class GameAdapter(
             val action = CheatsFragmentDirections.actionGlobalCheatsFragment(holder.game.titleId)
             view.findNavController().navigate(action)
             bottomSheetDialog.dismiss()
+        }
+
+        bottomSheetView.findViewById<MaterialButton>(R.id.game_settings).setOnClickListener {
+            bottomSheetDialog.dismiss()
+            SettingsActivity.launch(
+                context,
+                SettingsFile.FILE_NAME_CONFIG,
+                String.format("%016X", holder.game.titleId)
+            )
         }
 
         val compressDecompressButton = bottomSheetView.findViewById<MaterialButton>(

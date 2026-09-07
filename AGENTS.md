@@ -1451,8 +1451,38 @@
   temporary copies immediately after the run.
 - Do not commit generated Gradle, CMake, or APK output.
 - Thor GPU driver UX should stay simple: keep the guided driver picker with visible per-driver download buttons, recommendation notes, recent Turnip rollback choices, manual ZIP fallback, and system-driver fallback working. The guide fetches K11MCH1 AdrenoToolsDrivers release assets at runtime and must validate `meta.json` before installing.
-- E.X. Troopers (`0004000000053700`) has a custom Thor compatibility profile: Android launch caps resolution to 2x, forces JIT/HW shader/shader cache basics, disables custom texture loading, and the core hack list enables the texture-copy fallback skip for that title. Keep its recommended cheat preset at 30 FPS unless on-device testing proves 60 FPS is stable.
-- Keep Android/Thor profile manifests under `src/android/app/src/main/assets/game_profiles/` in sync with any hardcoded game-specific profile logic.
+- Android per-title settings are data-driven, not hardcoded. `Config::ApplyGameSettings()` overlays
+  `<user dir>/GameSettings/<16-hex title id>.ini` onto the freshly reloaded global configuration at
+  game boot and on `reloadSettings()`, for that session only, and never writes `config.ini`. The
+  overlay is sparse: `ReadValues()` runs with `sparse_overlay` set, every `ReadSetting` returns
+  early unless the file defines the key, the raw `Get*` reads are guarded the same way, and
+  Controls, Camera, log filter, LLE module selection, Debugging, and Miscellaneous are skipped so a
+  per-title file can never clear input mappings or defaults. Bundled defaults ship under
+  `src/android/app/src/main/assets/game_profiles/` and are copied into `GameSettings/` only when no
+  file of that name exists, so in-app edits always win. The long-press **Game Settings** screen
+  reuses the ordinary settings UI scoped to that title, hides the global-only sections and the
+  reset action, and saves only keys that differ from the global value or were already overridden.
+  Do not reintroduce a title-ID `if` in `native.cpp`; add or edit the manifest instead.
+- E.X. Troopers (`0004000000053700`) keeps its Thor compatibility profile as
+  `game_profiles/0004000000053700.ini`: 2x resolution, JIT/HW shader/shader cache basics, custom
+  texture loading off, normal frame limit, and `[Compatibility] skip_texture_copy_fallback`. Keep
+  its recommended cheat preset at 30 FPS unless on-device testing proves 60 FPS is stable.
+- Conception II (`0004000000112C00`) ships `game_profiles/0004000000112C00.ini` as the Thor crisp
+  presentation profile: `resolution_factor = 5`, `texture_filter = 0`, `screen_filter = 2`
+  (Snapdragon GSR), linear presentation. The reasoning is geometric, not aesthetic: the 1920x1080
+  primary panel shows the 400x240 top screen at 1800x1080 and the 1240x1080 secondary panel shows
+  the 320x240 bottom screen at 1240x930, so 3x is stretched 1.5x/1.29x with bilinear filtering
+  while 5x (2000x1200 / 1600x1200) is downscaled 0.9x/0.78x. Prefer supersampled downscale over
+  any upscaling filter when the goal is crispness without invented detail. This is a per-title
+  choice; the global 3x acceptance configuration is unchanged.
+- Snapdragon Game Super Resolution 1 is vendored verbatim from Qualcomm's BSD-3-Clause
+  `sgsr1_shader_mobile.frag` as `host_shaders/vulkan_present_sgsr.frag` and exposed as
+  `ScreenFilter::SGSR`, present pipeline index 4. Keep the 12-tap weighting, edge vote, adaptive
+  sharpening, clamps, and RGBA operation mode exactly as published; only the `ViewportInfo` and
+  sampler plumbing differ. Its upscale-only guard compares covered area, because `o_resolution` is
+  stored height-first and the guest screen may be rotated into the layout. SGSR 2 needs motion
+  vectors and depth that PICA content cannot supply, and Adreno Frame Motion Engine is not an
+  app-callable API; do not promise either. OpenGL keeps plain presentation for this filter.
 - Keep first-party Markdown current when behavior changes: `README.md`, `AGENTS.md`, `AI-POLICY.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `docs/*.md`, `tools/README.md`, and Android asset READMEs. Leave vendored dependency Markdown and license files alone unless a dependency itself changes.
 - Track Thor performance findings in `docs/thor-optimization-notes.md`. Thor dual-display mode intentionally pins the primary panel to the 3DS top screen and the secondary panel to the 3DS bottom screen, and the app must not recreate the old hidden virtual secondary-display render path.
 - Keep Snapdragon/Adreno/ARM research used for this fork under `docs/research/` and a provenance index under `docs/hardware/`. Prefer concise project-specific summaries. Do not commit vendor, device, or console manual PDFs; keep local research copies outside the Git repository and record their public source, revision, hash, and project relevance in the provenance index.

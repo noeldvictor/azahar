@@ -126,6 +126,7 @@ enum class TextureFilter : u32 {
 enum class ScreenFilter : u32 {
     None = 0,
     Anime4K = 1,
+    SGSR = 2,
 };
 
 enum class TextureSampling : u32 {

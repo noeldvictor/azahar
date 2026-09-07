@@ -479,6 +479,8 @@ void RendererOpenGL::ReloadShader(Settings::StereoRenderOption render_3d) {
         shader_data += HostShaders::OPENGL_PRESENT_INTERLACED_FRAG;
     } else {
         if (Settings::values.screen_filter.GetValue() == Settings::ScreenFilter::Anime4K) {
+            // Snapdragon GSR is currently a Vulkan-only present pipeline; the OpenGL path keeps
+            // plain presentation for it rather than substituting a different filter.
             shader_data += HostShaders::OPENGL_PRESENT_ANIME4K_FRAG;
         } else if (Settings::values.pp_shader_name.GetValue() == "None (builtin)") {
             shader_data += HostShaders::OPENGL_PRESENT_FRAG;

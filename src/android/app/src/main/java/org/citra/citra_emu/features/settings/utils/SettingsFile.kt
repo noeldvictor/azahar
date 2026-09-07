@@ -35,6 +35,9 @@ import org.ini4j.Wini
 object SettingsFile {
     const val FILE_NAME_CONFIG = "config"
 
+    /** Per-title override files live in <user dir>/GameSettings/<16-hex title id>.ini. */
+    const val GAME_SETTINGS_DIR = "GameSettings"
+
     private var sectionsMap = BiMap<String?, String?>()
 
     /**
@@ -105,7 +108,11 @@ object SettingsFile {
     fun readCustomGameSettings(
         gameId: String,
         view: SettingsActivityView?
-    ): HashMap<String, SettingSection?> = readFile(getCustomGameSettingsFile(gameId), true, view)
+    ): HashMap<String, SettingSection?> {
+        // A title without overrides is the normal case, not an error.
+        val ini = getCustomGameSettingsFile(gameId, false) ?: return SettingsSectionMap()
+        return readFile(ini, true, view)
+    }
 
     /**
      * Saves a Settings HashMap to a given .ini file on disk. If unsuccessful, outputs an error
@@ -182,10 +189,63 @@ object SettingsFile {
         return configDirectory!!.findFile("$fileName.ini")!!
     }
 
-    private fun getCustomGameSettingsFile(gameId: String): DocumentFile {
-        val root = DocumentFile.fromTreeUri(CitraApplication.appContext, Uri.parse(userDirectory))
-        val configDirectory = root!!.findFile("GameSettings")
-        return configDirectory!!.findFile("$gameId.ini")!!
+    private fun customGameSettingsPath(gameId: String) = "/$GAME_SETTINGS_DIR/$gameId.ini"
+
+    /**
+     * Resolves GameSettings/<gameId>.ini in the user directory. Returns null when the file does
+     * not exist and [create] is false, or when it could not be created.
+     */
+    private fun getCustomGameSettingsFile(gameId: String, create: Boolean): DocumentFile? {
+        val tree = CitraApplication.documentsTree
+        val path = customGameSettingsPath(gameId)
+        if (!tree.exists(path)) {
+            if (!create) {
+                return null
+            }
+            if (tree.folderUriHelper("/$GAME_SETTINGS_DIR/", true) == null ||
+                !tree.createFile("/$GAME_SETTINGS_DIR/", "$gameId.ini")
+            ) {
+                Log.error("[SettingsFile] Failed to create per-game settings $path")
+                return null
+            }
+        }
+        return DocumentFile.fromSingleUri(CitraApplication.appContext, tree.getUri(path))
+    }
+
+    /**
+     * Writes exactly [sections] to GameSettings/<gameId>.ini, replacing any previous contents so
+     * that a removed override really disappears. Native code overlays only the keys present here.
+     */
+    fun saveCustomGameFile(
+        gameId: String,
+        sections: TreeMap<String, SettingSection?>,
+        view: SettingsActivityView
+    ) {
+        val ini = getCustomGameSettingsFile(gameId, true)
+        if (ini == null) {
+            view.showToastMessage(
+                CitraApplication.appContext.getString(R.string.error_saving, gameId, "GameSettings"),
+                false
+            )
+            return
+        }
+        try {
+            val context: Context = CitraApplication.appContext
+            val writer = Wini()
+            for ((_, section) in sections) {
+                writeSection(writer, section!!)
+            }
+            val outputStream = context.contentResolver.openOutputStream(ini.uri, "wt")
+            writer.store(outputStream)
+            outputStream!!.flush()
+            outputStream.close()
+        } catch (e: Exception) {
+            Log.error("[SettingsFile] Failed to save per-game settings $gameId.ini: ${e.message}")
+            view.showToastMessage(
+                CitraApplication.appContext.getString(R.string.error_saving, gameId, e.message),
+                false
+            )
+        }
     }
 
     private fun sectionFromLine(line: String, isCustomGame: Boolean): SettingSection {

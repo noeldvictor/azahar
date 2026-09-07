@@ -88,7 +88,9 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
 
     fun loadSettingsList() {
         if (!TextUtils.isEmpty(gameId)) {
-            settingsActivity.setToolbarTitle("Application Settings: $gameId")
+            settingsActivity.setToolbarTitle(
+                settingsActivity.getString(R.string.game_settings_title, gameId)
+            )
         }
         val sl = ArrayList<SettingsItem>()
         if (menuTag == null) {
@@ -168,22 +170,26 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
                     Settings.SECTION_SYSTEM
                 )
             )
-            add(
-                SubmenuSetting(
-                    R.string.preferences_camera,
-                    0,
-                    R.drawable.ic_camera_settings,
-                    Settings.SECTION_CAMERA
+            if (gameId.isEmpty()) {
+                add(
+                    SubmenuSetting(
+                        R.string.preferences_camera,
+                        0,
+                        R.drawable.ic_camera_settings,
+                        Settings.SECTION_CAMERA
+                    )
                 )
-            )
-            add(
-                SubmenuSetting(
-                    R.string.preferences_controls,
-                    0,
-                    R.drawable.ic_controls_settings,
-                    Settings.SECTION_CONTROLS
+            }
+            if (gameId.isEmpty()) {
+                add(
+                    SubmenuSetting(
+                        R.string.preferences_controls,
+                        0,
+                        R.drawable.ic_controls_settings,
+                        Settings.SECTION_CONTROLS
+                    )
                 )
-            )
+            }
             add(
                 SubmenuSetting(
                     R.string.preferences_graphics,
@@ -200,14 +206,16 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
                     Settings.SECTION_LAYOUT
                 )
             )
-            add(
-                SubmenuSetting(
-                    R.string.preferences_network,
-                    0,
-                    R.drawable.ic_network,
-                    Settings.SECTION_NETWORK
+            if (gameId.isEmpty()) {
+                add(
+                    SubmenuSetting(
+                        R.string.preferences_network,
+                        0,
+                        R.drawable.ic_network,
+                        Settings.SECTION_NETWORK
+                    )
                 )
-            )
+            }
             add(
                 SubmenuSetting(
                     R.string.preferences_audio,
@@ -216,29 +224,34 @@ class SettingsFragmentPresenter(private val fragmentView: SettingsFragmentView) 
                     Settings.SECTION_AUDIO
                 )
             )
-            add(
-                SubmenuSetting(
-                    R.string.preferences_debug,
-                    0,
-                    R.drawable.ic_code,
-                    Settings.SECTION_DEBUG
+            if (gameId.isEmpty()) {
+                add(
+                    SubmenuSetting(
+                        R.string.preferences_debug,
+                        0,
+                        R.drawable.ic_code,
+                        Settings.SECTION_DEBUG
+                    )
                 )
-            )
+            }
 
-            add(
-                RunnableSetting(
-                    R.string.reset_to_default,
-                    0,
-                    false,
-                    R.drawable.ic_restore,
-                    {
-                        ResetSettingsDialogFragment().show(
-                            settingsActivity.supportFragmentManager,
-                            ResetSettingsDialogFragment.TAG
-                        )
-                    }
+            // Reset targets the global configuration; keep it out of a per-title screen.
+            if (gameId.isEmpty()) {
+                add(
+                    RunnableSetting(
+                        R.string.reset_to_default,
+                        0,
+                        false,
+                        R.drawable.ic_restore,
+                        {
+                            ResetSettingsDialogFragment().show(
+                                settingsActivity.supportFragmentManager,
+                                ResetSettingsDialogFragment.TAG
+                            )
+                        }
+                    )
                 )
-            )
+            }
         }
     }
 

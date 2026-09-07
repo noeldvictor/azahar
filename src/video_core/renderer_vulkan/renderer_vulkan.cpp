@@ -19,6 +19,7 @@
 
 #include "video_core/host_shaders/vulkan_present_anaglyph_frag.h"
 #include "video_core/host_shaders/vulkan_present_anime4k_frag.h"
+#include "video_core/host_shaders/vulkan_present_sgsr_frag.h"
 #include "video_core/host_shaders/vulkan_present_frag.h"
 #include "video_core/host_shaders/vulkan_present_interlaced_frag.h"
 #include "video_core/host_shaders/vulkan_present_vert.h"
@@ -326,6 +327,8 @@ void RendererVulkan::CompileShaders() {
     present_shaders[2] = Compile(HostShaders::VULKAN_PRESENT_INTERLACED_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
     present_shaders[3] = Compile(HostShaders::VULKAN_PRESENT_ANIME4K_FRAG,
+                                 vk::ShaderStageFlagBits::eFragment, device, preamble);
+    present_shaders[4] = Compile(HostShaders::VULKAN_PRESENT_SGSR_FRAG,
                                  vk::ShaderStageFlagBits::eFragment, device, preamble);
 
     cursor_vertex_shader =
@@ -740,10 +743,17 @@ void RendererVulkan::ReloadPipeline(Settings::StereoRenderOption render_3d) {
         draw_info.reverse_interlaced = render_3d == Settings::StereoRenderOption::ReverseInterlaced;
         break;
     default:
-        current_pipeline = Settings::values.screen_filter.GetValue() ==
-                                   Settings::ScreenFilter::Anime4K
-                               ? 3
-                               : 0;
+        switch (Settings::values.screen_filter.GetValue()) {
+        case Settings::ScreenFilter::Anime4K:
+            current_pipeline = 3;
+            break;
+        case Settings::ScreenFilter::SGSR:
+            current_pipeline = 4;
+            break;
+        default:
+            current_pipeline = 0;
+            break;
+        }
         break;
     }
 }

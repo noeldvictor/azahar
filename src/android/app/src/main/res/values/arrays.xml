@@ -336,11 +336,13 @@
     <string-array name="screenFilterNames">
         <item>@string/screen_filter_none</item>
         <item>@string/screen_filter_anime4k</item>
+        <item>@string/screen_filter_sgsr</item>
     </string-array>
 
     <integer-array name="screenFilterValues">
         <item>0</item>
         <item>1</item>
+        <item>2</item>
     </integer-array>
 
     <string-array name="textureSamplingNames">

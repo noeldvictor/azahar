@@ -66,6 +66,8 @@ std::string_view GetScreenFilterName(ScreenFilter filter) {
         return "None";
     case ScreenFilter::Anime4K:
         return "Anime4K v4 Mobile";
+    case ScreenFilter::SGSR:
+        return "Snapdragon GSR 1";
     default:
         return "Invalid";
     }

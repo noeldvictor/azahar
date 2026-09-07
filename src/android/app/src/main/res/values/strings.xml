@@ -284,9 +284,10 @@
     <string name="linear_filtering">Linear Filtering</string>
     <string name="linear_filtering_description">Enables linear filtering, which causes game visuals to appear smoother.</string>
     <string name="screen_filter_name">Screen Filter</string>
-    <string name="screen_filter_description">Filters each finished 3DS screen as it is scaled into the layout. Anime4K v4 Mobile targets anime-style lines using a bandwidth-conscious single-pass DoG port; it is heavier than plain linear filtering and falls back to normal presentation for anaglyph or interlaced 3D.</string>
+    <string name="screen_filter_description">Filters each finished 3DS screen as it is scaled into the layout. Anime4K v4 Mobile targets anime-style lines using a bandwidth-conscious single-pass DoG port. Snapdragon GSR 1 is Qualcomm’s single-pass Lanczos-like upscaler with adaptive sharpening, built for Adreno and cheap enough to pair with a lower internal resolution. Both are heavier than plain linear filtering, only apply while a screen is being upscaled, and fall back to normal presentation for anaglyph or interlaced 3D.</string>
     <string name="screen_filter_none">None (fastest · lowest GPU load)</string>
     <string name="screen_filter_anime4k">Anime4K v4 Mobile (anime art · GPU heavy)</string>
+    <string name="screen_filter_sgsr">Snapdragon GSR 1 (3D art · light)</string>
     <string name="use_integer_scaling">Integer Scaling</string>
     <string name="use_integer_scaling_description">Scales the screens with an integer multiplier of the original 3DS screen. For layouts with two different screen sizes, the largest screen is integer-scaled.</string>
     <string name="texture_filter_name">Texture Filter</string>
@@ -666,6 +667,9 @@
     <string name="preparing_shaders">Preparing Shaders</string>
     <string name="building_shaders">Building %s</string>
     <string name="manage_cached_data">Manage Cached Data</string>
+    <string name="game_settings">Game Settings</string>
+    <string name="game_settings_title">Game Settings · %1$s</string>
+    <string name="game_settings_saved">Game settings saved. Only values that differ from your global settings are stored for this title.</string>
     <string name="manage_cached_data_title">Cached Data · %1$s</string>
     <string name="manage_cached_data_description">Shader caches persist per game and avoid recompiling known graphics pipelines. Texture-filter results stay in GPU memory only for the current game session and clear automatically when the game closes. Screen-filter Anime4K runs once per presented frame. Downloaded custom textures are user content, not cache; manage them from Open › Textures Folder.</string>
     <string name="shader_cache_entry">%1$s shader cache · %2$s</string>

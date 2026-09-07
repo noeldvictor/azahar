@@ -18,11 +18,26 @@ private:
     bool LoadINI(const std::string& default_contents = "", bool retry = true);
     void ReadValues();
 
+    /// True while ReadValues() is overlaying a per-title file: keys that the file does not
+    /// contain leave the already-loaded global value untouched instead of resetting to defaults.
+    bool sparse_overlay = false;
+
+    /// Whether the currently loaded INI contains group/name at all.
+    bool Has(const std::string& group, const std::string& name) const;
+
 public:
     Config();
     ~Config();
 
     void Reload();
+
+    /// Overlays GameSettings/<title_id>.ini from the user directory onto the loaded global
+    /// settings for the current session. Returns false when no such file exists or it fails to
+    /// parse; global settings are left as they were.
+    bool ApplyGameSettings(u64 title_id);
+
+    /// Path of the per-title settings file, without checking that it exists.
+    static std::string GetGameSettingsPath(u64 title_id);
 
 private:
     /**

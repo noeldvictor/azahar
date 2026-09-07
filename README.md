@@ -218,8 +218,16 @@ This fork has moved away from stock Azahar in visible ways:
   in-game menu instead of opting out of enforced edge-to-edge behavior.
 - Thor dual-display emulation is fixed to top screen on the primary panel and bottom screen on the secondary panel; the old hidden virtual secondary display fallback is removed.
 - The Thor GPU Driver Manager has a guided driver picker with visible download buttons, notes, recommended generic Turnip first, recent Turnip rollback builds, Qualcomm and Turnip variants as troubleshooting choices, manual ZIP install, and system-driver fallback.
-- Thor game profile manifests live under `src/android/app/src/main/assets/game_profiles/`.
-- E.X. Troopers has a Thor-specific compatibility profile and native title hack notes for smoother testing.
+- Per-game settings on Android: long-press a game and open **Game Settings** to override
+  graphics, layout, audio, and system options for that title only. Overrides live in
+  `GameSettings/<title id>.ini`, apply at launch without touching your global config, and store only
+  the values you changed. Bundled Thor profiles under
+  `src/android/app/src/main/assets/game_profiles/` seed that folder on first run and never overwrite
+  your edits.
+- E.X. Troopers ships a Thor compatibility profile; Conception II ships a crisp-presentation
+  profile that renders at 5x so both Thor panels downscale instead of stretching.
+- Snapdragon Game Super Resolution 1 is available as a Screen Filter, vendored verbatim from
+  Qualcomm's BSD-3-Clause shader for the Vulkan present path.
 - Thor Base/Pro/Max optimization notes are tracked in `docs/thor-optimization-notes.md`.
 - Cheat gap tracking is documented in `docs/thor-cheat-gaps.md`.
 
