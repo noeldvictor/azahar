@@ -217,7 +217,6 @@ static jobject ToJavaCoreError(Core::System::ResultStatus result) {
         {Core::System::ResultStatus::ErrorArticDisconnected, "ErrorArticDisconnected"},
         {Core::System::ResultStatus::ErrorN3DSApplication, "ErrorN3DSApplication"},
         {Core::System::ResultStatus::ErrorCoreExceptionRaised, "ErrorCoreExceptionRaised"},
-        {Core::System::ResultStatus::ErrorMemoryExceptionRaised, "ErrorMemoryExceptionRaised"},
         {Core::System::ResultStatus::ErrorSavestateBuildMismatch, "ErrorSavestateBuildMismatch"},
         {Core::System::ResultStatus::ErrorUnknown, "ErrorUnknown"},
     };
@@ -434,6 +433,8 @@ static Core::System::ResultStatus RunCitra(const std::string& filepath) {
     LoadDiskCacheProgress(VideoCore::LoadCallbackStage::Complete, 0, 0, "");
 
     SCOPE_EXIT({ TryShutdown(); });
+
+    system.RegisterCoreLoopThreadId();
 
     // Start running emulation
     while (!stop_run) {

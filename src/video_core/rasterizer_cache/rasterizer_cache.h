@@ -130,12 +130,13 @@ void RasterizerCache<T>::TickFrame() {
 
 template <class T>
 void RasterizerCache<T>::RunGarbageCollector() {
-    const u64 remove_tick = runtime.GetResourceTick();
+    const u64 resource_free_tick = runtime.GetResourceFreeTick();
     for (auto it = sentenced.begin(); it != sentenced.end();) {
-        const auto [surface_id, resource_tick] = *it;
-        // A resource remains potentially in use until the runtime advances beyond the tick at
-        // which it was sentenced. Once the completed tick is newer, it is safe to delete.
-        if (!IsResourceRetirementComplete(remove_tick, resource_tick)) {
+        const auto [surface_id, resource_last_used_tick] = *it;
+        // A resource remains potentially in use until the runtime's free tick advances past the
+        // tick observed at sentencing. Equality must retain it because work from that tick may
+        // still be queued or in flight.
+        if (!IsResourceRetirementComplete(resource_free_tick, resource_last_used_tick)) {
             ++it;
             continue;
         }
@@ -1421,18 +1422,28 @@ template <class T>
 SurfaceId RasterizerCache<T>::CreateSurface(const SurfaceParams& params,
                                             const SurfaceFlagBits& initial_flags) {
     const SurfaceId surface_id = [&] {
+        const u64 resource_free_tick = runtime.GetResourceFreeTick();
+        // Try to find a matching texture in the deletion queue
         const auto it = std::find_if(sentenced.begin(), sentenced.end(), [&](const auto& pair) {
-            return slot_surfaces[pair.first] == params;
+            return (slot_surfaces[pair.first] == params) &&
+                   // Only recycle the texture if its resolution scale is equal or less than the
+                   // incoming texture
+                   (slot_surfaces[pair.first].res_scale <= params.res_scale) &&
+                   // Only recycle the texture if the texture runtime is completely done with it
+                   (resource_free_tick > pair.second);
         });
-        if (it == sentenced.end()) {
-            return slot_surfaces.insert(runtime, params, initial_flags);
+        // If a matching texture was found in the deletion queue, recycle it.
+        if (it != sentenced.end()) {
+            const SurfaceId surface_id = it->first;
+            sentenced.erase(it);
+            return surface_id;
         }
-        const SurfaceId surface_id = it->first;
-        sentenced.erase(it);
-        return surface_id;
+        return slot_surfaces.insert(runtime, params, initial_flags);
     }();
     Surface& surface = slot_surfaces[surface_id];
     if (params.res_scale > surface.res_scale) {
+        // Texture is going to be upscaled, remove any previous framebuffer references
+        RemoveFramebuffers(surface_id);
         surface.ScaleUp(params.res_scale);
         ++surface_generation;
     }

@@ -145,6 +145,9 @@ void Handle::Create(u32 width, u32 height, u32 levels, TextureType type, vk::For
                     vk::ImageUsageFlags usage, vk::ImageCreateFlags flags,
                     vk::ImageAspectFlags aspect, bool need_format_list,
                     std::string_view debug_name) {
+
+    Destroy();
+
     const bool is_cube_map = type == TextureType::CubeMap && instance.IsLayeredRenderingSupported();
     if (!is_cube_map) {
         flags &= ~vk::ImageCreateFlagBits::eCubeCompatible;
@@ -282,11 +285,18 @@ VideoCore::StagingData TextureRuntime::FindStaging(u32 size, bool upload) {
 }
 
 u64 TextureRuntime::GetResourceTick() {
+    return scheduler.GetMasterSemaphore()->CurrentTick();
+}
+
+u64 TextureRuntime::GetResourceFreeTick() {
+    // Ensure we are getting the latest GpuTick value to reduce garbage-collection latency and
+    // allows the deletion of resources immediately when they are done being used.
+    scheduler.GetMasterSemaphore()->Refresh();
     return scheduler.GetMasterSemaphore()->KnownGpuTick();
 }
 
 void TextureRuntime::Finish() {
-    scheduler.Finish();
+    scheduler.Flush();
 }
 
 bool TextureRuntime::Reinterpret(Surface& source, Surface& dest,
@@ -762,6 +772,11 @@ Surface::Surface(TextureRuntime& runtime_, const VideoCore::SurfaceParams& param
     if (is_color) {
         usage |= vk::ImageUsageFlagBits::eColorAttachment;
     }
+    if (traits.native == vk::Format::eR8G8B8A8Unorm && traits.storage_support) {
+        // Add Storage-usage support when available in case it is found out later that this is a
+        // shadow-source texture that will get used in the utility descriptor-set
+        usage |= vk::ImageUsageFlagBits::eStorage;
+    }
 
     const bool need_format_list = is_mutable && instance.IsImageFormatListSupported();
     handles[Type::Base].Create(width, height, levels, texture_type, format, usage, flags,
@@ -1116,6 +1131,8 @@ void Surface::ScaleUp(u32 new_scale) {
                                  traits.native, traits.usage, flags, traits.aspect, false,
                                  DebugName(true));
     current = Type::Scaled;
+
+    handles[Type::Copy].Destroy();
 
     runtime.renderpass_cache.EndRendering();
     scheduler.Record(

@@ -106,7 +106,6 @@ public:
         ErrorArticDisconnected,               ///< Error when artic base disconnects
         ErrorN3DSApplication,        ///< Error launching New 3DS application in Old 3DS mode
         ErrorCoreExceptionRaised,    ///< The CPU emulation raised an exception
-        ErrorMemoryExceptionRaised,  ///< Unmmaped memory was accessed
         ErrorSavestateBuildMismatch, ///< Tried to load savestate from a different Azahar version
         ShutdownRequested,           ///< Emulated program requested a system shutdown
         ErrorUnknown                 ///< Any other error
@@ -431,6 +430,14 @@ public:
         override_gdb_port = port;
     }
 
+    void RegisterCoreLoopThreadId() {
+        core_loop_thread_id = std::this_thread::get_id();
+    }
+
+    std::thread::id GetCoreLoopThreadId() {
+        return core_loop_thread_id;
+    }
+
 private:
     /**
      * Initialize the emulated system.
@@ -544,6 +551,8 @@ private:
 
     bool debug_next_process;
     int override_gdb_port = -1;
+
+    std::thread::id core_loop_thread_id{};
 
     friend class boost::serialization::access;
     template <typename Archive>

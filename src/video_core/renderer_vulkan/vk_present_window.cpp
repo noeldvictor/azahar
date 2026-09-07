@@ -586,7 +586,8 @@ void PresentWindow::PrepareForPresent(vk::CommandBuffer cmdbuf, Frame* frame) {
         cmdbuf.blitImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, frame->present_image,
                          vk::ImageLayout::eTransferDstOptimal,
                          MakeImageBlit(frame->width, frame->height, extent.width, extent.height),
-                         vk::Filter::eLinear);
+                         Settings::values.filter_mode.GetValue() ? vk::Filter::eLinear
+                                                                 : vk::Filter::eNearest);
     } else {
         VideoCore::AddFrameProfileEvent(VideoCore::FrameProfileEvent::PresentCopies);
         cmdbuf.copyImage(frame->image, vk::ImageLayout::eTransferSrcOptimal, frame->present_image,
