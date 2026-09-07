@@ -1470,3 +1470,13 @@
   the constructor, so a late flag cannot make an allocation storage capable. Allocating the
   selected unit as a shadow source instead would change how that texture is sampled elsewhere and
   requires visual validation on a shadow-reading title first.
+- Treat cleanup as part of finishing a task rather than a separate request. Before handing work
+  back, remove the stale CMake configuration hashes, Gradle intermediates, and scratch artifacts
+  that the work created, both in this repository and on the device, and report the logical bytes
+  reclaimed. Delete only exact validated paths; never sweep broadly enough to reach source, saves,
+  manuals, research copies, or unrelated user files, and leave evidence from earlier sessions alone
+  unless its removal is explicitly requested.
+- This repository has one authoritative engineering ledger. Keep accepted rules and rejected
+  experiments in `AGENTS.md`, dated measurements in `docs/thor-optimization-notes.md`, and a public
+  description in `README.md`. `README.md` and `CLAUDE.md` point at `AGENTS.md` instead of restating
+  engineering detail, so a behavior change is recorded in exactly one place.

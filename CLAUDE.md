@@ -1,55 +1,39 @@
 # CLAUDE.md
 
-`AGENTS.md` is the authoritative engineering ledger for this fork; read it before
-changing code, and keep it updated when behavior changes. This file holds the
-working rules that are easy to get wrong and expensive to relearn.
+**[AGENTS.md](AGENTS.md) is the authoritative engineering ledger for this fork. Read it before
+changing code, and update it when behavior changes.** It holds every accepted optimization, every
+rejected experiment and the reason it was rejected, and the invariants that must not be silently
+"cleaned up". This file only adds the operating rules for working here; it does not restate them.
 
-## Disk space is a hard constraint
+## Documentation map
 
-Generated Android build output is the largest thing this project produces, and the
-host `C:` drive runs close to full. Treat storage as a budget, not a byproduct.
+- [AGENTS.md](AGENTS.md) — engineering rules and invariants. Canonical.
+- [docs/thor-optimization-notes.md](docs/thor-optimization-notes.md) — dated evidence behind them.
+- [docs/thor-cheat-gaps.md](docs/thor-cheat-gaps.md) — cheat coverage gaps.
+- [README.md](README.md) — public-facing description of the fork.
+- [AI-POLICY.md](AI-POLICY.md) — how AI assistance is used here.
 
-- Check free `C:` space and the sizes of `src/android/app/.cxx` and
-  `src/android/app/build` before and after any large native build. Report both.
-- Keep only the active `arm64-v8a` release configuration hash under
-  `.cxx/RelWithDebInfo`. Obsolete configuration hashes are stale caches, not history.
-- Never build Debug, x86, or x86_64 variants unless explicitly asked for one.
-- An opt-in `-PthorFrameProfiling=true` configuration must be removed in the same
-  work tranche once its binary evidence is captured.
+When behavior changes, update the rule in AGENTS.md and the evidence in the notes. Do not copy
+engineering detail into README.md or this file; point at AGENTS.md instead.
 
-## Always clean up when the work is done
+## Finishing a task
 
-Cleanup is part of finishing a task, not a separate request. Before handing work
-back:
+Cleanup is part of finishing, not a separate request. Before handing work back, remove stale CMake
+configuration hashes, Gradle intermediates, and scratch artifacts you created — in the repository
+and on the device — then report the bytes reclaimed. AGENTS.md carries the exact storage rules and
+the paths that are safe to touch. Never run a broad sweep that could reach source, saves, manuals,
+research copies, or unrelated user files.
 
-- Remove stale CMake configuration hashes, Gradle intermediates, packaging/mapping/
-  symbol staging, and any profiling build tree that is no longer needed. Keep
-  `build/outputs/apk` for APKs still under test.
-- Delete scratch APKs, `perf.data` captures, screenshots, UI dumps, and temporary
-  binaries that were pushed to the device (`/data/local/tmp`) or written to the
-  repository or the device's shared storage.
-- Stop the Gradle daemon first if it still holds an intermediate open. A
-  `.ninja_deps` sharing failure usually means another build owns the configuration:
-  wait for that owner instead of deleting the cache.
-- Use exact validated paths inside this repository. Never run a broad cleanup that
-  could touch source, manuals, saves, research copies, or unrelated user files.
-- Report the logical bytes reclaimed.
+## Working agreements
 
-## Git
-
-- Work directly on `master` and push to `origin/master`
-  (`git@github.com:noeldvictor/azahar-thor-experiment.git`) in small, verified slices.
-- Use command-line Git over SSH. No PR automation, no GitHub CLI, unless asked.
+- Work directly on `master` and push to `origin/master` in small, verified slices. Command-line Git
+  over SSH; no PR automation or GitHub CLI unless asked.
 - Never commit generated Gradle, CMake, or APK output.
-
-## Building and testing on the Thor
-
-- APK for the device:
-  `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite --no-configuration-cache`
-  from `src/android`, then install
-  `app/build/outputs/apk/vanilla/relWithDebInfoLite/app-vanilla-relWithDebInfoLite.apk`.
-- Do not pass `--configuration-cache`; Gradle rejects the Git calls in
-  `app/build.gradle.kts` while storing it.
+- Build the device APK with
+  `.\gradlew.bat :app:assembleVanillaRelWithDebInfoLite --no-configuration-cache` from `src/android`.
+  Do not pass `--configuration-cache`.
 - Always pass `adb -s <serial>`; the Thor can enumerate over both USB and Wi-Fi.
-- Read and restore the user's performance mode, fan mode, brightness, GPU driver,
-  and resolution after any experiment. Do not silently change device settings.
+- Read and restore the user's performance mode, fan mode, brightness, GPU driver, and resolution
+  after any experiment. Do not silently change device settings.
+- Separate what was measured from what it proves. An isolated ratio is not an FPS or battery-watt
+  claim.
